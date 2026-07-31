@@ -1,6 +1,6 @@
 package com.devcollab.knowledgecore.common.cache;
 
-import com.devcollab.knowledgecore.document.domain.DocumentVersion;
+import com.devcollab.knowledgecore.document.version.domain.DocumentVersion;
 import com.github.benmanes.caffeine.cache.Cache;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;

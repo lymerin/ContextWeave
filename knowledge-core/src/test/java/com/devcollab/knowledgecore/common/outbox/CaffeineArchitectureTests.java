@@ -1,11 +1,11 @@
 package com.devcollab.knowledgecore.common.cache;
 
 import com.devcollab.knowledgecore.common.outbox.application.OutboxKafkaMessage;
-import com.devcollab.knowledgecore.document.application.DocumentTreeCacheService.DocumentList;
-import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
-import com.devcollab.knowledgecore.document.domain.DocumentType;
-import com.devcollab.knowledgecore.document.domain.DocumentVersion;
-import com.devcollab.knowledgecore.document.domain.DocumentVersionStatus;
+import com.devcollab.knowledgecore.document.tree.application.DocumentTreeCacheService.DocumentList;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlockType;
+import com.devcollab.knowledgecore.document.core.domain.DocumentType;
+import com.devcollab.knowledgecore.document.version.domain.DocumentVersion;
+import com.devcollab.knowledgecore.document.version.domain.DocumentVersionStatus;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceMemberCacheService.CachedMembership;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;

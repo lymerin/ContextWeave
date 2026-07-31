@@ -1,8 +1,8 @@
 package com.devcollab.knowledgecore.git.application;
 
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
-import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
-import com.devcollab.knowledgecore.document.domain.DocumentRepository;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlockRepository;
+import com.devcollab.knowledgecore.document.core.domain.DocumentRepository;
 import com.devcollab.knowledgecore.git.application.exception.GitRepositoryNotFoundException;
 import com.devcollab.knowledgecore.git.application.exception.InvalidCodeBindingException;
 import com.devcollab.knowledgecore.git.domain.*;

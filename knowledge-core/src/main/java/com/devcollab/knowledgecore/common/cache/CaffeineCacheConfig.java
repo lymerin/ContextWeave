@@ -2,8 +2,8 @@ package com.devcollab.knowledgecore.common.cache;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.devcollab.knowledgecore.document.application.DocumentTreeCacheService.DocumentList;
-import com.devcollab.knowledgecore.document.domain.DocumentVersion;
+import com.devcollab.knowledgecore.document.tree.application.DocumentTreeCacheService.DocumentList;
+import com.devcollab.knowledgecore.document.version.domain.DocumentVersion;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceMemberCacheService.CachedMembership;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

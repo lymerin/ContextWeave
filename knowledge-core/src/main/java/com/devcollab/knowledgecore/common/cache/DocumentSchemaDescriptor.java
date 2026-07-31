@@ -1,7 +1,7 @@
 package com.devcollab.knowledgecore.common.cache;
 
-import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
-import com.devcollab.knowledgecore.document.domain.DocumentType;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlockType;
+import com.devcollab.knowledgecore.document.core.domain.DocumentType;
 
 import java.util.List;
 

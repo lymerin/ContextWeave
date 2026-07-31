@@ -1,7 +1,7 @@
 package com.devcollab.knowledgecore.common.cache;
 
 import com.devcollab.knowledgecore.common.outbox.application.OutboxKafkaMessage;
-import com.devcollab.knowledgecore.document.application.DocumentTreeCacheService.DocumentList;
+import com.devcollab.knowledgecore.document.tree.application.DocumentTreeCacheService.DocumentList;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceMemberCacheService.CachedMembership;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

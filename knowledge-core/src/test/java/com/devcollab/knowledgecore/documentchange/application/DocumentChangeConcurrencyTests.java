@@ -1,7 +1,7 @@
 package com.devcollab.knowledgecore.documentchange.application;
 
-import com.devcollab.knowledgecore.document.application.DocumentBlockContentFormat;
-import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
+import com.devcollab.knowledgecore.document.block.application.DocumentBlockContentFormat;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlockType;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Status;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeRepository;
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeApplicationService.CreateCommand;

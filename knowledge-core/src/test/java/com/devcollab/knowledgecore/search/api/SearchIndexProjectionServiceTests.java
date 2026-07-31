@@ -1,13 +1,13 @@
 package com.devcollab.knowledgecore.search.projection;
 
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEvent;
-import com.devcollab.knowledgecore.document.domain.Document;
-import com.devcollab.knowledgecore.document.domain.DocumentBlock;
-import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
-import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
-import com.devcollab.knowledgecore.document.domain.DocumentRepository;
-import com.devcollab.knowledgecore.document.domain.DocumentReviewStatus;
-import com.devcollab.knowledgecore.document.domain.DocumentType;
+import com.devcollab.knowledgecore.document.core.domain.Document;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlock;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlockRepository;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlockType;
+import com.devcollab.knowledgecore.document.core.domain.DocumentRepository;
+import com.devcollab.knowledgecore.document.core.domain.DocumentReviewStatus;
+import com.devcollab.knowledgecore.document.core.domain.DocumentType;
 import com.devcollab.knowledgecore.search.domain.SearchHit;
 import com.devcollab.knowledgecore.search.domain.SearchScope;
 import com.fasterxml.jackson.databind.ObjectMapper;
