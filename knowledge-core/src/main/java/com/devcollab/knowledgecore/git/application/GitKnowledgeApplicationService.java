@@ -1,13 +1,13 @@
 package com.devcollab.knowledgecore.git.application;
 
-import com.devcollab.knowledgecore.document.application.exception.DocumentBlockNotFoundException;
+import com.devcollab.knowledgecore.document.core.application.exception.DocumentBlockNotFoundException;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventTypes;
-import com.devcollab.knowledgecore.document.application.exception.DocumentNotFoundException;
-import com.devcollab.knowledgecore.document.domain.Document;
-import com.devcollab.knowledgecore.document.domain.DocumentBlock;
-import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
-import com.devcollab.knowledgecore.document.domain.DocumentRepository;
+import com.devcollab.knowledgecore.document.core.application.exception.DocumentNotFoundException;
+import com.devcollab.knowledgecore.document.core.domain.Document;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlock;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlockRepository;
+import com.devcollab.knowledgecore.document.core.domain.DocumentRepository;
 import com.devcollab.knowledgecore.git.application.exception.GitChangeNotFoundException;
 import com.devcollab.knowledgecore.git.application.exception.GitRepositoryAlreadyExistsException;
 import com.devcollab.knowledgecore.git.application.exception.GitRepositoryNotFoundException;

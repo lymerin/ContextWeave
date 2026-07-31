@@ -1,6 +1,6 @@
 package com.devcollab.knowledgecore.git.application;
 
-import com.devcollab.knowledgecore.document.domain.DocumentType;
+import com.devcollab.knowledgecore.document.core.domain.DocumentType;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

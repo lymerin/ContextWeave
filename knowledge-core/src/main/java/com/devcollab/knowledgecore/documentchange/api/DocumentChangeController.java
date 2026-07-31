@@ -6,9 +6,9 @@ import com.devcollab.knowledgecore.documentchange.application.DocumentChangeView
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Status;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.OperationType;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.BindingAction;
-import com.devcollab.knowledgecore.document.domain.DocumentType;
-import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
-import com.devcollab.knowledgecore.document.application.DocumentBlockContentFormat;
+import com.devcollab.knowledgecore.document.core.domain.DocumentType;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlockType;
+import com.devcollab.knowledgecore.document.block.application.DocumentBlockContentFormat;
 import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
 import com.devcollab.knowledgecore.security.CurrentUser;
 import com.fasterxml.jackson.databind.JsonNode;

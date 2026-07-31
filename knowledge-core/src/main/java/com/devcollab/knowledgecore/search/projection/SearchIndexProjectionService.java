@@ -1,10 +1,10 @@
 package com.devcollab.knowledgecore.search.projection;
 
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEvent;
-import com.devcollab.knowledgecore.document.domain.Document;
-import com.devcollab.knowledgecore.document.domain.DocumentBlock;
-import com.devcollab.knowledgecore.document.domain.DocumentBlockRepository;
-import com.devcollab.knowledgecore.document.domain.DocumentRepository;
+import com.devcollab.knowledgecore.document.core.domain.Document;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlock;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlockRepository;
+import com.devcollab.knowledgecore.document.core.domain.DocumentRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

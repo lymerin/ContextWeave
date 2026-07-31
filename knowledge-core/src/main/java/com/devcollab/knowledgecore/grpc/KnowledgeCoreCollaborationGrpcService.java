@@ -1,10 +1,10 @@
 package com.devcollab.knowledgecore.grpc;
 
-import com.devcollab.knowledgecore.document.application.ApplyDocumentCollaborationOperationCommand;
-import com.devcollab.knowledgecore.document.application.DocumentApplicationService;
-import com.devcollab.knowledgecore.document.application.DocumentCollaborationOperationResult;
-import com.devcollab.knowledgecore.document.application.DocumentCollaborationOperationService;
-import com.devcollab.knowledgecore.document.domain.DocumentBlock;
+import com.devcollab.knowledgecore.document.collaboration.application.ApplyDocumentCollaborationOperationCommand;
+import com.devcollab.knowledgecore.document.core.application.DocumentApplicationService;
+import com.devcollab.knowledgecore.document.collaboration.application.DocumentCollaborationOperationResult;
+import com.devcollab.knowledgecore.document.collaboration.application.DocumentCollaborationOperationService;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlock;
 import com.devcollab.protocol.core.v1.ApplyDocumentOperationRequest;
 import com.devcollab.protocol.core.v1.DocumentOperationResponse;
 import com.devcollab.protocol.core.v1.DocumentOperationStatus;
@@ -198,7 +198,7 @@ public class KnowledgeCoreCollaborationGrpcService extends
         return type.name();
     }
 
-    private com.devcollab.knowledgecore.document.domain.DocumentBlockType blockType(
+    private com.devcollab.knowledgecore.document.core.domain.DocumentBlockType blockType(
             com.devcollab.protocol.core.v1.DocumentBlockType type
     ) {
         if (type == com.devcollab.protocol.core.v1.DocumentBlockType
@@ -207,7 +207,7 @@ public class KnowledgeCoreCollaborationGrpcService extends
                 .UNRECOGNIZED) {
             throw new IllegalArgumentException("block_type is required");
         }
-        return com.devcollab.knowledgecore.document.domain.DocumentBlockType
+        return com.devcollab.knowledgecore.document.core.domain.DocumentBlockType
                 .valueOf(type.name());
     }
 

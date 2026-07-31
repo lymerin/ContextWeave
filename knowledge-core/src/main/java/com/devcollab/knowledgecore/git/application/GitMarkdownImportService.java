@@ -1,12 +1,12 @@
 package com.devcollab.knowledgecore.git.application;
 
-import com.devcollab.knowledgecore.document.application.CreateDocumentBlockCommand;
-import com.devcollab.knowledgecore.document.application.CreateDocumentCommand;
-import com.devcollab.knowledgecore.document.application.DocumentApplicationService;
-import com.devcollab.knowledgecore.document.application.DocumentBlockApplicationService;
-import com.devcollab.knowledgecore.document.domain.Document;
-import com.devcollab.knowledgecore.document.domain.DocumentBlockType;
-import com.devcollab.knowledgecore.document.domain.DocumentType;
+import com.devcollab.knowledgecore.document.core.application.CreateDocumentBlockCommand;
+import com.devcollab.knowledgecore.document.core.application.CreateDocumentCommand;
+import com.devcollab.knowledgecore.document.core.application.DocumentApplicationService;
+import com.devcollab.knowledgecore.document.core.application.DocumentBlockApplicationService;
+import com.devcollab.knowledgecore.document.core.domain.Document;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlockType;
+import com.devcollab.knowledgecore.document.core.domain.DocumentType;
 import com.devcollab.knowledgecore.git.domain.GitRepositoryFile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;

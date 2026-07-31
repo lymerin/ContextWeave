@@ -1,7 +1,11 @@
 package com.devcollab.knowledgecore.git.application;
 
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
-import com.devcollab.knowledgecore.document.domain.*;
+import com.devcollab.knowledgecore.document.core.domain.Document;
+import com.devcollab.knowledgecore.document.core.domain.DocumentBlockRepository;
+import com.devcollab.knowledgecore.document.core.domain.DocumentRepository;
+import com.devcollab.knowledgecore.document.core.domain.DocumentReviewStatus;
+import com.devcollab.knowledgecore.document.core.domain.DocumentType;
 import com.devcollab.knowledgecore.git.api.CodeBindingQueryResponse;
 import com.devcollab.knowledgecore.git.domain.*;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationService;

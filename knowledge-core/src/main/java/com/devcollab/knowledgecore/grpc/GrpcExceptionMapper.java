@@ -1,12 +1,12 @@
 package com.devcollab.knowledgecore.grpc;
 
 import com.devcollab.knowledgecore.common.redis.RateLimitExceededException;
-import com.devcollab.knowledgecore.document.application.exception.CollaborationOperationIdReusedException;
-import com.devcollab.knowledgecore.document.application.exception.DocumentBlockNotFoundException;
-import com.devcollab.knowledgecore.document.application.exception.DocumentBlockVersionConflictException;
-import com.devcollab.knowledgecore.document.application.exception.DocumentNotFoundException;
-import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentBlockPositionException;
-import com.devcollab.knowledgecore.document.application.exception.InvalidDocumentReviewStatusException;
+import com.devcollab.knowledgecore.document.collaboration.application.exception.CollaborationOperationIdReusedException;
+import com.devcollab.knowledgecore.document.core.application.exception.DocumentBlockNotFoundException;
+import com.devcollab.knowledgecore.document.core.application.exception.DocumentBlockVersionConflictException;
+import com.devcollab.knowledgecore.document.core.application.exception.DocumentNotFoundException;
+import com.devcollab.knowledgecore.document.core.application.exception.InvalidDocumentBlockPositionException;
+import com.devcollab.knowledgecore.document.review.application.exception.InvalidDocumentReviewStatusException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
 import io.grpc.Metadata;
 import io.grpc.Status;
