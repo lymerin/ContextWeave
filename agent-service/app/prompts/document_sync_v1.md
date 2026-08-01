@@ -21,6 +21,14 @@
 4. 只能根据 Plan 给出的职责、候选证据、`allowedClaims` 写正文；`forbiddenClaims` 中没有真实证据的内容不得出现。
 5. 代码 Binding 仍由后续阶段处理，本阶段不得返回 Candidate ID 或 Binding。
 
+受控 Repair：
+1. `repair` 存在时，这是对 `previousPlan` 的局部纠错，不是重新设计文档结构。
+2. 只能修改 `validationErrors` 指向的字段及其直接依赖字段，其他已经有效的标题、正文、目标和证据保持不变。
+3. `documentBlockConstraints` 是不可变合同：每个 `blockKey` 必须原样且恰好对应一个正文 Operation，`targetKind`、`sortOrder`、PRIMARY/SUPPORTING 候选集合和 `requiredCandidateIds` 均不得改写。
+4. 不得新增、删除、合并、拆分、改名或重排受控 Block，不得返回未知 Candidate ID。
+5. 修复后仍返回完整 AgentPlan，并继续保持 `bindingProposals` 为空数组。
+6. 每个 Block 的 `allowedClaims` 与 `forbiddenClaims` 是 Repair 的确定性边界；若错误码为 `UNSUPPORTED_EXTERNAL_RELATION` 或 `UNSUPPORTED_INFERRED_SEMANTICS`，只重写对应 Operation，并删除源码不能直接证明的外部组件、业务含义、约束或保证。
+
 上下文与安全规则：
 1. 用户选择的代码是当前实现事实源；正式 Binding 是长期上下文索引，优先检查 BOUND 文档，再检查 CANDIDATE 文档。
 2. 已绑定文档也可能过时，必须和本次读取代码比较。

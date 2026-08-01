@@ -1,3 +1,5 @@
+import json
+import logging
 from collections.abc import Awaitable, Callable
 from contextlib import nullcontext
 from functools import partial
@@ -28,6 +30,7 @@ from app.schemas.plans import AgentPlan, Decision
 from app.tracing.trace_logger import traced
 
 StatusCallback = Callable[[str, str, dict[str, Any]], Awaitable[None]]
+LOGGER = logging.getLogger("devcollab.agent.document_plan")
 
 
 class ReviewSubmissionError(RuntimeError):
@@ -146,6 +149,7 @@ class DocumentSyncWorkflow:
             model_context["documentBlockPlans"] = [
                 item.model_dump(mode="json", exclude_none=True) for item in block_plans
             ]
+        self._log_block_contract(state, block_plans)
         input_characters = len(str(model_context))
         if input_characters > self._settings.agent_model_max_input_characters:
             raise ValueError("Model context exceeds configured input limit")
@@ -160,6 +164,7 @@ class DocumentSyncWorkflow:
                     input_characters,
                 )
                 profile_stage.attribute("documentOperationCount", len(plan.operations))
+            self._log_plan_shape(state, "initial_parsed", plan)
             return {
                 "model_context": model_context,
                 "plan": plan,
@@ -169,16 +174,23 @@ class DocumentSyncWorkflow:
         except ModelProviderError as exc:
             if exc.code != "MODEL_INVALID_RESPONSE":
                 raise
+            errors = exc.validation_errors or [
+                {
+                    "path": "$",
+                    "code": "MODEL_INVALID_RESPONSE",
+                    "message": "Return a complete AgentPlan matching the schema",
+                }
+            ]
+            self._log_validation_failure(
+                state,
+                "initial_schema",
+                errors,
+                exc.raw_plan,
+            )
             return {
                 "model_context": model_context,
                 "previous_plan": exc.raw_plan or {},
-                "validation_errors": [
-                    {
-                        "path": "$",
-                        "code": "MODEL_INVALID_RESPONSE",
-                        "message": "Return a complete AgentPlan matching the schema",
-                    }
-                ],
+                "validation_errors": errors,
                 "validation_attempt": 0,
                 "trace_events": state["trace_events"],
             }
@@ -208,13 +220,16 @@ class DocumentSyncWorkflow:
             validate_document_operations(plan, block_plans)
             valid = self._validator.validate(plan, state["model_context"])
         except (PlanValidationError, BindingPlanValidationError) as exc:
+            errors = (
+                exc.safe_details() if isinstance(exc, PlanValidationError) else exc.issues
+            )
+            self._log_validation_failure(state, "initial_semantic", errors, plan)
             return {
                 "previous_plan": plan.model_dump(mode="json", exclude_none=True),
-                "validation_errors": (
-                    exc.safe_details() if isinstance(exc, PlanValidationError) else exc.issues
-                ),
+                "validation_errors": errors,
                 "plan_outcome": "REPAIR",
             }
+        self._log_validation_success(state, "initial", valid)
         return {
             "plan": valid,
             "decision": valid.decision.value,
@@ -240,6 +255,7 @@ class DocumentSyncWorkflow:
                 ),
                 len(str(state.get("validation_errors", []))),
             )
+            self._log_plan_shape(state, "repair_parsed", plan)
             return {
                 "plan": plan,
                 "validation_attempt": 1,
@@ -248,16 +264,23 @@ class DocumentSyncWorkflow:
         except ModelProviderError as exc:
             if exc.code != "MODEL_INVALID_RESPONSE":
                 raise
+            errors = exc.validation_errors or [
+                {
+                    "path": "$",
+                    "code": "MODEL_INVALID_RESPONSE",
+                    "message": "Repaired output still does not match AgentPlan",
+                }
+            ]
+            self._log_validation_failure(
+                state,
+                "repair_schema",
+                errors,
+                exc.raw_plan,
+            )
             return {
                 "plan": None,
                 "validation_attempt": 1,
-                "validation_errors": [
-                    {
-                        "path": "$",
-                        "code": "MODEL_INVALID_RESPONSE",
-                        "message": "Repaired output still does not match AgentPlan",
-                    }
-                ],
+                "validation_errors": errors,
                 "trace_events": state["trace_events"],
             }
 
@@ -285,12 +308,15 @@ class DocumentSyncWorkflow:
             validate_document_operations(plan, block_plans)
             valid = self._validator.validate(plan, state["model_context"])
         except (PlanValidationError, BindingPlanValidationError) as exc:
+            errors = (
+                exc.safe_details() if isinstance(exc, PlanValidationError) else exc.issues
+            )
+            self._log_validation_failure(state, "repair_semantic", errors, plan)
             return {
-                "validation_errors": (
-                    exc.safe_details() if isinstance(exc, PlanValidationError) else exc.issues
-                ),
+                "validation_errors": errors,
                 "plan_outcome": "INVALID",
             }
+        self._log_validation_success(state, "repair", valid)
         return {
             "plan": valid,
             "decision": valid.decision.value,
@@ -441,6 +467,152 @@ class DocumentSyncWorkflow:
         if self._memory_profiler is None:
             return nullcontext(ProfileStage.noop())
         return self._memory_profiler.stage(name, **self._profile_context)
+
+    @staticmethod
+    def _log_block_contract(
+        state: AgentState,
+        block_plans: tuple[DocumentBlockPlan, ...],
+    ) -> None:
+        LOGGER.info(
+            "runId=%s phase=document_block_contract plans=%s",
+            state.get("run_id"),
+            json.dumps(
+                DocumentSyncWorkflow._safe_block_contract(block_plans),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+        )
+
+    @staticmethod
+    def _safe_block_contract(
+        block_plans: tuple[DocumentBlockPlan, ...],
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "blockKey": item.blockKey,
+                "targetKind": item.targetKind.value,
+                "sortOrder": item.sortOrder,
+                "primaryCandidateIds": item.primaryCandidateIds,
+                "supportingCandidateIds": item.supportingCandidateIds,
+                "requiredCandidateIds": item.requiredCandidateIds,
+            }
+            for item in block_plans
+        ]
+
+    @classmethod
+    def _log_plan_shape(
+        cls,
+        state: AgentState,
+        phase: str,
+        plan: AgentPlan | dict[str, Any] | None,
+    ) -> None:
+        LOGGER.info(
+            "runId=%s phase=%s plan=%s",
+            state.get("run_id"),
+            phase,
+            json.dumps(
+                cls._safe_plan_shape(plan),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+        )
+
+    @classmethod
+    def _log_validation_failure(
+        cls,
+        state: AgentState,
+        phase: str,
+        errors: list[dict[str, str]],
+        plan: AgentPlan | dict[str, Any] | None,
+    ) -> None:
+        LOGGER.warning(
+            "runId=%s phase=%s validation=failed errors=%s contracts=%s plan=%s",
+            state.get("run_id"),
+            phase,
+            json.dumps(errors, ensure_ascii=False, separators=(",", ":")),
+            json.dumps(
+                cls._safe_block_contract(
+                    tuple(
+                        DocumentBlockPlan.model_validate(item)
+                        for item in state.get("model_context", {}).get(
+                            "documentBlockPlans", []
+                        )
+                    )
+                ),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            json.dumps(
+                cls._safe_plan_shape(plan),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+        )
+
+    @classmethod
+    def _log_validation_success(
+        cls,
+        state: AgentState,
+        phase: str,
+        plan: AgentPlan,
+    ) -> None:
+        LOGGER.info(
+            "runId=%s phase=%s validation=success plan=%s",
+            state.get("run_id"),
+            phase,
+            json.dumps(
+                cls._safe_plan_shape(plan),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+        )
+
+    @staticmethod
+    def _safe_plan_shape(
+        plan: AgentPlan | dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        raw = (
+            plan.model_dump(mode="json", exclude_none=True)
+            if isinstance(plan, AgentPlan)
+            else plan or {}
+        )
+        operations = raw.get("operations", [])
+        evidence = raw.get("evidence", [])
+        bindings = raw.get("bindingProposals", [])
+        return {
+            "decision": raw.get("decision"),
+            "operations": [
+                {
+                    "clientOperationId": item.get("clientOperationId"),
+                    "sequenceNumber": item.get("sequenceNumber"),
+                    "operationType": item.get("operationType"),
+                    "documentId": item.get("documentId"),
+                    "createdDocumentClientOperationId": item.get(
+                        "createdDocumentClientOperationId"
+                    ),
+                    "blockId": item.get("blockId"),
+                    "heading": str(item.get("proposedPlainText") or "")
+                    .lstrip()
+                    .splitlines()[:1],
+                    "contentCharacters": len(
+                        str(item.get("proposedPlainText") or "")
+                    ),
+                }
+                for item in operations
+                if isinstance(item, dict)
+            ],
+            "bindingProposalCount": len(bindings) if isinstance(bindings, list) else None,
+            "evidence": [
+                {
+                    "clientOperationId": item.get("clientOperationId"),
+                    "filePath": item.get("filePath"),
+                    "startLine": item.get("startLine"),
+                    "endLine": item.get("endLine"),
+                }
+                for item in evidence
+                if isinstance(item, dict)
+            ],
+        }
 
     async def fail_run(self, state: AgentState) -> dict[str, Any]:
         raise PlanValidationError(

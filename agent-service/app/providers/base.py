@@ -12,10 +12,12 @@ class ModelProviderError(RuntimeError):
         message: str,
         *,
         raw_plan: dict[str, Any] | None = None,
+        validation_errors: list[dict[str, str]] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.raw_plan = raw_plan
+        self.validation_errors = validation_errors or []
 
 
 class ModelProvider(Protocol):

@@ -64,12 +64,42 @@ class DeepSeekProvider:
             "context": context_bundle,
         }
         if previous_plan is not None:
+            block_constraints = [
+                {
+                    "blockKey": item.get("blockKey"),
+                    "targetKind": item.get("targetKind"),
+                    "sortOrder": item.get("sortOrder"),
+                    "allowedPrimaryCandidateIds": item.get("primaryCandidateIds", []),
+                    "allowedSupportingCandidateIds": item.get(
+                        "supportingCandidateIds", []
+                    ),
+                    "requiredCandidateIds": item.get("requiredCandidateIds", []),
+                    "allowedClaims": item.get("allowedClaims", []),
+                    "forbiddenClaims": item.get("forbiddenClaims", []),
+                }
+                for item in context_bundle.get("documentBlockPlans", [])
+            ]
             user_payload["repair"] = {
                 "previousPlan": previous_plan,
                 "validationErrors": validation_errors or [],
+                "documentBlockConstraints": block_constraints,
+                "invalidFieldPaths": sorted(
+                    {
+                        item.get("path", "$")
+                        for item in validation_errors or []
+                    }
+                ),
                 "instruction": (
-                    "直接返回修正后的完整 AgentPlan JSON。正式标题和正文必须是可发布的"
-                    "简体中文最终内容；不要解释错误原因，不要输出建议、计划或占位文字。"
+                    "这是受约束修复，不是重新规划。保留未被 validationErrors 指出的有效字段，"
+                    "只修正错误字段及其直接依赖字段。documentBlockConstraints 中每个 blockKey "
+                    "必须原样且恰好出现一次，不得新增、删除、合并、改名或重排 Block；"
+                    "targetKind、候选集合和 requiredCandidateIds 均不可修改。"
+                    "正文只能陈述所选源码能够直接证明的职责；遇到 UNSUPPORTED_EXTERNAL_RELATION 或 "
+                    "UNSUPPORTED_INFERRED_SEMANTICS 时，只重写对应 operation，删除无法由源码"
+                    "直接证明的外部组件、业务含义、约束和保证。严格遵守每个 Block 的 "
+                    "allowedClaims 与 forbiddenClaims。直接返回修正后的完整 AgentPlan JSON；"
+                    "bindingProposals 必须为空。正式标题和正文必须"
+                    "是可发布的简体中文最终内容，不要解释错误原因，不要输出建议、计划或占位文字。"
                 ),
             }
         return cast(
@@ -223,11 +253,38 @@ class DeepSeekProvider:
                 raise TypeError("AgentPlan must be an object")
             raw_plan = decoded
             return schema.model_validate(raw_plan)
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValidationError) as exc:
+        except ValidationError as exc:
+            validation_errors = [
+                {
+                    "path": ".".join(str(part) for part in item["loc"]) or "$",
+                    "code": f"MODEL_SCHEMA_{str(item['type']).upper()}",
+                    "message": str(item["msg"])[:300],
+                }
+                for item in exc.errors(include_url=False)
+            ]
             raise ModelProviderError(
                 "MODEL_INVALID_RESPONSE",
                 f"Model returned an invalid {response_name}",
                 raw_plan=raw_plan,
+                validation_errors=validation_errors,
+            ) from exc
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            error_code = (
+                "MODEL_JSON_DECODE_ERROR"
+                if isinstance(exc, json.JSONDecodeError)
+                else "MODEL_RESPONSE_CONTENT_INVALID"
+            )
+            raise ModelProviderError(
+                "MODEL_INVALID_RESPONSE",
+                f"Model returned an invalid {response_name}",
+                raw_plan=raw_plan,
+                validation_errors=[
+                    {
+                        "path": "$",
+                        "code": error_code,
+                        "message": f"Model response could not be parsed as {response_name}",
+                    }
+                ],
             ) from exc
 
     def _require_configuration(self) -> None:

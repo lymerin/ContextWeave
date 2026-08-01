@@ -45,10 +45,18 @@ class DocumentBlockPlanBuilder:
                 lambda item, names=request_conversion_names: item.qualifiedName in names,
             )
             request_conversion_ids = {item.candidateId for item in request_conversions}
+            request_conversion_calls = {
+                called
+                for item in request_conversions
+                for called in item.directCalls
+            }
             nested_conversions = _matching(
                 symbols,
-                lambda item, candidate_ids=request_conversion_ids: (
-                    item.displayName in {"to_domain", "from_blocks"}
+                lambda item,
+                candidate_ids=request_conversion_ids,
+                calls=request_conversion_calls: (
+                    item.displayName in calls
+                    and item.displayName in {"to_domain", "from_blocks"}
                     and item.candidateId not in candidate_ids
                 ),
             )
@@ -63,7 +71,12 @@ class DocumentBlockPlanBuilder:
             )
             response_conversions = _matching(
                 symbols,
-                lambda item: item.displayName in {"from_domain", "from_response"},
+                lambda item, calls=route_calls, response_model=response: (
+                    response_model is not None
+                    and item.filePath == response_model.filePath
+                    and item.displayName in calls
+                    and item.displayName in {"from_domain", "from_response"}
+                ),
             )
             related = [item for item in [request, response] if item is not None]
             related += [*request_conversions, *nested_conversions, *business, *response_conversions]
@@ -186,6 +199,25 @@ def validate_document_operations(
                 "Document operations must match the supplied blockKey set exactly",
             )
         )
+    expected_order = [
+        item.blockKey
+        for item in sorted(block_plans, key=lambda item: (item.sortOrder, item.blockKey))
+    ]
+    actual_order = [
+        item.clientOperationId
+        for item in sorted(
+            content_operations,
+            key=lambda item: (item.sequenceNumber, item.clientOperationId),
+        )
+    ]
+    if set(actual_order) == set(expected_order) and actual_order != expected_order:
+        issues.append(
+            _issue(
+                "operations",
+                "DOCUMENT_BLOCK_ORDER_MISMATCH",
+                "Document operations must preserve the supplied Block order",
+            )
+        )
     for operation in content_operations:
         block_plan = expected.get(operation.clientOperationId)
         if block_plan is None:
@@ -204,6 +236,16 @@ def validate_document_operations(
                     f"operations.{operation.clientOperationId}.proposedPlainText",
                     "DOCUMENT_BLOCK_HEADING_REQUIRED",
                     "Each planned block must start with a level-two Markdown heading",
+                )
+            )
+        elif operation.proposedPlainText.lstrip().splitlines()[0].strip() != (
+            f"## {block_plan.title}"
+        ):
+            issues.append(
+                _issue(
+                    f"operations.{operation.clientOperationId}.proposedPlainText",
+                    "DOCUMENT_BLOCK_HEADING_MISMATCH",
+                    "Each planned block heading must preserve the supplied title",
                 )
             )
     if issues:

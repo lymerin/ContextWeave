@@ -116,13 +116,74 @@ async def test_deepseek_repair_payload_contains_safe_validation_errors() -> None
         return response(no_change())
 
     await provider(handler).plan_document_sync(
-        {"codeFiles": []},
+        {
+            "codeFiles": [],
+            "documentBlockPlans": [
+                {
+                    "blockKey": "block_endpoint",
+                    "targetKind": "HTTP_ENDPOINT",
+                    "sortOrder": 0,
+                    "primaryCandidateIds": ["route_review"],
+                    "supportingCandidateIds": ["rule_review_document"],
+                    "requiredCandidateIds": [
+                        "route_review",
+                        "rule_review_document",
+                    ],
+                    "allowedClaims": ["说明评审入口的真实调用关系"],
+                    "forbiddenClaims": ["认证授权", "数据库事务"],
+                }
+            ],
+        },
         previous_plan=no_change(),
-        validation_errors=[{"path": "operations", "code": "BAD", "message": "fix"}],
+        validation_errors=[
+            {
+                "path": "operations.block_endpoint.proposedPlainText",
+                "code": "DOCUMENT_BLOCK_HEADING_MISMATCH",
+                "message": "fix",
+            }
+        ],
     )
     user = json.loads(seen["messages"][1]["content"])
     assert user["agentPlanSchema"]["title"] == "AgentPlan"
-    assert user["repair"]["validationErrors"][0]["code"] == "BAD"
+    repair = user["repair"]
+    assert repair["validationErrors"][0] == {
+        "path": "operations.block_endpoint.proposedPlainText",
+        "code": "DOCUMENT_BLOCK_HEADING_MISMATCH",
+        "message": "fix",
+    }
+    assert repair["invalidFieldPaths"] == [
+        "operations.block_endpoint.proposedPlainText"
+    ]
+    assert repair["documentBlockConstraints"] == [
+        {
+            "blockKey": "block_endpoint",
+            "targetKind": "HTTP_ENDPOINT",
+            "sortOrder": 0,
+            "allowedPrimaryCandidateIds": ["route_review"],
+            "allowedSupportingCandidateIds": ["rule_review_document"],
+            "requiredCandidateIds": ["route_review", "rule_review_document"],
+            "allowedClaims": ["说明评审入口的真实调用关系"],
+            "forbiddenClaims": ["认证授权", "数据库事务"],
+        }
+    ]
+    assert "不得新增、删除、合并、改名或重排 Block" in repair["instruction"]
+    assert "UNSUPPORTED_EXTERNAL_RELATION" in repair["instruction"]
+    assert "allowedClaims 与 forbiddenClaims" in repair["instruction"]
+
+
+@pytest.mark.asyncio
+async def test_deepseek_schema_error_preserves_exact_safe_field_path() -> None:
+    invalid = no_change()
+    invalid["decision"] = "UNKNOWN"
+
+    with pytest.raises(ModelProviderError) as caught:
+        await provider(lambda request: response(invalid)).plan_document_sync({})
+
+    assert caught.value.raw_plan == invalid
+    assert caught.value.validation_errors
+    assert caught.value.validation_errors[0]["path"] == "decision"
+    assert caught.value.validation_errors[0]["code"].startswith("MODEL_SCHEMA_")
+    assert "secret" not in json.dumps(caught.value.validation_errors)
 
 
 @pytest.mark.asyncio

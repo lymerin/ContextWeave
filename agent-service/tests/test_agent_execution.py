@@ -408,6 +408,8 @@ def test_validation_failure_is_visible_and_never_submits(settings: Settings) -> 
         )
         result = wait_for_terminal(client, response.json()["runId"])
     assert result["errorCode"] == "PLAN_VALIDATION_FAILED"
+    assert "@" in result["errorMessage"]
+    assert "Bearer transient" not in result["errorMessage"]
     assert not mcp.submissions
 
 
@@ -483,6 +485,9 @@ async def test_executor_does_not_start_same_run_twice(settings: Settings) -> Non
     }
     executor.start(**kwargs)
     executor.start(**kwargs)
-    await asyncio.sleep(0.1)
+    for _ in range(100):
+        if provider.calls:
+            break
+        await asyncio.sleep(0.01)
     assert len(provider.calls) == 1
     await executor.close()

@@ -175,7 +175,14 @@ class AgentRunExecutor:
         if isinstance(exc, ModelProviderError):
             return exc.code, str(exc)[:300]
         if isinstance(exc, PlanValidationError):
-            return "PLAN_VALIDATION_FAILED", "Agent plan failed validation after one repair"
+            details = exc.safe_details()
+            summary = ", ".join(
+                f"{item['code']}@{item['path']}" for item in details[:8]
+            )
+            return (
+                "PLAN_VALIDATION_FAILED",
+                f"Agent plan failed validation after one repair: {summary}"[:300],
+            )
         if isinstance(exc, ReviewSubmissionError):
             return exc.code, str(exc)[:300]
         if isinstance(exc, McpClientError):
