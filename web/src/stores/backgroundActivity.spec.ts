@@ -160,7 +160,7 @@ describe('background activity store', () => {
     await store.startPolling('user-1');
 
     expect(ElMessage.success).toHaveBeenCalledWith(
-      'Agent 处理完成，已有新的待审批变更。',
+      'Agent 处理完成，已生成待审批变更。',
     );
     expect(store.reviewRefreshVersion('workspace-1')).toBe(1);
     expect(store.runningJobCount).toBe(0);

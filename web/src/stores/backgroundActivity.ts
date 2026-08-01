@@ -306,7 +306,7 @@ export const useBackgroundActivityStore = defineStore('backgroundActivity', () =
       return;
     }
     if (job.result === 'REVIEW_SUBMITTED' || job.reviewRequestIds.length > 0) {
-      ElMessage.success('Agent 处理完成，已有新的待审批变更。');
+      ElMessage.success('Agent 处理完成，已生成待审批变更。');
       return;
     }
     if (job.result === 'NO_CHANGE') {
