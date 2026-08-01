@@ -3,7 +3,9 @@ from typing import Any
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
+from app.config import DeepSeekModelName, Settings
 from app.providers.base import ModelProviderError
 from app.providers.deepseek import DeepSeekProvider
 
@@ -205,3 +207,101 @@ async def test_deepseek_binding_pass_uses_only_binding_plan_schema() -> None:
     assert user["bindingPlanSchema"]["title"] == "BindingPlan"
     assert "agentPlanSchema" not in user
     assert "unitPlanSchema" not in user
+
+
+# ── Model name validation ─────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("deepseek-v4-flash", "deepseek-v4-flash"),
+        ("deepseekflash", "deepseek-v4-flash"),
+        ("deepseek-flash", "deepseek-v4-flash"),
+        ("deepseek_flash", "deepseek-v4-flash"),
+        ("flash", "deepseek-v4-flash"),
+        ("DEEPSEEK-V4-FLASH", "deepseek-v4-flash"),
+        ("  Flash  ", "deepseek-v4-flash"),
+        ("deepseek-v4-pro", "deepseek-v4-pro"),
+        ("deepseekpro", "deepseek-v4-pro"),
+        ("deepseek-pro", "deepseek-v4-pro"),
+        ("deepseek_pro", "deepseek-v4-pro"),
+        ("pro", "deepseek-v4-pro"),
+        ("PRO", "deepseek-v4-pro"),
+    ],
+)
+def test_model_name_normalized(raw: str, expected: str) -> None:
+    settings = Settings(
+        deepseek_model=raw,
+        _env_file=None,  # type: ignore[call-arg]
+    )
+    assert settings.deepseek_model == expected
+
+
+def test_empty_model_name_allowed() -> None:
+    settings = Settings(deepseek_model="", _env_file=None)  # type: ignore[call-arg]
+    assert settings.deepseek_model == ""
+
+
+@pytest.mark.parametrize(
+    "bad_name",
+    ["deepseek-chat", "gpt-4o", "deepseek-v3", "random-name"],
+)
+def test_invalid_model_name_rejected(bad_name: str) -> None:
+    with pytest.raises(ValidationError, match="Invalid DeepSeek model"):
+        Settings(deepseek_model=bad_name, _env_file=None)  # type: ignore[call-arg]
+
+
+def test_deepseek_model_enum_values() -> None:
+    assert DeepSeekModelName.FLASH == "deepseek-v4-flash"
+    assert DeepSeekModelName.PRO == "deepseek-v4-pro"
+
+
+# ── Thinking parameter ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_deepseek_thinking_enabled_adds_body_field() -> None:
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return response(no_change())
+
+    p = DeepSeekProvider(
+        api_key="key",
+        base_url="https://model.invalid",
+        model="deepseek-v4-flash",
+        connect_timeout_seconds=1,
+        total_timeout_seconds=2,
+        thinking=True,
+        transport=httpx.MockTransport(handler),
+    )
+    await p.plan_document_sync({"codeFiles": []})
+    assert seen["thinking"] == {"type": "enabled"}
+
+
+@pytest.mark.asyncio
+async def test_deepseek_thinking_disabled_excludes_body_field() -> None:
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return response(no_change())
+
+    p = DeepSeekProvider(
+        api_key="key",
+        base_url="https://model.invalid",
+        model="deepseek-v4-flash",
+        connect_timeout_seconds=1,
+        total_timeout_seconds=2,
+        thinking=False,
+        transport=httpx.MockTransport(handler),
+    )
+    await p.plan_document_sync({"codeFiles": []})
+    assert "thinking" not in seen
+
+
+def test_deepseek_thinking_defaults_false() -> None:
+    settings = Settings(deepseek_model="flash", _env_file=None)  # type: ignore[call-arg]
+    assert settings.deepseek_thinking is False

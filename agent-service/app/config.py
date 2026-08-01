@@ -1,8 +1,30 @@
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class DeepSeekModelName(StrEnum):
+    """Allowed DeepSeek model identifiers."""
+
+    FLASH = "deepseek-v4-flash"
+    PRO = "deepseek-v4-pro"
+
+
+_MODEL_ALIASES: dict[str, DeepSeekModelName] = {
+    "deepseek-v4-flash": DeepSeekModelName.FLASH,
+    "deepseekflash": DeepSeekModelName.FLASH,
+    "deepseek-flash": DeepSeekModelName.FLASH,
+    "deepseek_flash": DeepSeekModelName.FLASH,
+    "flash": DeepSeekModelName.FLASH,
+    "deepseek-v4-pro": DeepSeekModelName.PRO,
+    "deepseekpro": DeepSeekModelName.PRO,
+    "deepseek-pro": DeepSeekModelName.PRO,
+    "deepseek_pro": DeepSeekModelName.PRO,
+    "pro": DeepSeekModelName.PRO,
+}
 
 
 class Settings(BaseSettings):
@@ -13,6 +35,28 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = ""
     deepseek_model: str = ""
+    deepseek_thinking: bool = False
+
+    @field_validator("deepseek_model", mode="before")
+    @classmethod
+    def validate_deepseek_model(cls, value: object) -> str:
+        """Normalize and validate the DeepSeek model name.
+
+        Accepts canonical names (``deepseek-v4-flash``, ``deepseek-v4-pro``)
+        and common misspellings.  An empty string is allowed so the service
+        can start unconfigured and fail fast at request time.
+        """
+        raw = str(value).strip().lower()
+        if not raw:
+            return ""
+        canonical = _MODEL_ALIASES.get(raw)
+        if canonical is None:
+            allowed = ", ".join(sorted({m.value for m in DeepSeekModelName}))
+            raise ValueError(
+                f"Invalid DeepSeek model '{value}'. "
+                f"Allowed values: {allowed}"
+            )
+        return canonical.value
     mcp_base_url: str = "http://localhost:8091/mcp"
     redis_url: str = "redis://localhost:6379/0"
     agent_database_url: str = "postgresql://devcollab:devcollab@localhost:5432/devcollab"

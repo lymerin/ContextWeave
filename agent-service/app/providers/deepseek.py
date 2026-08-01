@@ -24,11 +24,13 @@ class DeepSeekProvider:
         connect_timeout_seconds: float,
         request_timeout_seconds: float | None = None,
         total_timeout_seconds: float | None = None,
+        thinking: bool = False,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._model = model
+        self._thinking = thinking
         effective_timeout = request_timeout_seconds or total_timeout_seconds
         if effective_timeout is None:
             raise ValueError("A model request timeout is required")
@@ -166,7 +168,7 @@ class DeepSeekProvider:
         schema: type[AgentPlan] | type[UnitPlan] | type[BindingPlan],
         response_name: str,
     ) -> AgentPlan | UnitPlan | BindingPlan:
-        body = {
+        body: dict[str, Any] = {
             "model": self._model,
             "temperature": 0,
             "response_format": {"type": "json_object"},
@@ -178,6 +180,8 @@ class DeepSeekProvider:
                 },
             ],
         }
+        if self._thinking:
+            body["thinking"] = {"type": "enabled"}
         try:
             async with httpx.AsyncClient(
                 timeout=self._timeout,

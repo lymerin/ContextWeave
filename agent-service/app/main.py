@@ -50,6 +50,7 @@ def create_app(
             model=configured.deepseek_model,
             connect_timeout_seconds=configured.agent_model_connect_timeout_seconds,
             request_timeout_seconds=configured.agent_model_request_timeout_seconds,
+            thinking=configured.deepseek_thinking,
         )
         app.state.run_executor = AgentRunExecutor(
             app.state.mcp_client,
