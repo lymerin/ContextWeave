@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.git.api;
 
 import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
+import com.devcollab.knowledgecore.git.domain.BindingRole;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -15,6 +16,8 @@ public record CreateCodeBindingRequest(
         CodeAnchorKind anchorKind,
         @Size(max = 1000) String symbolKey,
         Integer startLine,
-        Integer endLine
+        Integer endLine,
+        BindingRole bindingRole,
+        Integer bindingOrdinal
 ) {
 }

@@ -26,6 +26,7 @@ import com.devcollab.knowledgecore.git.domain.GitKnowledgeRepository;
 import com.devcollab.knowledgecore.git.domain.GitRepository;
 import com.devcollab.knowledgecore.git.domain.CodeDocumentBinding;
 import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
+import com.devcollab.knowledgecore.git.domain.BindingRole;
 import com.devcollab.knowledgecore.git.application.CreateCodeBindingCommand;
 import com.devcollab.knowledgecore.git.application.CodeBindingAnchorValidator;
 import com.devcollab.knowledgecore.git.application.GitKnowledgeApplicationService;
@@ -135,8 +136,28 @@ public class DocumentChangeApplicationService {
             String candidateId,
             String documentAnchorCandidateId,
             String reason,
-            Double confidence
+            Double confidence,
+            BindingRole bindingRole,
+            int bindingOrdinal
     ) {
+        public CreateBindingProposalCommand(
+                String clientBindingProposalId, int sequenceNumber,
+                BindingAction action, UUID repositoryId, String revision,
+                String filePath, CodeAnchorKind anchorKind, String symbolKey,
+                Integer startLine, Integer endLine, UUID documentId,
+                String createdDocumentClientOperationId, UUID blockId,
+                String createdBlockClientOperationId, UUID bindingId,
+                String candidateId, String documentAnchorCandidateId,
+                String reason, Double confidence
+        ) {
+            this(clientBindingProposalId, sequenceNumber, action, repositoryId,
+                    revision, filePath, anchorKind, symbolKey, startLine, endLine,
+                    documentId, createdDocumentClientOperationId, blockId,
+                    createdBlockClientOperationId, bindingId, candidateId,
+                    documentAnchorCandidateId, reason, confidence,
+                    BindingRole.PRIMARY, 1);
+        }
+
         public CreateBindingProposalCommand(
                 String clientBindingProposalId,
                 int sequenceNumber,
@@ -153,7 +174,7 @@ public class DocumentChangeApplicationService {
                     repositoryId, null, filePath, CodeAnchorKind.FILE,
                     null, null, null, documentId,
                     createdDocumentClientOperationId, null, null, bindingId,
-                    null, null, reason, null
+                    null, null, reason, null, BindingRole.PRIMARY, 1
             );
         }
     }
@@ -727,7 +748,9 @@ public class DocumentChangeApplicationService {
                 bp.candidateId(),
                 bp.documentAnchorCandidateId(),
                 bp.reason(),
-                bp.confidence()
+                bp.confidence(),
+                bp.bindingRole(),
+                bp.bindingOrdinal()
         );
     }
 
@@ -1047,7 +1070,9 @@ public class DocumentChangeApplicationService {
                     proposal.anchorKind(),
                     proposal.symbolKey(),
                     proposal.startLine(),
-                    proposal.endLine()
+                    proposal.endLine(),
+                    proposal.bindingRole(),
+                    proposal.bindingOrdinal()
             );
             var existing = gitKnowledgeService.findExactBinding(
                     documentId,
@@ -1417,6 +1442,14 @@ public class DocumentChangeApplicationService {
                 && (input.confidence() < 0 || input.confidence() > 1)) {
             throw operationInvalid("Binding confidence 必须在 0 到 1 之间");
         }
+        if (input.bindingRole() == null) {
+            throw operationInvalid("bindingRole 不能为空");
+        }
+        if ((input.bindingRole() == BindingRole.PRIMARY && input.bindingOrdinal() != 1)
+                || (input.bindingRole() == BindingRole.SUPPORTING
+                && input.bindingOrdinal() < 2)) {
+            throw operationInvalid("bindingRole 与 bindingOrdinal 不匹配");
+        }
         requireOptionalText(input.candidateId(), 100, "candidateId");
         requireOptionalText(
                 input.documentAnchorCandidateId(),
@@ -1446,6 +1479,8 @@ public class DocumentChangeApplicationService {
                 trim(input.documentAnchorCandidateId()),
                 input.reason().trim(),
                 input.confidence(),
+                input.bindingRole(),
+                input.bindingOrdinal(),
                 Instant.now()
         );
     }
@@ -1553,10 +1588,41 @@ public class DocumentChangeApplicationService {
                 throw operationInvalid("sequenceNumber 必须为唯一正整数");
             }
         }
+        validateBindingRoleGroups(bindingProposals);
         int total = operations.size() + bindingProposals.size();
         for (int sequence = 1; sequence <= total; sequence++) {
             if (!sequences.contains(sequence)) {
                 throw operationInvalid("sequenceNumber 必须从 1 连续递增");
+            }
+        }
+    }
+
+    private void validateBindingRoleGroups(
+            List<CreateBindingProposalCommand> proposals
+    ) {
+        Map<String, List<CreateBindingProposalCommand>> groups = proposals.stream()
+                .filter(item -> item.action() == BindingAction.UPSERT_BINDING)
+                .collect(java.util.stream.Collectors.groupingBy(item ->
+                        String.valueOf(item.documentId()) + ":"
+                                + String.valueOf(item.createdDocumentClientOperationId()) + ":"
+                                + String.valueOf(item.blockId()) + ":"
+                                + String.valueOf(item.createdBlockClientOperationId())
+                ));
+        for (List<CreateBindingProposalCommand> group : groups.values()) {
+            long primaryCount = group.stream()
+                    .filter(item -> item.bindingRole() == BindingRole.PRIMARY)
+                    .count();
+            if (primaryCount != 1) {
+                throw operationInvalid("每个文档 Block 必须且只能有一个 PRIMARY Binding");
+            }
+            List<Integer> ordinals = group.stream()
+                    .map(CreateBindingProposalCommand::bindingOrdinal)
+                    .sorted()
+                    .toList();
+            for (int index = 0; index < ordinals.size(); index++) {
+                if (ordinals.get(index) != index + 1) {
+                    throw operationInvalid("同一文档 Block 的 Binding ordinal 必须从 1 连续递增");
+                }
             }
         }
     }
@@ -1630,7 +1696,9 @@ public class DocumentChangeApplicationService {
                                 trim(proposal.candidateId()),
                                 trim(proposal.documentAnchorCandidateId()),
                                 proposal.reason(),
-                                proposal.confidence()
+                                proposal.confidence(),
+                                proposal.bindingRole(),
+                                proposal.bindingOrdinal()
                         ))
                         .toList();
         List<CreateEvidenceCommand> evidence = safeList(command.evidence()).stream()

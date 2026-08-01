@@ -487,6 +487,15 @@ public class GitKnowledgeApplicationService {
                         command.startLine(),
                         command.endLine()
                 );
+        if (command.bindingRole() == null) {
+            throw new InvalidCodeBindingException("Binding role 不能为空");
+        }
+        if ((command.bindingRole() == com.devcollab.knowledgecore.git.domain.BindingRole.PRIMARY
+                && command.bindingOrdinal() != 1)
+                || (command.bindingRole() == com.devcollab.knowledgecore.git.domain.BindingRole.SUPPORTING
+                && command.bindingOrdinal() < 2)) {
+            throw new InvalidCodeBindingException("Binding role 与 ordinal 不匹配");
+        }
         if (gitRepository.findExactBinding(
                 command.repositoryId(),
                 documentId,
@@ -510,6 +519,7 @@ public class GitKnowledgeApplicationService {
                     targetKey, pattern, anchor.revision(),
                     anchor.anchorKind(), anchor.symbolKey(),
                     anchor.startLine(), anchor.endLine(),
+                    command.bindingRole(), command.bindingOrdinal(),
                     currentUserId, Instant.now()
             ));
         } catch (DataIntegrityViolationException exception) {
@@ -853,6 +863,8 @@ public class GitKnowledgeApplicationService {
                 binding.symbolKey(),
                 binding.startLine(),
                 binding.endLine(),
+                binding.bindingRole(),
+                binding.bindingOrdinal(),
                 binding.documentId(),
                 binding.blockId(),
                 binding.targetKey(),
@@ -893,7 +905,10 @@ public class GitKnowledgeApplicationService {
 
     private Comparator<CodeBindingQueryItem> queryItemComparator(String revision) {
         return Comparator
-                .comparingInt((CodeBindingQueryItem item) -> {
+                .comparingInt((CodeBindingQueryItem item) ->
+                        item.bindingRole() == com.devcollab.knowledgecore.git.domain.BindingRole.PRIMARY ? 0 : 1)
+                .thenComparingInt(CodeBindingQueryItem::bindingOrdinal)
+                .thenComparingInt((CodeBindingQueryItem item) -> {
                     if (revision != null && revision.equals(item.revision())) {
                         return 0;
                     }

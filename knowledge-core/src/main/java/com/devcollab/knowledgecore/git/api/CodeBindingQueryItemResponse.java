@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.git.api;
 
 import com.devcollab.knowledgecore.git.application.CodeBindingQueryItem;
 import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
+import com.devcollab.knowledgecore.git.domain.BindingRole;
 import java.util.UUID;
 
 public record CodeBindingQueryItemResponse(
@@ -13,6 +14,8 @@ public record CodeBindingQueryItemResponse(
         String symbolKey,
         Integer startLine,
         Integer endLine,
+        BindingRole bindingRole,
+        int bindingOrdinal,
         UUID documentId,
         UUID blockId,
         String targetKey,
@@ -29,6 +32,8 @@ public record CodeBindingQueryItemResponse(
                 item.symbolKey(),
                 item.startLine(),
                 item.endLine(),
+                item.bindingRole(),
+                item.bindingOrdinal(),
                 item.documentId(),
                 item.blockId(),
                 item.targetKey(),

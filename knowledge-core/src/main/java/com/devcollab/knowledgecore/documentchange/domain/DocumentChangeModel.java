@@ -1,6 +1,7 @@
 package com.devcollab.knowledgecore.documentchange.domain;
 
 import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
+import com.devcollab.knowledgecore.git.domain.BindingRole;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -90,8 +91,28 @@ public final class DocumentChangeModel {
             String documentAnchorCandidateId,
             String reason,
             Double confidence,
+            BindingRole bindingRole,
+            int bindingOrdinal,
             Instant createdAt
     ) {
+        public BindingProposal(
+                UUID id, UUID changeRequestId, String clientBindingProposalId,
+                int sequenceNumber, BindingAction action, UUID repositoryId,
+                String revision, String filePath, CodeAnchorKind anchorKind,
+                String symbolKey, Integer startLine, Integer endLine,
+                UUID documentId, UUID createdDocumentOperationId, UUID blockId,
+                UUID createdBlockOperationId, UUID bindingId, String candidateId,
+                String documentAnchorCandidateId, String reason, Double confidence,
+                Instant createdAt
+        ) {
+            this(id, changeRequestId, clientBindingProposalId, sequenceNumber,
+                    action, repositoryId, revision, filePath, anchorKind, symbolKey,
+                    startLine, endLine, documentId, createdDocumentOperationId,
+                    blockId, createdBlockOperationId, bindingId, candidateId,
+                    documentAnchorCandidateId, reason, confidence,
+                    BindingRole.PRIMARY, 1, createdAt);
+        }
+
         public BindingProposal(
                 UUID id,
                 UUID changeRequestId,
@@ -110,7 +131,8 @@ public final class DocumentChangeModel {
                     id, changeRequestId, clientBindingProposalId, sequenceNumber,
                     action, repositoryId, null, filePath, CodeAnchorKind.FILE,
                     null, null, null, documentId, createdDocumentOperationId,
-                    null, null, bindingId, null, null, reason, null, createdAt
+                    null, null, bindingId, null, null, reason, null,
+                    BindingRole.PRIMARY, 1, createdAt
             );
         }
     }

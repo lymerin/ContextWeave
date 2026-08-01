@@ -5,6 +5,7 @@ import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Bin
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.SourceType;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel.Status;
 import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
+import com.devcollab.knowledgecore.git.domain.BindingRole;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.time.Instant;
@@ -119,7 +120,9 @@ public final class DocumentChangeViews {
             String candidateId,
             String documentAnchorCandidateId,
             String reason,
-            Double confidence
+            Double confidence,
+            BindingRole bindingRole,
+            int bindingOrdinal
     ) {
     }
 

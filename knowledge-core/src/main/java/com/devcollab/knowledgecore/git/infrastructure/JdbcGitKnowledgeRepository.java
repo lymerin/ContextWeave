@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.git.infrastructure;
 
 import com.devcollab.knowledgecore.git.domain.CodeDocumentBinding;
 import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
+import com.devcollab.knowledgecore.git.domain.BindingRole;
 import com.devcollab.knowledgecore.git.domain.CodeFileDependency;
 import com.devcollab.knowledgecore.git.domain.CodeSymbol;
 import com.devcollab.knowledgecore.git.domain.CodeSymbolDependency;
@@ -139,6 +140,8 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                     rs.getString("symbol_key"),
                     (Integer) rs.getObject("start_line"),
                     (Integer) rs.getObject("end_line"),
+                    BindingRole.valueOf(rs.getString("binding_role")),
+                    rs.getInt("binding_ordinal"),
                     rs.getObject("created_by", UUID.class),
                     rs.getTimestamp("created_at").toInstant()
             );
@@ -380,8 +383,8 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                              block_id, target_key, path_pattern, revision,
                              anchor_kind, symbol_key, start_line, end_line,
                              revision_key, symbol_key_identity, start_line_key,
-                             end_line_key, created_by, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             end_line_key, binding_role, binding_ordinal, created_by, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                 binding.id(), binding.workspaceId(), binding.repositoryId(),
                 binding.documentId(), binding.blockId(), binding.targetKey(),
@@ -391,6 +394,7 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                 binding.symbolKey() == null ? "" : binding.symbolKey(),
                 binding.startLine() == null ? 0 : binding.startLine(),
                 binding.endLine() == null ? 0 : binding.endLine(),
+                binding.bindingRole().name(), binding.bindingOrdinal(),
                 binding.createdBy(), Timestamp.from(binding.createdAt()));
         return binding;
     }

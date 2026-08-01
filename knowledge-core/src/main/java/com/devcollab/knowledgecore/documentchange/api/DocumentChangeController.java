@@ -10,6 +10,7 @@ import com.devcollab.knowledgecore.document.core.domain.DocumentType;
 import com.devcollab.knowledgecore.document.core.domain.DocumentBlockType;
 import com.devcollab.knowledgecore.document.block.application.DocumentBlockContentFormat;
 import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
+import com.devcollab.knowledgecore.git.domain.BindingRole;
 import com.devcollab.knowledgecore.security.CurrentUser;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.Valid;
@@ -226,7 +227,9 @@ public class DocumentChangeController {
             @Size(max = 100) String candidateId,
             @Size(max = 100) String documentAnchorCandidateId,
             @NotBlank @Size(max = 1000) String reason,
-            Double confidence
+            Double confidence,
+            BindingRole bindingRole,
+            Integer bindingOrdinal
     ) {
         CreateBindingProposalCommand toCommand() {
             return new CreateBindingProposalCommand(
@@ -248,7 +251,9 @@ public class DocumentChangeController {
                     candidateId,
                     documentAnchorCandidateId,
                     reason,
-                    confidence
+                    confidence,
+                    bindingRole == null ? BindingRole.PRIMARY : bindingRole,
+                    bindingOrdinal == null ? 1 : bindingOrdinal
             );
         }
     }

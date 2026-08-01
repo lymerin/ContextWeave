@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.documentchange.infrastructure;
 
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeModel;
 import com.devcollab.knowledgecore.documentchange.domain.DocumentChangeRepository;
+import com.devcollab.knowledgecore.git.domain.BindingRole;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -87,6 +88,8 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
                     rs.getString("document_anchor_candidate_id"),
                     rs.getString("reason"),
                     nullableDouble(rs, "confidence"),
+                    BindingRole.valueOf(rs.getString("binding_role")),
+                    rs.getInt("binding_ordinal"),
                     rs.getTimestamp("created_at").toInstant()
             );
 
@@ -174,8 +177,9 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
                     created_document_operation_id, binding_id, reason, created_at,
                     revision, anchor_kind, symbol_key, start_line, end_line,
                     block_id, created_block_operation_id, candidate_id,
-                    document_anchor_candidate_id, confidence
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    document_anchor_candidate_id, confidence, binding_role,
+                    binding_ordinal
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 value.id(), value.changeRequestId(), value.clientBindingProposalId(),
                 value.sequenceNumber(), value.action().name(), value.repositoryId(),
@@ -184,7 +188,8 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
                 value.revision(), value.anchorKind().name(), value.symbolKey(),
                 value.startLine(), value.endLine(), value.blockId(),
                 value.createdBlockOperationId(), value.candidateId(),
-                value.documentAnchorCandidateId(), value.confidence());
+                value.documentAnchorCandidateId(), value.confidence(),
+                value.bindingRole().name(), value.bindingOrdinal());
         return value;
     }
 

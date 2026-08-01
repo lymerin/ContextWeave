@@ -271,7 +271,11 @@ public class GitKnowledgeController {
                         request.anchorKind(),
                         request.symbolKey(),
                         request.startLine(),
-                        request.endLine()
+                        request.endLine(),
+                        request.bindingRole() == null
+                                ? com.devcollab.knowledgecore.git.domain.BindingRole.PRIMARY
+                                : request.bindingRole(),
+                        request.bindingOrdinal() == null ? 1 : request.bindingOrdinal()
                 )
         ));
     }

@@ -342,6 +342,101 @@ class PreciseBindingProposalIntegrationTests {
     }
 
     @Test
+    void shouldPersistPrimaryAndSupportingOrderForOneBlock() throws Exception {
+        Fixture fixture = fixture();
+        String blockId = responseJson(mockMvc.perform(post(
+                        "/api/v1/documents/{documentId}/blocks",
+                        fixture.documentId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"PARAGRAPH","content":{"text":"接口职责与辅助转换。"}}
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn()).get("id").asText();
+        String payload = """
+                {
+                  "clientRequestId":"role-order-%s",
+                  "summary":"验证主要与辅助代码顺序",
+                  "rationale":"同一 Block 只允许一个主要代码，并按序保存辅助代码。",
+                  "operations":[],
+                  "bindingProposals":[
+                    {
+                      "clientBindingProposalId":"primary",
+                      "sequenceNumber":1,
+                      "action":"UPSERT_BINDING",
+                      "repositoryId":"%s",
+                      "revision":"abc123",
+                      "filePath":"app/main.py",
+                      "anchorKind":"RANGE",
+                      "startLine":10,
+                      "endLine":20,
+                      "documentId":"%s",
+                      "blockId":"%s",
+                      "bindingRole":"PRIMARY",
+                      "bindingOrdinal":1,
+                      "reason":"接口入口是主要代码。"
+                    },
+                    {
+                      "clientBindingProposalId":"supporting",
+                      "sequenceNumber":2,
+                      "action":"UPSERT_BINDING",
+                      "repositoryId":"%s",
+                      "revision":"abc123",
+                      "filePath":"app/schemas.py",
+                      "anchorKind":"RANGE",
+                      "startLine":30,
+                      "endLine":40,
+                      "documentId":"%s",
+                      "blockId":"%s",
+                      "bindingRole":"SUPPORTING",
+                      "bindingOrdinal":2,
+                      "reason":"请求转换是辅助代码。"
+                    }
+                  ]
+                }
+                """.formatted(
+                UUID.randomUUID(),
+                fixture.repositoryId(), fixture.documentId(), blockId,
+                fixture.repositoryId(), fixture.documentId(), blockId
+        );
+        JsonNode created = responseJson(mockMvc.perform(post(
+                        "/api/v1/workspaces/{workspaceId}/document-change-requests",
+                        fixture.workspaceId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.bindingProposals[0].bindingRole").value("PRIMARY"))
+                .andExpect(jsonPath("$.bindingProposals[1].bindingRole").value("SUPPORTING"))
+                .andReturn());
+
+        mockMvc.perform(post(
+                        "/api/v1/workspaces/{workspaceId}/document-change-requests/{requestId}/apply",
+                        fixture.workspaceId(), created.get("changeRequestId").asText()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.request.status").value("APPLIED"));
+
+        List<Map<String, Object>> roleBindings = jdbcTemplate.queryForList("""
+                SELECT binding_role, binding_ordinal, path_pattern
+                  FROM code_document_bindings
+                 WHERE repository_id = ? AND block_id = ?
+                 ORDER BY binding_ordinal
+                """, UUID.fromString(fixture.repositoryId()), UUID.fromString(blockId));
+        assertThat(roleBindings).hasSize(2);
+        assertThat(roleBindings.get(0))
+                .containsEntry("BINDING_ROLE", "PRIMARY")
+                .containsEntry("BINDING_ORDINAL", 1);
+        assertThat(roleBindings.get(1))
+                .containsEntry("BINDING_ROLE", "SUPPORTING")
+                .containsEntry("BINDING_ORDINAL", 2);
+    }
+
+    @Test
     void shouldRollbackCreatedDocumentAndBlockWhenBindingApplyFails() throws Exception {
         Fixture fixture = fixture();
         String title = "Rollback " + UUID.randomUUID();
