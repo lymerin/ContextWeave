@@ -506,24 +506,60 @@ def _existing_block_plans(
     code_candidates: tuple[CodeCandidate, ...],
     document_candidates: tuple[DocumentAnchorCandidate, ...],
 ) -> tuple[DocumentBlockPlan, ...]:
-    """Expose existing Blocks through the same constrained selection contract."""
+    """Expose legacy document targets through the constrained selection contract."""
     if not code_candidates:
         return ()
     precise = [item for item in code_candidates if item.anchorKind != CodeAnchorKind.FILE]
     allowed = (precise or list(code_candidates))[:16]
+    documents_with_blocks = {
+        (item.documentId, item.createdDocumentClientOperationId)
+        for item in document_candidates
+        if item.blockId is not None or item.createdBlockClientOperationId is not None
+    }
     result: list[DocumentBlockPlan] = []
-    for document in document_candidates:
-        if document.blockId is None:
+    ordered_documents = sorted(
+        document_candidates,
+        key=lambda item: (
+            0
+            if item.blockId is not None or item.createdBlockClientOperationId is not None
+            else 1,
+            item.sortOrder if item.sortOrder is not None else 2**31 - 1,
+            item.candidateId,
+        ),
+    )
+    for document in ordered_documents:
+        document_key = (
+            document.documentId,
+            document.createdDocumentClientOperationId,
+        )
+        block_key = document.createdBlockClientOperationId or document.candidateId
+        is_block_target = (
+            document.blockId is not None
+            or document.createdBlockClientOperationId is not None
+        )
+        if not is_block_target and document_key in documents_with_blocks:
             continue
         result.append(
             DocumentBlockPlan(
-                blockKey=document.candidateId,
+                blockKey=block_key,
                 title=document.blockLabel or "Existing document Block",
-                purpose="Select the real code anchor described by this existing Block.",
-                targetKind=BlockTargetKind.SYMBOL,
+                purpose=(
+                    "Select the real code anchor described by this document Block."
+                    if is_block_target
+                    else "Select the real code anchor described by this document."
+                ),
+                targetKind=(
+                    BlockTargetKind.SYMBOL
+                    if is_block_target
+                    else BlockTargetKind.MODULE_OVERVIEW
+                ),
                 primaryCandidateIds=[item.candidateId for item in allowed],
                 supportingCandidateIds=[],
-                requiredCandidateIds=[],
+                requiredCandidateIds=(
+                    [allowed[0].candidateId]
+                    if is_block_target and len(allowed) == 1
+                    else []
+                ),
                 allowedClaims=[],
                 forbiddenClaims=[],
                 sortOrder=document.sortOrder or 0,

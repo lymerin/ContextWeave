@@ -219,7 +219,11 @@ class DocumentSyncWorkflow:
             "plan": valid,
             "decision": valid.decision.value,
             "summary": valid.summary,
-            "plan_outcome": "BINDING",
+            "plan_outcome": (
+                Decision.NO_CHANGE.value
+                if valid.decision == Decision.NO_CHANGE
+                else "BINDING"
+            ),
         }
 
     async def repair_plan(self, state: AgentState) -> dict[str, Any]:
@@ -291,7 +295,11 @@ class DocumentSyncWorkflow:
             "plan": valid,
             "decision": valid.decision.value,
             "summary": valid.summary,
-            "plan_outcome": "BINDING",
+            "plan_outcome": (
+                Decision.NO_CHANGE.value
+                if valid.decision == Decision.NO_CHANGE
+                else "BINDING"
+            ),
         }
 
     async def plan_bindings(self, state: AgentState) -> dict[str, Any]:

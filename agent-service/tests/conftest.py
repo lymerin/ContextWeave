@@ -720,7 +720,7 @@ class FakeModelProvider:
             update={
                 "decision": (
                     Decision.SUBMIT_REVIEW
-                    if item.operations
+                    if item.operations or item.bindingProposals
                     else Decision.NO_CHANGE
                 ),
                 "bindingProposals": [],
@@ -803,12 +803,27 @@ class FakeModelProvider:
             )
             if code is None or document is None:
                 continue
+            block_key = proposal.createdBlockClientOperationId or document["candidateId"]
+            available_block_keys = {
+                item["blockKey"] for item in candidates.get("documentBlockPlans", [])
+            }
+            if block_key not in available_block_keys:
+                child = next(
+                    (
+                        item
+                        for item in candidates.get("documentAnchorCandidates", [])
+                        if item.get("createdDocumentClientOperationId")
+                        == proposal.createdDocumentClientOperationId
+                        and item.get("createdBlockClientOperationId")
+                    ),
+                    None,
+                )
+                if child is not None:
+                    document = child
+                    block_key = child["createdBlockClientOperationId"]
             selections.append(
                 BindingSelection(
-                    blockKey=(
-                        proposal.createdBlockClientOperationId
-                        or document["candidateId"]
-                    ),
+                    blockKey=block_key,
                     codeCandidateId=code["candidateId"],
                     role=proposal.bindingRole,
                     ordinal=proposal.bindingOrdinal,

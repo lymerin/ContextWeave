@@ -220,7 +220,11 @@ def complete_and_validate_binding_plan(
     selections = list(binding_plan.selections)
     selected_blocks = {item.blockKey for item in selections if item.role == BindingRole.PRIMARY}
     for block_plan in block_plans:
-        if len(block_plan.primaryCandidateIds) == 1 and block_plan.blockKey not in selected_blocks:
+        if (
+            len(block_plan.primaryCandidateIds) == 1
+            and block_plan.primaryCandidateIds[0] in block_plan.requiredCandidateIds
+            and block_plan.blockKey not in selected_blocks
+        ):
             selections.append(
                 BindingSelection(
                     blockKey=block_plan.blockKey,
@@ -264,6 +268,8 @@ def complete_and_validate_binding_plan(
 
     for block_plan in block_plans:
         items = grouped.get(block_plan.blockKey, [])
+        if not items and not block_plan.requiredCandidateIds:
+            continue
         primary = [item for item in items if item.role == BindingRole.PRIMARY]
         if len(primary) != 1 or (primary and primary[0].ordinal != 1):
             issues.append(
