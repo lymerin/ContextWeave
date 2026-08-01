@@ -15,9 +15,15 @@ from app.planning.binding_candidates import (
     BindingPlanValidationError,
 )
 from app.planning.context_serializer import build_model_context
+from app.planning.document_block_plans import (
+    DocumentBlockPlanBuilder,
+    complete_and_validate_binding_plan,
+    validate_document_operations,
+)
 from app.planning.validator import AgentPlanValidator, PlanValidationError
 from app.profiling import ProfileStage, RuntimeMemoryProfiler
 from app.providers.base import ModelProvider, ModelProviderError
+from app.schemas.binding_plans import DocumentBlockPlan
 from app.schemas.plans import AgentPlan, Decision
 from app.tracing.trace_logger import traced
 
@@ -51,6 +57,7 @@ class DocumentSyncWorkflow:
         )
         self._binding_candidates = BindingCandidateBuilder()
         self._binding_expander = BindingPlanExpander()
+        self._block_plans = DocumentBlockPlanBuilder()
         context = ContextWorkflow(client, settings)
         graph = StateGraph(AgentState)
         graph.add_node("load_workspace_context", context.load_workspace_context)
@@ -133,6 +140,12 @@ class DocumentSyncWorkflow:
     async def plan_changes(self, state: AgentState) -> dict[str, Any]:
         await self._on_status("PLANNING", "plan_changes", {})
         model_context = build_model_context(state["context_bundle"])
+        code_candidates = self._binding_candidates.build_code(model_context)
+        block_plans = self._block_plans.build(code_candidates)
+        if block_plans:
+            model_context["documentBlockPlans"] = [
+                item.model_dump(mode="json", exclude_none=True) for item in block_plans
+            ]
         input_characters = len(str(model_context))
         if input_characters > self._settings.agent_model_max_input_characters:
             raise ValueError("Model context exceeds configured input limit")
@@ -146,9 +159,7 @@ class DocumentSyncWorkflow:
                     lambda: self._provider.plan_document_sync(model_context),
                     input_characters,
                 )
-                profile_stage.attribute(
-                    "documentOperationCount", len(plan.operations)
-                )
+                profile_stage.attribute("documentOperationCount", len(plan.operations))
             return {
                 "model_context": model_context,
                 "plan": plan,
@@ -190,11 +201,18 @@ class DocumentSyncWorkflow:
                 "plan_outcome": "REPAIR",
             }
         try:
+            block_plans = tuple(
+                DocumentBlockPlan.model_validate(item)
+                for item in state["model_context"].get("documentBlockPlans", [])
+            )
+            validate_document_operations(plan, block_plans)
             valid = self._validator.validate(plan, state["model_context"])
-        except PlanValidationError as exc:
+        except (PlanValidationError, BindingPlanValidationError) as exc:
             return {
                 "previous_plan": plan.model_dump(mode="json", exclude_none=True),
-                "validation_errors": exc.safe_details(),
+                "validation_errors": (
+                    exc.safe_details() if isinstance(exc, PlanValidationError) else exc.issues
+                ),
                 "plan_outcome": "REPAIR",
             }
         return {
@@ -256,10 +274,17 @@ class DocumentSyncWorkflow:
                 "plan_outcome": "INVALID",
             }
         try:
+            block_plans = tuple(
+                DocumentBlockPlan.model_validate(item)
+                for item in state["model_context"].get("documentBlockPlans", [])
+            )
+            validate_document_operations(plan, block_plans)
             valid = self._validator.validate(plan, state["model_context"])
-        except PlanValidationError as exc:
+        except (PlanValidationError, BindingPlanValidationError) as exc:
             return {
-                "validation_errors": exc.safe_details(),
+                "validation_errors": (
+                    exc.safe_details() if isinstance(exc, PlanValidationError) else exc.issues
+                ),
                 "plan_outcome": "INVALID",
             }
         return {
@@ -272,9 +297,7 @@ class DocumentSyncWorkflow:
     async def plan_bindings(self, state: AgentState) -> dict[str, Any]:
         await self._on_status("PLANNING_BINDINGS", "plan_bindings", {})
         document_plan = cast(AgentPlan, state["plan"])
-        candidates = self._binding_candidates.build(
-            state["model_context"], document_plan
-        )
+        candidates = self._binding_candidates.build(state["model_context"], document_plan)
         await self._on_status(
             "PLANNING_BINDINGS",
             "binding_candidates",
@@ -313,15 +336,14 @@ class DocumentSyncWorkflow:
                         ),
                         len(str(payload if attempt == 0 else errors)),
                     )
-                    profile_stage.attribute(
-                        "bindingCount", len(binding_plan.selections)
+                    binding_plan = complete_and_validate_binding_plan(
+                        binding_plan,
+                        candidates.code,
+                        candidates.block_plans,
                     )
-                expanded = self._binding_expander.expand(
-                    document_plan, binding_plan, candidates
-                )
-                valid = self._validator.validate(
-                    expanded, state["model_context"]
-                )
+                    profile_stage.attribute("bindingCount", len(binding_plan.selections))
+                expanded = self._binding_expander.expand(document_plan, binding_plan, candidates)
+                valid = self._validator.validate(expanded, state["model_context"])
                 return {
                     "plan": valid,
                     "decision": valid.decision.value,
@@ -371,9 +393,7 @@ class DocumentSyncWorkflow:
         plan = cast(AgentPlan, state["plan"])
         try:
             with self._profile_stage("REVIEW_BUILD") as profile_stage:
-                profile_stage.attribute(
-                    "reviewOperationCount", len(plan.operations)
-                )
+                profile_stage.attribute("reviewOperationCount", len(plan.operations))
                 profile_stage.attribute("bindingCount", len(plan.bindingProposals))
                 result = await traced(
                     cast(dict[str, Any], state),

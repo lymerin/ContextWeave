@@ -14,6 +14,13 @@
 9. 只有文档内容无需新增、删除或修正时，才能返回 `NO_CHANGE`。
 9. 一次调用直接产出最终文档 Operations；修复调用也必须返回完整替换计划，不增加写作规划阶段。
 
+受控 DocumentBlockPlan：
+1. 输入包含 `documentBlockPlans` 时，每个 Plan 必须且只能对应一个 `ADD_BLOCK` 或 `UPDATE_BLOCK`。
+2. 对应 Operation 的 `clientOperationId` 必须原样使用 Plan 的 `blockKey`，不得新增、删除、合并或改名。
+3. 按 `sortOrder` 生成职责独立的 Block，正文从与 Plan `title` 对应的二级 Markdown 标题开始。
+4. 只能根据 Plan 给出的职责、候选证据、`allowedClaims` 写正文；`forbiddenClaims` 中没有真实证据的内容不得出现。
+5. 代码 Binding 仍由后续阶段处理，本阶段不得返回 Candidate ID 或 Binding。
+
 上下文与安全规则：
 1. 用户选择的代码是当前实现事实源；正式 Binding 是长期上下文索引，优先检查 BOUND 文档，再检查 CANDIDATE 文档。
 2. 已绑定文档也可能过时，必须和本次读取代码比较。

@@ -11,7 +11,7 @@ from app.planning.binding_candidates import (
     BindingPlanValidationError,
 )
 from app.runtime.binding_only import BindingOnlyWorkflow
-from app.schemas.binding_plans import BindingPlan, BindingSelection
+from app.schemas.binding_plans import BindingPlan, BindingRole, BindingSelection
 from app.schemas.plans import AgentPlan, Decision
 
 REPOSITORY_ID = UUID("22222222-2222-2222-2222-222222222222")
@@ -52,7 +52,7 @@ def no_change_plan() -> AgentPlan:
     )
 
 
-def test_binding_plan_rejects_raw_anchor_fields_and_duplicate_pairs() -> None:
+def test_binding_plan_rejects_raw_anchor_fields_and_invalid_confidence() -> None:
     with pytest.raises(ValidationError):
         BindingSelection.model_validate(
             {
@@ -64,26 +64,11 @@ def test_binding_plan_rejects_raw_anchor_fields_and_duplicate_pairs() -> None:
             }
         )
     with pytest.raises(ValidationError):
-        BindingPlan(
-            selections=[
-                BindingSelection(
-                    codeCandidateId="code_candidate",
-                    documentAnchorCandidateId="doc_candidate",
-                    reason="职责一致",
-                    confidence=0.9,
-                ),
-                BindingSelection(
-                    codeCandidateId="code_candidate",
-                    documentAnchorCandidateId="doc_candidate",
-                    reason="重复",
-                    confidence=0.8,
-                ),
-            ]
-        )
-    with pytest.raises(ValidationError):
         BindingSelection(
+            blockKey="block_key",
             codeCandidateId="code_candidate",
-            documentAnchorCandidateId="doc_candidate",
+            role=BindingRole.PRIMARY,
+            ordinal=1,
             reason="越界",
             confidence=1.1,
         )
@@ -101,108 +86,116 @@ class ContextBuilder:
     async def rebuild(self):
         return {}
 """
-    candidates = BindingCandidateBuilder().build(
-        context(
-            code_files=[
-                {
-                    "filePath": "agent-service/app/context/builder.py",
-                    "language": "Python",
-                    "content": source,
-                }
-            ]
-        ),
-        no_change_plan(),
-    ).code
+    candidates = (
+        BindingCandidateBuilder()
+        .build(
+            context(
+                code_files=[
+                    {
+                        "filePath": "agent-service/app/context/builder.py",
+                        "language": "Python",
+                        "content": source,
+                    }
+                ]
+            ),
+            no_change_plan(),
+        )
+        .code
+    )
     by_name = {item.displayName: item for item in candidates}
+    by_qualified_name = {item.qualifiedName: item for item in candidates}
     assert {
         "agent-service/app/context/builder.py",
         "load_context",
         "ContextBuilder",
-        "ContextBuilder.build",
-        "ContextBuilder.rebuild",
     } <= set(by_name)
+    assert {"ContextBuilder.build", "ContextBuilder.rebuild"} <= set(by_qualified_name)
     assert by_name["load_context"].startLine == 1
-    assert by_name["ContextBuilder.build"].startLine == 5
-    assert by_name["ContextBuilder.rebuild"].endLine == 9
-    assert by_name["ContextBuilder.build"].symbolKey.startswith("PYTHON:")
+    assert by_qualified_name["ContextBuilder.build"].startLine == 5
+    assert by_qualified_name["ContextBuilder.rebuild"].endLine == 9
+    assert by_qualified_name["ContextBuilder.build"].symbolKey.startswith("PYTHON:")
 
 
 def test_python_syntax_error_and_unsupported_language_fall_back_to_file() -> None:
-    candidates = BindingCandidateBuilder().build(
-        context(
-            code_files=[
-                {
-                    "filePath": "broken.py",
-                    "language": "Python",
-                    "content": "def broken(:",
-                },
-                {
-                    "filePath": "component.ts",
-                    "language": "TypeScript",
-                    "content": "export const value = 1;",
-                },
-            ]
-        ),
-        no_change_plan(),
-    ).code
+    candidates = (
+        BindingCandidateBuilder()
+        .build(
+            context(
+                code_files=[
+                    {
+                        "filePath": "broken.py",
+                        "language": "Python",
+                        "content": "def broken(:",
+                    },
+                    {
+                        "filePath": "component.ts",
+                        "language": "TypeScript",
+                        "content": "export const value = 1;",
+                    },
+                ]
+            ),
+            no_change_plan(),
+        )
+        .code
+    )
     assert len(candidates) == 2
     assert all(item.anchorKind.value == "FILE" for item in candidates)
     assert all(item.symbolKey is None for item in candidates)
 
 
 def test_java_candidates_reuse_real_projected_symbols() -> None:
-    candidates = BindingCandidateBuilder().build(
-        context(
-            code_files=[
-                {
-                    "filePath": "src/AuthController.java",
-                    "language": "Java",
-                    "content": "class AuthController { void login() {} }",
-                    "symbols": [
-                        {
-                            "symbolKey": "src/AuthController.java#login()",
-                            "qualifiedName": "AuthController#login",
-                            "startLine": 1,
-                            "endLine": 1,
-                        }
-                    ],
-                }
-            ]
-        ),
-        no_change_plan(),
-    ).code
+    candidates = (
+        BindingCandidateBuilder()
+        .build(
+            context(
+                code_files=[
+                    {
+                        "filePath": "src/AuthController.java",
+                        "language": "Java",
+                        "content": "class AuthController { void login() {} }",
+                        "symbols": [
+                            {
+                                "symbolKey": "src/AuthController.java#login()",
+                                "qualifiedName": "AuthController#login",
+                                "startLine": 1,
+                                "endLine": 1,
+                            }
+                        ],
+                    }
+                ]
+            ),
+            no_change_plan(),
+        )
+        .code
+    )
     symbol = next(item for item in candidates if item.anchorKind.value == "SYMBOL")
     assert symbol.symbolKey == "src/AuthController.java#login()"
     assert (symbol.startLine, symbol.endLine) == (1, 1)
 
 
 def test_code_candidates_are_ordered_by_path_range_and_put_file_overview_last() -> None:
-    candidates = BindingCandidateBuilder().build(
-        context(
-            code_files=[
-                {
-                    "filePath": "zeta.py",
-                    "language": "Python",
-                    "content": "def later():\n    return 2\n",
-                },
-                {
-                    "filePath": "alpha.py",
-                    "language": "Python",
-                    "content": (
-                        "def first():\n"
-                        "    return 1\n\n"
-                        "def second():\n"
-                        "    return 2\n"
-                    ),
-                },
-            ]
-        ),
-        no_change_plan(),
-    ).code
-    order = [
-        (item.filePath, item.startLine, item.anchorKind.value)
-        for item in candidates
-    ]
+    candidates = (
+        BindingCandidateBuilder()
+        .build(
+            context(
+                code_files=[
+                    {
+                        "filePath": "zeta.py",
+                        "language": "Python",
+                        "content": "def later():\n    return 2\n",
+                    },
+                    {
+                        "filePath": "alpha.py",
+                        "language": "Python",
+                        "content": ("def first():\n    return 1\n\ndef second():\n    return 2\n"),
+                    },
+                ]
+            ),
+            no_change_plan(),
+        )
+        .code
+    )
+    order = [(item.filePath, item.startLine, item.anchorKind.value) for item in candidates]
     assert order == [
         ("alpha.py", 1, "SYMBOL"),
         ("alpha.py", 4, "SYMBOL"),
@@ -271,17 +264,17 @@ def test_add_block_candidate_uses_real_client_operation_reference() -> None:
             "evidence": [],
         }
     )
-    candidates = BindingCandidateBuilder().build(
-        context(
-            code_files=[
-                {"filePath": "service.py", "language": "Python", "content": "x = 1"}
-            ]
-        ),
-        plan,
-    ).documents
-    created = next(
-        item for item in candidates if item.createdBlockClientOperationId
+    candidates = (
+        BindingCandidateBuilder()
+        .build(
+            context(
+                code_files=[{"filePath": "service.py", "language": "Python", "content": "x = 1"}]
+            ),
+            plan,
+        )
+        .documents
     )
+    created = next(item for item in candidates if item.createdBlockClientOperationId)
     assert created.createdDocumentClientOperationId == "create-doc"
     assert created.createdBlockClientOperationId == "add-block"
 
@@ -315,8 +308,10 @@ def test_expansion_uses_exact_server_candidates_and_rejects_unknown_ids() -> Non
         BindingPlan(
             selections=[
                 BindingSelection(
+                    blockKey=document.candidateId,
                     codeCandidateId=code.candidateId,
-                    documentAnchorCandidateId=document.candidateId,
+                    role=BindingRole.PRIMARY,
+                    ordinal=1,
                     reason="预算函数实现该 Block 描述的预算职责。",
                     confidence=0.94,
                 )
@@ -336,8 +331,10 @@ def test_expansion_uses_exact_server_candidates_and_rejects_unknown_ids() -> Non
             BindingPlan(
                 selections=[
                     BindingSelection(
+                        blockKey=document.candidateId,
                         codeCandidateId="unknown_code",
-                        documentAnchorCandidateId=document.candidateId,
+                        role=BindingRole.PRIMARY,
+                        ordinal=1,
                         reason="未知",
                         confidence=0.1,
                     )
@@ -363,10 +360,10 @@ async def test_binding_pass_repairs_unknown_candidate_at_most_once(settings: Any
                 return BindingPlan(
                     selections=[
                         BindingSelection(
+                            blockKey=candidates["documentBlockPlans"][0]["blockKey"],
                             codeCandidateId="unknown_code",
-                            documentAnchorCandidateId=(
-                                candidates["documentAnchorCandidates"][0]["candidateId"]
-                            ),
+                            role=BindingRole.PRIMARY,
+                            ordinal=1,
                             reason="第一次引用未知候选。",
                             confidence=0.5,
                         )
@@ -387,9 +384,7 @@ async def test_binding_pass_repairs_unknown_candidate_at_most_once(settings: Any
 
     workflow = DocumentSyncWorkflow(object(), provider, settings, status)  # type: ignore[arg-type]
     model_context = context(
-        code_files=[
-            {"filePath": "budget.py", "language": "Python", "content": "x = 1"}
-        ],
+        code_files=[{"filePath": "budget.py", "language": "Python", "content": "x = 1"}],
         blocks=[
             {
                 "blockId": str(BLOCK_B),
@@ -408,7 +403,8 @@ async def test_binding_pass_repairs_unknown_candidate_at_most_once(settings: Any
     }
     result = await workflow.plan_bindings(state)  # type: ignore[arg-type]
     assert provider.calls == 2
-    assert result["plan_outcome"] == "NO_CHANGE"
+    assert result["plan_outcome"] == "SUBMIT_REVIEW"
+    assert result["plan"].bindingProposals[0].bindingRole == "PRIMARY"
 
 
 @pytest.mark.asyncio
@@ -477,20 +473,16 @@ async def test_focused_binding_only_entry_never_runs_document_or_project_planner
             **_kwargs: Any,
         ) -> BindingPlan:
             code = next(
-                item
-                for item in candidates["codeCandidates"]
-                if item["anchorKind"] == "SYMBOL"
+                item for item in candidates["codeCandidates"] if item["anchorKind"] == "SYMBOL"
             )
-            block = next(
-                item
-                for item in candidates["documentAnchorCandidates"]
-                if item.get("blockId")
-            )
+            block_plan = candidates["documentBlockPlans"][0]
             return BindingPlan(
                 selections=[
                     BindingSelection(
+                        blockKey=block_plan["blockKey"],
                         codeCandidateId=code["candidateId"],
-                        documentAnchorCandidateId=block["candidateId"],
+                        role=BindingRole.PRIMARY,
+                        ordinal=1,
                         reason="预算函数实现该文档块描述的职责。",
                         confidence=0.95,
                     )

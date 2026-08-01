@@ -105,6 +105,8 @@ class BindingProposal(StrictModel):
     documentAnchorCandidateId: str | None = Field(default=None, max_length=100)
     reason: str = Field(min_length=1, max_length=1_000)
     confidence: float | None = Field(default=None, ge=0, le=1)
+    bindingRole: Literal["PRIMARY", "SUPPORTING"] = "PRIMARY"
+    bindingOrdinal: int = Field(default=1, ge=1, le=16)
 
     @model_validator(mode="after")
     def valid_anchor_and_targets(self) -> "BindingProposal":
@@ -121,12 +123,14 @@ class BindingProposal(StrictModel):
                 raise ValueError("RANGE binding requires revision and range")
         elif not self.revision or not self.symbolKey:
             raise ValueError("SYMBOL binding requires revision and symbolKey")
-        if (self.documentId is None) == (
-            self.createdDocumentClientOperationId is None
-        ):
+        if (self.documentId is None) == (self.createdDocumentClientOperationId is None):
             raise ValueError("binding must target one existing or created document")
         if self.blockId is not None and self.createdBlockClientOperationId is not None:
             raise ValueError("binding cannot target existing and created block")
+        if self.bindingRole == "PRIMARY" and self.bindingOrdinal != 1:
+            raise ValueError("PRIMARY binding ordinal must be 1")
+        if self.bindingRole == "SUPPORTING" and self.bindingOrdinal < 2:
+            raise ValueError("SUPPORTING binding ordinal must be at least 2")
         return self
 
 

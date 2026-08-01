@@ -178,8 +178,10 @@ async def test_deepseek_binding_pass_uses_only_binding_plan_schema() -> None:
     binding_plan = {
         "selections": [
             {
+                "blockKey": "block_endpoint",
                 "codeCandidateId": "code_candidate_123",
-                "documentAnchorCandidateId": "doc_candidate_456",
+                "role": "PRIMARY",
+                "ordinal": 1,
                 "reason": "代码职责与文档块内容一致。",
                 "confidence": 0.93,
             }
@@ -194,10 +196,12 @@ async def test_deepseek_binding_pass_uses_only_binding_plan_schema() -> None:
         {
             "codeCandidates": [{"candidateId": "code_candidate_123"}],
             "documentAnchorCandidates": [{"candidateId": "doc_candidate_456"}],
+            "documentBlockPlans": [{"blockKey": "block_endpoint"}],
         }
     )
     user = json.loads(seen["messages"][1]["content"])
     assert result.selections[0].codeCandidateId == "code_candidate_123"
+    assert result.selections[0].blockKey == "block_endpoint"
     assert user["bindingPlanSchema"]["title"] == "BindingPlan"
     assert "agentPlanSchema" not in user
     assert "unitPlanSchema" not in user

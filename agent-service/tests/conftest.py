@@ -805,8 +805,13 @@ class FakeModelProvider:
                 continue
             selections.append(
                 BindingSelection(
+                    blockKey=(
+                        proposal.createdBlockClientOperationId
+                        or document["candidateId"]
+                    ),
                     codeCandidateId=code["candidateId"],
-                    documentAnchorCandidateId=document["candidateId"],
+                    role=proposal.bindingRole,
+                    ordinal=proposal.bindingOrdinal,
                     reason=proposal.reason,
                     confidence=proposal.confidence or 0.9,
                 )
