@@ -53,7 +53,13 @@ class ReviewSubmissionApplicationServiceTests {
                 workspaceId, arguments, identity
         );
 
-        assertThat(result).containsEntry("status", "PENDING");
+        assertThat(result)
+                .containsEntry("status", "PENDING")
+                .containsEntry("workspaceId", workspaceId.toString())
+                .containsEntry("operationCount", 1)
+                .containsEntry("bindingProposalCount", 0)
+                .containsEntry("repositoryId", null)
+                .containsEntry("documentId", null);
         verify(gateway).submitDocumentChange(
                 eq(workspaceId),
                 org.mockito.ArgumentMatchers.argThat(body ->

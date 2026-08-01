@@ -643,7 +643,7 @@ def workflow_state(path: str) -> dict[str, Any]:
 
 
 @pytest.mark.asyncio
-async def test_auth_ts_stub_provider_submits_scoped_chinese_document(
+async def test_auth_ts_without_program_block_plan_does_not_let_model_create_operations(
     settings: Settings,
 ) -> None:
     path = "web/src/api/auth.ts"
@@ -655,17 +655,13 @@ async def test_auth_ts_stub_provider_submits_scoped_chinese_document(
         mcp, provider, full_context_settings, no_status
     ).graph.ainvoke(workflow_state(path))
 
-    assert result["decision"] == "SUBMIT_REVIEW"
-    assert len(mcp.submissions) == 1
-    submitted = mcp.submissions[0][0]
-    text = "\n".join(item.proposedPlainText or "" for item in submitted.operations)
-    assert submitted.operations[0].proposedDocumentTitle == "前端认证 API 客户端"
-    assert "/refresh" not in text
-    assert "AuthController" not in text
+    assert result["decision"] == "NO_CHANGE"
+    assert not mcp.submissions
+    assert provider.block_content_calls == []
 
 
 @pytest.mark.asyncio
-async def test_auth_controller_stub_provider_submits_backend_rest_document(
+async def test_java_controller_without_program_block_plan_does_not_use_legacy_plan(
     settings: Settings,
 ) -> None:
     path = (
@@ -694,8 +690,6 @@ async def test_auth_controller_stub_provider_submits_backend_rest_document(
         mcp, provider, full_context_settings, no_status
     ).graph.ainvoke(workflow_state(path))
 
-    assert result["decision"] == "SUBMIT_REVIEW"
-    assert len(mcp.submissions) == 1
-    submitted = mcp.submissions[0][0]
-    assert submitted.operations[0].proposedDocumentTitle == "后端认证 REST API"
-    assert submitted.operations[0].proposedDocumentTitle != "前端认证 API 客户端"
+    assert result["decision"] == "NO_CHANGE"
+    assert not mcp.submissions
+    assert provider.block_content_calls == []

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from contextlib import nullcontext
 from functools import partial
@@ -22,10 +23,15 @@ from app.planning.document_block_plans import (
     complete_and_validate_binding_plan,
     validate_document_operations,
 )
+from app.planning.program_document_plan import (
+    ProgramDocumentPlanAssembler,
+    build_block_content_context,
+)
 from app.planning.validator import AgentPlanValidator, PlanValidationError
 from app.profiling import ProfileStage, RuntimeMemoryProfiler
 from app.providers.base import ModelProvider, ModelProviderError
-from app.schemas.binding_plans import DocumentBlockPlan
+from app.schemas.binding_plans import BindingPlan, DocumentBlockPlan
+from app.schemas.document_block_content import DocumentBlockContentPlan
 from app.schemas.plans import AgentPlan, Decision
 from app.tracing.trace_logger import traced
 
@@ -61,6 +67,7 @@ class DocumentSyncWorkflow:
         self._binding_candidates = BindingCandidateBuilder()
         self._binding_expander = BindingPlanExpander()
         self._block_plans = DocumentBlockPlanBuilder()
+        self._program_plan = ProgramDocumentPlanAssembler()
         context = ContextWorkflow(client, settings)
         graph = StateGraph(AgentState)
         graph.add_node("load_workspace_context", context.load_workspace_context)
@@ -93,6 +100,7 @@ class DocumentSyncWorkflow:
                 "SUBMIT_REVIEW": "submit_review",
                 "REPAIR": "repair_plan",
                 "BINDING": "plan_bindings",
+                "INVALID": "fail_run",
             },
         )
         graph.add_edge("repair_plan", "validate_repaired_plan")
@@ -145,64 +153,121 @@ class DocumentSyncWorkflow:
         model_context = build_model_context(state["context_bundle"])
         code_candidates = self._binding_candidates.build_code(model_context)
         block_plans = self._block_plans.build(code_candidates)
-        if block_plans:
-            model_context["documentBlockPlans"] = [
-                item.model_dump(mode="json", exclude_none=True) for item in block_plans
-            ]
+        model_context["documentBlockPlans"] = [
+            item.model_dump(mode="json", exclude_none=True) for item in block_plans
+        ]
         self._log_block_contract(state, block_plans)
-        input_characters = len(str(model_context))
-        if input_characters > self._settings.agent_model_max_input_characters:
-            raise ValueError("Model context exceeds configured input limit")
-        try:
-            with self._profile_stage("DOCUMENT_PROPOSAL") as profile_stage:
-                profile_stage.attribute("promptCharacters", input_characters)
-                plan = await traced(
-                    cast(dict[str, Any], state),
-                    "plan_changes",
-                    None,
-                    lambda: self._provider.plan_document_sync(model_context),
-                    input_characters,
-                )
-                profile_stage.attribute("documentOperationCount", len(plan.operations))
-            self._log_plan_shape(state, "initial_parsed", plan)
+        if not block_plans:
+            plan = AgentPlan(
+                decision=Decision.NO_CHANGE,
+                summary="未发现可生成正式职责文档的代码单元",
+                rationale="程序未生成 DocumentBlockPlan，因此不调用模型。",
+            )
             return {
                 "model_context": model_context,
                 "plan": plan,
                 "validation_attempt": 0,
                 "trace_events": state["trace_events"],
             }
-        except ModelProviderError as exc:
-            if exc.code != "MODEL_INVALID_RESPONSE":
-                raise
-            errors = exc.validation_errors or [
-                {
-                    "path": "$",
-                    "code": "MODEL_INVALID_RESPONSE",
-                    "message": "Return a complete AgentPlan matching the schema",
-                }
-            ]
-            self._log_validation_failure(
-                state,
-                "initial_schema",
-                errors,
-                exc.raw_plan,
+
+        block_content_context = build_block_content_context(
+            model_context,
+            code_candidates,
+            block_plans,
+        )
+        input_characters = len(str(block_content_context))
+        if input_characters > self._settings.agent_model_max_input_characters:
+            raise ValueError("Model context exceeds configured input limit")
+        with self._profile_stage("DOCUMENT_PROPOSAL") as profile_stage:
+            profile_stage.attribute("promptCharacters", input_characters)
+            content_plan = await traced(
+                cast(dict[str, Any], state),
+                "generate_document_blocks",
+                None,
+                lambda: self._provider.generate_document_blocks(block_content_context),
+                input_characters,
             )
-            return {
-                "model_context": model_context,
-                "previous_plan": exc.raw_plan or {},
-                "validation_errors": errors,
-                "validation_attempt": 0,
-                "trace_events": state["trace_events"],
-            }
+            repaired_block_keys: list[str] = []
+            for block in tuple(content_plan.blocks):
+                if block.status != "INSUFFICIENT_EVIDENCE":
+                    continue
+                block_key = block.blockKey
+                LOGGER.warning(
+                    "runId=%s phase=initial_content validation=failed "
+                    "errors=%s",
+                    state.get("run_id"),
+                    json.dumps(
+                        [{
+                            "path": f"blocks.{block_key}",
+                            "code": "BLOCK_INSUFFICIENT_EVIDENCE",
+                            "message": "Required Block returned insufficient evidence",
+                        }],
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
+                )
+                selected_context = {
+                    "workspace": block_content_context.get("workspace", {}),
+                    "task": block_content_context.get("task", {}),
+                    "blocks": [
+                        item
+                        for item in block_content_context.get("blocks", [])
+                        if item.get("blockKey") == block_key
+                    ],
+                }
+                repaired = await traced(
+                    cast(dict[str, Any], state),
+                    f"repair_document_block:{block_key}",
+                    None,
+                    partial(
+                        self._provider.repair_document_block,
+                        selected_context,
+                        previous_block=block.model_dump(
+                            mode="json", exclude_none=True
+                        ),
+                        validation_errors=[{
+                            "path": f"blocks.{block_key}",
+                            "code": "BLOCK_INSUFFICIENT_EVIDENCE",
+                            "message": (
+                                "Use the supplied code evidence to write only this "
+                                "required Block; do not change its structure"
+                            ),
+                        }],
+                    ),
+                    len(str(selected_context)),
+                )
+                content_plan = self._program_plan.replace_block(
+                    content_plan, repaired
+                )
+                repaired_block_keys.append(block_key)
+            assembled = self._program_plan.assemble(
+                model_context,
+                code_candidates,
+                block_plans,
+                content_plan,
+            )
+            profile_stage.attribute(
+                "documentOperationCount", len(assembled.agent_plan.operations)
+            )
+        self._log_plan_shape(state, "program_assembled", assembled.agent_plan)
+        return {
+            "model_context": model_context,
+            "block_content_context": block_content_context,
+            "block_content_plan": assembled.block_content_plan,
+            "program_binding_plan": assembled.binding_plan,
+            "plan": assembled.agent_plan,
+            "validation_attempt": 0,
+            "repaired_block_keys": repaired_block_keys,
+            "trace_events": state["trace_events"],
+        }
 
     async def validate_plan(self, state: AgentState) -> dict[str, Any]:
         await self._on_status("VALIDATING", "validate_plan", {})
         plan = state.get("plan")
         if not isinstance(plan, AgentPlan):
-            return {"plan_outcome": "REPAIR"}
+            return {"plan_outcome": "INVALID"}
         if plan.bindingProposals:
             return {
-                "previous_plan": plan.model_dump(mode="json", exclude_none=True),
                 "validation_errors": [
                     {
                         "path": "bindingProposals",
@@ -210,7 +275,7 @@ class DocumentSyncWorkflow:
                         "message": "Document planning must leave bindingProposals empty",
                     }
                 ],
-                "plan_outcome": "REPAIR",
+                "plan_outcome": "INVALID",
             }
         try:
             block_plans = tuple(
@@ -224,10 +289,13 @@ class DocumentSyncWorkflow:
                 exc.safe_details() if isinstance(exc, PlanValidationError) else exc.issues
             )
             self._log_validation_failure(state, "initial_semantic", errors, plan)
+            repair_keys = self._repairable_block_keys(errors, plan)
+            if set(repair_keys) & set(state.get("repaired_block_keys", [])):
+                repair_keys = []
             return {
-                "previous_plan": plan.model_dump(mode="json", exclude_none=True),
                 "validation_errors": errors,
-                "plan_outcome": "REPAIR",
+                "invalid_block_keys": repair_keys,
+                "plan_outcome": "REPAIR" if repair_keys else "INVALID",
             }
         self._log_validation_success(state, "initial", valid)
         return {
@@ -243,46 +311,65 @@ class DocumentSyncWorkflow:
 
     async def repair_plan(self, state: AgentState) -> dict[str, Any]:
         await self._on_status("REPAIRING_PLAN", "repair_plan", {})
-        try:
-            plan = await traced(
-                cast(dict[str, Any], state),
-                "repair_plan",
-                None,
-                lambda: self._provider.plan_document_sync(
-                    state["model_context"],
-                    previous_plan=state.get("previous_plan", {}),
-                    validation_errors=state.get("validation_errors", []),
-                ),
-                len(str(state.get("validation_errors", []))),
-            )
-            self._log_plan_shape(state, "repair_parsed", plan)
-            return {
-                "plan": plan,
-                "validation_attempt": 1,
-                "trace_events": state["trace_events"],
+        content_plan = cast(DocumentBlockContentPlan, state["block_content_plan"])
+        block_context = state["block_content_context"]
+        errors = state.get("validation_errors", [])
+        for block_key in state.get("invalid_block_keys", []):
+            previous = next(item for item in content_plan.blocks if item.blockKey == block_key)
+            selected_context = {
+                "workspace": block_context.get("workspace", {}),
+                "task": block_context.get("task", {}),
+                "blocks": [
+                    item for item in block_context.get("blocks", [])
+                    if item.get("blockKey") == block_key
+                ],
             }
-        except ModelProviderError as exc:
-            if exc.code != "MODEL_INVALID_RESPONSE":
-                raise
-            errors = exc.validation_errors or [
-                {
-                    "path": "$",
-                    "code": "MODEL_INVALID_RESPONSE",
-                    "message": "Repaired output still does not match AgentPlan",
-                }
+            block_errors = [
+                item for item in errors
+                if self._error_targets_block(item, block_key, cast(AgentPlan, state["plan"]))
             ]
-            self._log_validation_failure(
-                state,
-                "repair_schema",
-                errors,
-                exc.raw_plan,
+            repaired = await traced(
+                cast(dict[str, Any], state),
+                f"repair_document_block:{block_key}",
+                None,
+                partial(
+                    self._provider.repair_document_block,
+                    selected_context,
+                    previous_block=previous.model_dump(mode="json", exclude_none=True),
+                    validation_errors=block_errors,
+                ),
+                len(str(block_errors)),
             )
-            return {
-                "plan": None,
-                "validation_attempt": 1,
-                "validation_errors": errors,
-                "trace_events": state["trace_events"],
-            }
+            if repaired.blockKey != block_key:
+                raise BindingPlanValidationError(
+                    [{
+                        "path": "blockKey",
+                        "code": "DOCUMENT_BLOCK_CONTENT_PLAN_MISMATCH",
+                        "message": "Block repair returned a different blockKey",
+                    }]
+                )
+            content_plan = self._program_plan.replace_block(content_plan, repaired)
+
+        block_plans = tuple(
+            DocumentBlockPlan.model_validate(item)
+            for item in state["model_context"].get("documentBlockPlans", [])
+        )
+        code_candidates = self._binding_candidates.build_code(state["model_context"])
+        assembled = self._program_plan.assemble(
+            state["model_context"], code_candidates, block_plans, content_plan
+        )
+        self._log_plan_shape(state, "block_repair_assembled", assembled.agent_plan)
+        return {
+            "plan": assembled.agent_plan,
+            "block_content_plan": assembled.block_content_plan,
+            "program_binding_plan": assembled.binding_plan,
+            "validation_attempt": 1,
+            "repaired_block_keys": list({
+                *state.get("repaired_block_keys", []),
+                *state.get("invalid_block_keys", []),
+            }),
+            "trace_events": state["trace_events"],
+        }
 
     async def validate_repaired_plan(self, state: AgentState) -> dict[str, Any]:
         await self._on_status("VALIDATING", "validate_repaired_plan", {})
@@ -346,6 +433,27 @@ class DocumentSyncWorkflow:
                 "decision": document_plan.decision.value,
                 "summary": document_plan.summary,
                 "plan_outcome": document_plan.decision.value,
+            }
+
+        program_binding_plan = state.get("program_binding_plan")
+        if isinstance(program_binding_plan, BindingPlan):
+            binding_plan = complete_and_validate_binding_plan(
+                program_binding_plan,
+                candidates.code,
+                candidates.block_plans,
+            )
+            expanded = self._binding_expander.expand(
+                document_plan,
+                binding_plan,
+                candidates,
+            )
+            valid = self._validator.validate(expanded, state["model_context"])
+            return {
+                "plan": valid,
+                "decision": valid.decision.value,
+                "summary": valid.summary,
+                "plan_outcome": valid.decision.value,
+                "trace_events": state["trace_events"],
             }
 
         payload = candidates.model_payload()
@@ -628,3 +736,49 @@ class DocumentSyncWorkflow:
     @staticmethod
     def _route(state: AgentState) -> str:
         return state["plan_outcome"]
+
+    @staticmethod
+    def _repairable_block_keys(
+        errors: list[dict[str, str]],
+        plan: AgentPlan,
+    ) -> list[str]:
+        repairable_codes = {
+            "UNSUPPORTED_EXTERNAL_RELATION",
+            "UNSUPPORTED_INFERRED_SEMANTICS",
+            "DOCUMENT_BLOCK_FORBIDDEN_CLAIM",
+        }
+        keys: list[str] = []
+        for error in errors:
+            if error.get("code") not in repairable_codes:
+                return []
+            block_key = DocumentSyncWorkflow._block_key_for_error(error, plan)
+            if block_key is None:
+                return []
+            if block_key not in keys:
+                keys.append(block_key)
+        return keys
+
+    @staticmethod
+    def _error_targets_block(
+        error: dict[str, str],
+        block_key: str,
+        plan: AgentPlan,
+    ) -> bool:
+        return DocumentSyncWorkflow._block_key_for_error(error, plan) == block_key
+
+    @staticmethod
+    def _block_key_for_error(
+        error: dict[str, str],
+        plan: AgentPlan,
+    ) -> str | None:
+        path = error.get("path", "")
+        direct = re.match(r"operations\.([^\.\[]+)", path)
+        if direct:
+            return direct.group(1)
+        indexed = re.match(r"operations\[(\d+)\]", path)
+        if not indexed:
+            return None
+        index = int(indexed.group(1))
+        if index <= 0 or index >= len(plan.operations):
+            return None
+        return plan.operations[index].clientOperationId

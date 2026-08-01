@@ -132,6 +132,12 @@ class McpServerProtocolTests {
                             "rationale", "operations"
                     )
             );
+            Map<?, ?> submitProperties = (Map<?, ?>) submitTool.inputSchema().get("properties");
+            Map<?, ?> bindingProposals = (Map<?, ?>) submitProperties.get("bindingProposals");
+            Map<?, ?> bindingItems = (Map<?, ?>) bindingProposals.get("items");
+            Map<?, ?> bindingProperties = (Map<?, ?>) bindingItems.get("properties");
+            assertThat(bindingProperties.keySet().stream().map(Object::toString).toList())
+                    .contains("bindingRole", "bindingOrdinal");
             assertThat(submitTool.outputSchema())
                     .containsKeys(
                             "type", "properties", "oneOf",
@@ -181,7 +187,12 @@ class McpServerProtocolTests {
             assertThat(structuredContent)
                     .containsEntry("changeRequestId", requestId.toString())
                     .containsEntry("status", "PENDING")
-                    .containsEntry("idempotentReplay", false);
+                    .containsEntry("idempotentReplay", false)
+                    .containsEntry("workspaceId", workspaceId.toString())
+                    .containsEntry("operationCount", 1)
+                    .containsEntry("bindingProposalCount", 0)
+                    .containsEntry("repositoryId", null)
+                    .containsEntry("documentId", null);
         }
     }
 

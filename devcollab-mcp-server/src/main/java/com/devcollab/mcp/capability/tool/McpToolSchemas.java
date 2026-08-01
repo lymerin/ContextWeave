@@ -650,6 +650,14 @@ final class McpToolSchemas {
         bindingProposalProperties.put("bindingId", uuidProperty("Existing binding identifier", true));
         bindingProposalProperties.put("candidateId", nullableStringProperty(1, 100));
         bindingProposalProperties.put("documentAnchorCandidateId", nullableStringProperty(1, 100));
+        bindingProposalProperties.put("bindingRole", Map.of(
+                "type", "string",
+                "enum", List.of("PRIMARY", "SUPPORTING")
+        ));
+        bindingProposalProperties.put("bindingOrdinal", Map.of(
+                "type", "integer",
+                "minimum", 1
+        ));
         bindingProposalProperties.put("reason", stringProperty(1, 1000));
         bindingProposalProperties.put("confidence", Map.of(
                 "type", List.of("number", "null"),
@@ -700,13 +708,28 @@ final class McpToolSchemas {
                         "createdAt",
                         Map.of("type", "string", "format", "date-time"),
                         "idempotentReplay",
-                        Map.of("type", "boolean")
+                        Map.of("type", "boolean"),
+                        "workspaceId",
+                        uuidProperty("Workspace containing the pending proposal"),
+                        "repositoryId",
+                        uuidProperty("Single repository referenced by the proposal", true),
+                        "documentId",
+                        uuidProperty("Single existing document referenced by the proposal", true),
+                        "operationCount",
+                        Map.of("type", "integer", "minimum", 0),
+                        "bindingProposalCount",
+                        Map.of("type", "integer", "minimum", 0)
                 ),
                 List.of(
                         "changeRequestId",
                         "status",
                         "createdAt",
-                        "idempotentReplay"
+                        "idempotentReplay",
+                        "workspaceId",
+                        "repositoryId",
+                        "documentId",
+                        "operationCount",
+                        "bindingProposalCount"
                 )
         );
     }

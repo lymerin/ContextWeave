@@ -1,3 +1,4 @@
+import json
 from typing import Any, Protocol
 
 import httpx
@@ -76,11 +77,24 @@ class OfficialMcpClient:
         run_id: str,
         authorization: str,
     ) -> dict[str, Any]:
-        return await self._invoke_tool(
+        result = await self._invoke_tool(
             "devcollab.review.submit_document_change",
             plan.mcp_payload(workspace_id, f"agent-{run_id}"),
             authorization,
         )
+        if not isinstance(result.get("changeRequestId"), str) or not result[
+            "changeRequestId"
+        ].strip():
+            raise McpClientError(
+                "MCP_PROTOCOL_ERROR",
+                "MCP review result is missing changeRequestId",
+            )
+        if result.get("status") != "PENDING":
+            raise McpClientError(
+                "MCP_PROTOCOL_ERROR",
+                "MCP review result has an invalid status",
+            )
+        return result
 
     async def _invoke_tool(
         self,
@@ -109,9 +123,7 @@ class OfficialMcpClient:
                 raise McpClientError("MCP_UNAVAILABLE", "MCP request timed out") from exc
             raise McpClientError("MCP_UNAVAILABLE", "MCP request failed") from exc
 
-        content = result.structuredContent
-        if not isinstance(content, dict):
-            raise McpClientError("MCP_UNAVAILABLE", "MCP returned no structured content")
+        content = _structured_tool_content(result)
         error = content.get("error")
         if isinstance(error, dict):
             code = str(error.get("code", "MCP_UNAVAILABLE"))
@@ -119,3 +131,57 @@ class OfficialMcpClient:
                 raise McpClientError(f"MCP_{code}", str(error.get("message", code)))
             raise McpClientError(code, str(error.get("message", code)))
         return content
+
+
+def _structured_tool_content(result: Any) -> dict[str, Any]:
+    structured = getattr(result, "structuredContent", None)
+    content: dict[str, Any] | None
+    if isinstance(structured, dict):
+        content = dict(structured)
+    else:
+        content = _json_text_content(getattr(result, "content", []))
+
+    if bool(getattr(result, "isError", False)):
+        error = content.get("error") if isinstance(content, dict) else None
+        if isinstance(error, dict):
+            code = str(error.get("code", "MCP_TOOL_ERROR"))
+            raise McpClientError(code, str(error.get("message", code)))
+        message = _plain_text_content(getattr(result, "content", []))
+        raise McpClientError(
+            "MCP_TOOL_ERROR",
+            message[:300] or "MCP tool rejected the request",
+        )
+
+    if not isinstance(content, dict):
+        raise McpClientError(
+            "MCP_PROTOCOL_ERROR",
+            "MCP tool returned no structured JSON object",
+        )
+    return content
+
+
+def _json_text_content(items: Any) -> dict[str, Any] | None:
+    for item in items if isinstance(items, list) else []:
+        if getattr(item, "type", None) != "text":
+            continue
+        text = getattr(item, "text", None)
+        if not isinstance(text, str):
+            continue
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _plain_text_content(items: Any) -> str:
+    if not isinstance(items, list):
+        return ""
+    return " ".join(
+        text
+        for item in items
+        if getattr(item, "type", None) == "text"
+        if isinstance((text := getattr(item, "text", None)), str)
+    )

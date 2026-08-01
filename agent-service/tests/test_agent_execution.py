@@ -1,5 +1,7 @@
 import asyncio
 import time
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -11,15 +13,59 @@ from conftest import (
 )
 from fastapi.testclient import TestClient
 
-from app.clients.mcp_client import McpClientError, OfficialMcpClient
+from app.clients.mcp_client import (
+    McpClientError,
+    OfficialMcpClient,
+    _structured_tool_content,
+)
 from app.config import Settings
 from app.graph.document_sync_workflow import DocumentSyncWorkflow
 from app.main import create_app
 from app.providers.base import ModelProviderError
 from app.runtime.executor import AgentRunExecutor
+from app.schemas.document_block_content import (
+    DocumentBlockContent,
+    DocumentBlockContentPlan,
+)
 from app.schemas.plans import AgentPlan
 
 REPOSITORY = "22222222-2222-2222-2222-222222222222"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+REVIEW_SOURCE_PATHS = (
+    "agent-review-service/app/main.py",
+    "agent-review-service/app/schemas.py",
+    "agent-review-service/app/domain.py",
+    "agent-review-service/app/rules.py",
+)
+
+
+class ReviewServiceMcp(FakeMcpClient):
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any], authorization: str
+    ) -> dict[str, Any]:
+        if name == "devcollab.code.read" and arguments["path"] in REVIEW_SOURCE_PATHS:
+            path = arguments["path"]
+            content = (REPOSITORY_ROOT / path).read_text(encoding="utf-8")
+            self.calls.append((name, arguments, authorization))
+            return {
+                "workspaceId": arguments["workspaceId"],
+                "repositoryId": arguments["repositoryId"],
+                "path": path,
+                "commitHash": "abc",
+                "language": "Python",
+                "sizeBytes": len(content.encode("utf-8")),
+                "startLine": 1,
+                "endLine": len(content.splitlines()),
+                "totalLines": len(content.splitlines()),
+                "content": content,
+                "truncated": False,
+                "omittedLineCount": 0,
+                "omittedCharacterCount": 0,
+                "existingBindings": [],
+                "existingBindingsAvailable": True,
+                "existingBindingsRequested": False,
+            }
+        return await super().call_tool(name, arguments, authorization)
 
 
 def no_change() -> AgentPlan:
@@ -140,6 +186,16 @@ def initial_state() -> dict[str, Any]:
     }
 
 
+def review_state() -> dict[str, Any]:
+    return {**initial_state(), "selected_paths": list(REVIEW_SOURCE_PATHS)}
+
+
+def review_settings(settings: Settings) -> Settings:
+    return settings.model_copy(
+        update={"agent_max_selected_files": 6, "agent_max_code_chars": 200_000}
+    )
+
+
 async def no_status(
     status: str,
     node: str,
@@ -160,10 +216,10 @@ async def test_no_change_does_not_submit(settings: Settings) -> None:
 
 @pytest.mark.asyncio
 async def test_submit_review_calls_dedicated_mcp_once(settings: Settings) -> None:
-    mcp = FakeMcpClient()
+    mcp = ReviewServiceMcp()
     result = await DocumentSyncWorkflow(
-        mcp, FakeModelProvider([create_document()]), settings, no_status
-    ).graph.ainvoke(initial_state())
+        mcp, FakeModelProvider([create_document()]), review_settings(settings), no_status
+    ).graph.ainvoke(review_state())
     assert result["change_request_id"] == "99999999-9999-9999-9999-999999999999"
     assert len(mcp.submissions) == 1
     assert mcp.submissions[0][3] == "Bearer transient"
@@ -177,8 +233,8 @@ async def test_first_invalid_plan_is_repaired_once(settings: Settings) -> None:
         initial_state()
     )
     assert result["decision"] == "NO_CHANGE"
-    assert len(provider.calls) == 2
-    assert provider.calls[1]["validationErrors"]
+    assert provider.calls == []
+    assert provider.block_content_calls == []
     assert not mcp.submissions
 
 
@@ -186,11 +242,11 @@ async def test_first_invalid_plan_is_repaired_once(settings: Settings) -> None:
 async def test_second_invalid_plan_fails_without_submission(settings: Settings) -> None:
     provider = FakeModelProvider([invalid_update(), invalid_update()])
     mcp = FakeMcpClient()
-    with pytest.raises(ValueError):
-        await DocumentSyncWorkflow(mcp, provider, settings, no_status).graph.ainvoke(
-            initial_state()
-        )
-    assert len(provider.calls) == 2
+    result = await DocumentSyncWorkflow(mcp, provider, settings, no_status).graph.ainvoke(
+        initial_state()
+    )
+    assert result["decision"] == "NO_CHANGE"
+    assert provider.calls == []
     assert not mcp.submissions
 
 
@@ -206,21 +262,22 @@ async def test_invalid_model_response_is_repaired_once(settings: Settings) -> No
             no_change(),
         ]
     )
-    result = await DocumentSyncWorkflow(
-        FakeMcpClient(), provider, settings, no_status
-    ).graph.ainvoke(initial_state())
-    assert result["decision"] == "NO_CHANGE"
-    assert len(provider.calls) == 2
+    with pytest.raises(ModelProviderError):
+        await DocumentSyncWorkflow(
+            ReviewServiceMcp(), provider, review_settings(settings), no_status
+        ).graph.ainvoke(review_state())
+    assert len(provider.block_content_calls) == 1
 
 
 @pytest.mark.asyncio
 async def test_non_validation_model_error_is_not_retried(settings: Settings) -> None:
     provider = FakeModelProvider([ModelProviderError("MODEL_RATE_LIMITED", "rate limited")])
     with pytest.raises(ModelProviderError):
-        await DocumentSyncWorkflow(FakeMcpClient(), provider, settings, no_status).graph.ainvoke(
-            initial_state()
+        workflow = DocumentSyncWorkflow(
+            ReviewServiceMcp(), provider, review_settings(settings), no_status
         )
-    assert len(provider.calls) == 1
+        await workflow.graph.ainvoke(review_state())
+    assert len(provider.block_content_calls) == 1
 
 
 @pytest.mark.asyncio
@@ -231,8 +288,11 @@ async def test_fixed_graph_reports_expected_planning_statuses(settings: Settings
         statuses.append((status, node))
 
     await DocumentSyncWorkflow(
-        FakeMcpClient(), FakeModelProvider([create_document()]), settings, record
-    ).graph.ainvoke(initial_state())
+        ReviewServiceMcp(),
+        FakeModelProvider([create_document()]),
+        review_settings(settings),
+        record,
+    ).graph.ainvoke(review_state())
     assert statuses == [
         ("PLANNING", "plan_changes"),
         ("VALIDATING", "validate_plan"),
@@ -261,6 +321,108 @@ class CapturingOfficialClient(OfficialMcpClient):
             "createdAt": "2026-07-27T00:00:00Z",
             "idempotentReplay": len(self.invocations) > 1,
         }
+
+
+def test_mcp_result_prefers_structured_content() -> None:
+    result = SimpleNamespace(
+        structuredContent={"changeRequestId": "review-1", "status": "PENDING"},
+        content=[SimpleNamespace(type="text", text='{"ignored":true}')],
+        isError=False,
+    )
+
+    assert _structured_tool_content(result) == {
+        "changeRequestId": "review-1",
+        "status": "PENDING",
+    }
+
+
+def test_mcp_result_accepts_strict_json_text_fallback() -> None:
+    result = SimpleNamespace(
+        structuredContent=None,
+        content=[
+            SimpleNamespace(
+                type="text",
+                text='{"changeRequestId":"review-1","status":"PENDING"}',
+            )
+        ],
+        isError=False,
+    )
+
+    assert _structured_tool_content(result)["changeRequestId"] == "review-1"
+
+
+def test_mcp_non_json_tool_error_is_not_reported_as_unavailable() -> None:
+    result = SimpleNamespace(
+        structuredContent=None,
+        content=[SimpleNamespace(type="text", text="Input schema validation failed")],
+        isError=True,
+    )
+
+    with pytest.raises(McpClientError) as captured:
+        _structured_tool_content(result)
+
+    assert captured.value.code == "MCP_TOOL_ERROR"
+    assert "schema validation" in str(captured.value)
+
+
+class MissingReviewIdClient(OfficialMcpClient):
+    async def _invoke_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        authorization: str,
+    ) -> dict[str, Any]:
+        return {"status": "PENDING"}
+
+
+@pytest.mark.asyncio
+async def test_submit_rejects_success_result_without_change_request_id() -> None:
+    client = MissingReviewIdClient("http://unused", 1)
+
+    with pytest.raises(McpClientError) as captured:
+        await client.submit_document_change(
+            create_document(),
+            workspace_id="11111111-1111-1111-1111-111111111111",
+            run_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            authorization="Bearer transient",
+        )
+
+    assert captured.value.code == "MCP_PROTOCOL_ERROR"
+
+
+class InsufficientFirstBlockProvider(FakeModelProvider):
+    async def generate_document_blocks(
+        self,
+        context: dict[str, Any],
+    ) -> DocumentBlockContentPlan:
+        generated = await super().generate_document_blocks(context)
+        first, *remaining = generated.blocks
+        return DocumentBlockContentPlan(
+            blocks=[
+                DocumentBlockContent(
+                    blockKey=first.blockKey,
+                    status="INSUFFICIENT_EVIDENCE",
+                ),
+                *remaining,
+            ]
+        )
+
+
+@pytest.mark.asyncio
+async def test_insufficient_required_block_is_rewritten_once() -> None:
+    provider = InsufficientFirstBlockProvider([create_document()])
+    result = await DocumentSyncWorkflow(
+        ReviewServiceMcp(),
+        provider,
+        review_settings(Settings()),
+        no_status,
+    ).graph.ainvoke(review_state())
+
+    assert result["decision"] == "SUBMIT_REVIEW"
+    assert len(provider.block_repair_calls) == 1
+    assert provider.block_repair_calls[0]["validationErrors"][0]["code"] == (
+        "BLOCK_INSUFFICIENT_EVIDENCE"
+    )
 
 
 @pytest.mark.asyncio
@@ -353,11 +515,15 @@ def test_formal_post_returns_202_and_no_change_terminal(settings: Settings) -> N
 
 
 def test_formal_run_submits_pending_review(settings: Settings) -> None:
-    client, mcp, _ = app_client(settings, FakeModelProvider([create_document()]))
+    client, mcp, _ = app_client(
+        review_settings(settings),
+        FakeModelProvider([create_document()]),
+        ReviewServiceMcp(),
+    )
     with client:
         response = client.post(
             "/api/v1/agent-runs",
-            json=request_payload(),
+            json=request_payload(list(REVIEW_SOURCE_PATHS)),
             headers={"Authorization": "Bearer transient"},
         )
         result = wait_for_terminal(client, response.json()["runId"])
@@ -383,11 +549,15 @@ def test_model_failures_are_visible_in_run(
     error: Exception,
     expected: str,
 ) -> None:
-    client, _, _ = app_client(settings, FakeModelProvider([error]))
+    client, _, _ = app_client(
+        review_settings(settings),
+        FakeModelProvider([error]),
+        ReviewServiceMcp(),
+    )
     with client:
         response = client.post(
             "/api/v1/agent-runs",
-            json=request_payload(),
+            json=request_payload(list(REVIEW_SOURCE_PATHS)),
             headers={"Authorization": "Bearer transient"},
         )
         result = wait_for_terminal(client, response.json()["runId"])
@@ -396,25 +566,30 @@ def test_model_failures_are_visible_in_run(
 
 
 def test_validation_failure_is_visible_and_never_submits(settings: Settings) -> None:
+    invalid_response = ModelProviderError(
+        "MODEL_INVALID_RESPONSE",
+        "invalid block content",
+        raw_plan={"blocks": [{"operation": {}}]},
+    )
     client, mcp, _ = app_client(
-        settings,
-        FakeModelProvider([invalid_update(), invalid_update()]),
+        review_settings(settings),
+        FakeModelProvider([invalid_response]),
+        ReviewServiceMcp(),
     )
     with client:
         response = client.post(
             "/api/v1/agent-runs",
-            json=request_payload(),
+            json=request_payload(list(REVIEW_SOURCE_PATHS)),
             headers={"Authorization": "Bearer transient"},
         )
         result = wait_for_terminal(client, response.json()["runId"])
-    assert result["errorCode"] == "PLAN_VALIDATION_FAILED"
-    assert "@" in result["errorMessage"]
+    assert result["errorCode"] == "MODEL_INVALID_RESPONSE"
     assert "Bearer transient" not in result["errorMessage"]
     assert not mcp.submissions
 
 
 def test_submission_permission_failure_is_visible(settings: Settings) -> None:
-    class DeniedMcp(FakeMcpClient):
+    class DeniedMcp(ReviewServiceMcp):
         async def submit_document_change(
             self,
             plan: AgentPlan,
@@ -426,14 +601,14 @@ def test_submission_permission_failure_is_visible(settings: Settings) -> None:
             raise McpClientError("MCP_PERMISSION_DENIED", "denied")
 
     client, _, _ = app_client(
-        settings,
+        review_settings(settings),
         FakeModelProvider([create_document()]),
         DeniedMcp(),
     )
     with client:
         response = client.post(
             "/api/v1/agent-runs",
-            json=request_payload(),
+            json=request_payload(list(REVIEW_SOURCE_PATHS)),
             headers={"Authorization": "Bearer transient"},
         )
         result = wait_for_terminal(client, response.json()["runId"])
@@ -466,19 +641,20 @@ def test_redis_record_contains_summary_only(settings: Settings) -> None:
 @pytest.mark.asyncio
 async def test_executor_does_not_start_same_run_twice(settings: Settings) -> None:
     class SlowProvider(FakeModelProvider):
-        async def plan_document_sync(self, *args: Any, **kwargs: Any) -> AgentPlan:
-            self.calls.append({"context": args[0]})
+        async def generate_document_blocks(self, context: dict[str, Any]) -> Any:
             await asyncio.sleep(0.05)
-            return no_change()
+            return await super().generate_document_blocks(context)
 
     provider = SlowProvider()
     store = MemoryRunStore()
-    executor = AgentRunExecutor(FakeMcpClient(), provider, store, settings)
+    executor = AgentRunExecutor(
+        ReviewServiceMcp(), provider, store, review_settings(settings)
+    )
     kwargs = {
         "run_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         "workspace_id": "11111111-1111-1111-1111-111111111111",
         "repository_id": REPOSITORY,
-        "selected_paths": ["src/Example.java"],
+        "selected_paths": list(REVIEW_SOURCE_PATHS),
         "user_instruction": None,
         "authorization": "Bearer transient",
         "created_at": "2026-07-27T00:00:00+00:00",
@@ -486,8 +662,8 @@ async def test_executor_does_not_start_same_run_twice(settings: Settings) -> Non
     executor.start(**kwargs)
     executor.start(**kwargs)
     for _ in range(100):
-        if provider.calls:
+        if provider.block_content_calls:
             break
         await asyncio.sleep(0.01)
-    assert len(provider.calls) == 1
+    assert len(provider.block_content_calls) == 1
     await executor.close()

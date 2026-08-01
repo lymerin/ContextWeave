@@ -198,7 +198,7 @@ async def test_worker_completes_no_change_job_with_short_lived_delegation(
 
 
 @pytest.mark.asyncio
-async def test_worker_persists_review_request_and_stable_unit_result(
+async def test_worker_does_not_submit_without_program_block_plan(
     settings: Settings,
 ) -> None:
     plan = AgentPlan.model_validate(
@@ -241,12 +241,12 @@ async def test_worker_persists_review_request_and_stable_unit_result(
     await worker._execute(claimed)
     job = next(iter(repository.jobs.values()))
     assert job["status"] == "COMPLETED"
-    assert job["result"] == "REVIEW_SUBMITTED"
-    assert job["review_request_ids"] == ["99999999-9999-9999-9999-999999999999"]
+    assert job["result"] == "NO_CHANGE"
+    assert job["review_request_ids"] == []
 
 
 @pytest.mark.asyncio
-async def test_retryable_model_timeout_enters_retry_waiting(settings: Settings) -> None:
+async def test_model_is_not_called_without_program_block_plan(settings: Settings) -> None:
     repository = await _seed_repository()
     provider = FakeModelProvider([ModelProviderError("MODEL_TIMEOUT", "timeout")])
     worker = _worker(repository, settings, provider=provider)
@@ -254,13 +254,14 @@ async def test_retryable_model_timeout_enters_retry_waiting(settings: Settings) 
     assert claimed is not None
     await worker._execute(claimed)
     unit = next(iter(repository.units.values()))
-    assert unit["status"] == "RETRY_WAITING"
-    assert unit["next_attempt_at"] is not None
-    assert next(iter(repository.jobs.values()))["status"] == "QUEUED"
+    assert unit["status"] == "COMPLETED"
+    assert unit["next_attempt_at"] is None
+    assert next(iter(repository.jobs.values()))["status"] == "COMPLETED"
+    assert provider.block_content_calls == []
 
 
 @pytest.mark.asyncio
-async def test_retryable_error_at_max_attempts_fails_terminally(
+async def test_max_attempt_unit_without_block_plan_completes_without_model(
     settings: Settings,
 ) -> None:
     repository = await _seed_repository()
@@ -273,9 +274,10 @@ async def test_retryable_error_at_max_attempts_fails_terminally(
 
     await worker._execute(claimed)
 
-    assert next(iter(repository.units.values()))["status"] == "FAILED"
-    assert next(iter(repository.jobs.values()))["status"] == "FAILED"
-    assert next(iter(repository.jobs.values()))["error_code"] == "MODEL_TIMEOUT"
+    assert next(iter(repository.units.values()))["status"] == "COMPLETED"
+    assert next(iter(repository.jobs.values()))["status"] == "COMPLETED"
+    assert next(iter(repository.jobs.values()))["error_code"] is None
+    assert provider.block_content_calls == []
 
 
 @pytest.mark.asyncio

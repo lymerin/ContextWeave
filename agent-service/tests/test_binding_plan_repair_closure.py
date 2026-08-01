@@ -7,11 +7,22 @@ from uuid import UUID
 
 import pytest
 from conftest import FakeMcpClient
+from pydantic import ValidationError
 
 from app.config import Settings
 from app.graph.document_sync_workflow import DocumentSyncWorkflow
-from app.schemas.binding_plans import BindingPlan, BindingRole, BindingSelection
-from app.schemas.plans import AgentPlan
+from app.planning.binding_candidates import (
+    BindingCandidateBuilder,
+    BindingPlanValidationError,
+)
+from app.planning.context_serializer import build_model_context
+from app.planning.document_block_plans import DocumentBlockPlanBuilder
+from app.planning.program_document_plan import ProgramDocumentPlanAssembler
+from app.schemas.document_block_content import (
+    DocumentBlockContent,
+    DocumentBlockContentPlan,
+    SupportingCandidateSelection,
+)
 
 REPOSITORY_ID = UUID("22222222-2222-2222-2222-222222222222")
 WORKSPACE_ID = "11111111-1111-1111-1111-111111111111"
@@ -27,65 +38,47 @@ SOURCE_PATHS = (
 class RepairingProvider:
     def __init__(self) -> None:
         self.document_calls: list[dict[str, Any]] = []
-        self.binding_calls: list[dict[str, Any]] = []
+        self.repair_calls: list[dict[str, Any]] = []
 
-    async def plan_document_sync(
+    async def generate_document_blocks(
         self,
-        context_bundle: dict[str, Any],
+        context: dict[str, Any],
+    ) -> DocumentBlockContentPlan:
+        self.document_calls.append(context)
+        return DocumentBlockContentPlan(
+            blocks=[
+                DocumentBlockContent(
+                    blockKey=block["blockKey"],
+                    status="CONTENT",
+                    content=(
+                        "这里说明当前代码可以直接确认的职责和处理步骤。"
+                        if index != 2
+                        else "这里虚构了数据库行为，需要按当前代码证据重写。"
+                    ),
+                )
+                for index, block in enumerate(context["blocks"])
+            ]
+        )
+
+    async def repair_document_block(
+        self,
+        context: dict[str, Any],
         *,
-        previous_plan: dict[str, Any] | None = None,
-        validation_errors: list[dict[str, str]] | None = None,
-    ) -> AgentPlan:
-        self.document_calls.append(
+        previous_block: dict[str, Any],
+        validation_errors: list[dict[str, str]],
+    ) -> DocumentBlockContent:
+        self.repair_calls.append(
             {
-                "context": context_bundle,
-                "previousPlan": previous_plan,
+                "context": context,
+                "previousBlock": previous_block,
                 "validationErrors": validation_errors,
             }
         )
-        block_plans = context_bundle["documentBlockPlans"]
-        if previous_plan is None:
-            return _agent_plan(block_plans[:-1])
-        return _agent_plan(block_plans)
-
-    async def plan_block_bindings(
-        self,
-        candidates: dict[str, Any],
-        *,
-        previous_plan: dict[str, Any] | None = None,
-        validation_errors: list[dict[str, str]] | None = None,
-    ) -> BindingPlan:
-        self.binding_calls.append(candidates)
-        selections: list[BindingSelection] = []
-        for block in candidates["documentBlockPlans"]:
-            primary = block["primaryCandidateIds"][0]
-            selections.append(
-                BindingSelection(
-                    blockKey=block["blockKey"],
-                    codeCandidateId=primary,
-                    role=BindingRole.PRIMARY,
-                    ordinal=1,
-                    reason="该候选承担当前文档块描述的主要代码职责。",
-                    confidence=0.99,
-                )
-            )
-            supporting_ids = [
-                candidate_id
-                for candidate_id in block["requiredCandidateIds"]
-                if candidate_id != primary
-            ]
-            selections.extend(
-                BindingSelection(
-                    blockKey=block["blockKey"],
-                    codeCandidateId=candidate_id,
-                    role=BindingRole.SUPPORTING,
-                    ordinal=ordinal,
-                    reason="该候选为当前文档块提供必要的协作代码证据。",
-                    confidence=0.95,
-                )
-                for ordinal, candidate_id in enumerate(supporting_ids, start=2)
-            )
-        return BindingPlan(selections=selections)
+        return DocumentBlockContent(
+            blockKey=previous_block["blockKey"],
+            status="CONTENT",
+            content="这里只说明当前代码证据可以直接确认的职责和处理步骤。",
+        )
 
     async def plan_project_units(self, *_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError("project planner must not run")
@@ -114,29 +107,22 @@ async def test_real_failure_fixture_repairs_once_then_submits_pending_review(
         }
     )
 
-    assert len(provider.document_calls) == 2
-    initial_errors = provider.document_calls[1]["validationErrors"]
-    assert initial_errors == [
-        {
-            "path": "operations",
-            "code": "DOCUMENT_BLOCK_PLAN_MISMATCH",
-            "message": "Document operations must match the supplied blockKey set exactly",
-        }
+    assert len(provider.document_calls) == 1
+    assert len(provider.repair_calls) == 1
+    initial_errors = provider.repair_calls[0]["validationErrors"]
+    assert [item["code"] for item in initial_errors] == [
+        "UNSUPPORTED_EXTERNAL_RELATION"
     ]
     diagnostic_log = "\n".join(caplog.messages)
     assert "runId=binding-plan-repair-fixture" in diagnostic_log
-    assert "DOCUMENT_BLOCK_PLAN_MISMATCH" in diagnostic_log
-    assert "candidate_" in diagnostic_log
-    repaired_context = provider.document_calls[1]["context"]
-    repaired_plan = provider.document_calls[1]["previousPlan"]
+    assert "UNSUPPORTED_EXTERNAL_RELATION" in diagnostic_log
+    repaired_context = provider.document_calls[0]
     expected_keys = [
-        item["blockKey"] for item in repaired_context["documentBlockPlans"]
+        item["blockKey"] for item in repaired_context["blocks"]
     ]
-    assert [
-        operation["clientOperationId"]
-        for operation in repaired_plan["operations"]
-        if operation["operationType"] in {"ADD_BLOCK", "UPDATE_BLOCK"}
-    ] == expected_keys[:-1]
+    assert provider.repair_calls[0]["context"]["blocks"][0]["blockKey"] == (
+        expected_keys[2]
+    )
 
     assert result["change_request_id"] == "99999999-9999-9999-9999-999999999999"
     assert len(mcp.submissions) == 1
@@ -147,7 +133,7 @@ async def test_real_failure_fixture_repairs_once_then_submits_pending_review(
         if operation.operationType.value in {"ADD_BLOCK", "UPDATE_BLOCK"}
     ]
     assert [item.clientOperationId for item in content_operations] == expected_keys
-    assert len(provider.binding_calls) == 1
+    assert len(content_operations) == 5
 
     bindings_by_block: dict[str, list[Any]] = {}
     for proposal in submitted.bindingProposals:
@@ -165,6 +151,114 @@ async def test_real_failure_fixture_repairs_once_then_submits_pending_review(
         assert len(primary) == 1, block_key
         assert primary[0].bindingOrdinal == 1
         assert supporting == list(range(2, len(supporting) + 2))
+
+    primary_symbols = {
+        operation.clientOperationId: next(
+            proposal.symbolKey
+            for proposal in submitted.bindingProposals
+            if proposal.createdBlockClientOperationId == operation.clientOperationId
+            and proposal.bindingRole == "PRIMARY"
+        )
+        for operation in content_operations
+    }
+    assert primary_symbols[expected_keys[0]].endswith(":review:HTTP_ROUTE")
+    assert ":review_document:" in primary_symbols[expected_keys[3]]
+    repaired_key = expected_keys[2]
+    assert all(
+        "只保留能够" not in (operation.proposedPlainText or "")
+        for operation in content_operations
+        if operation.clientOperationId != repaired_key
+    )
+
+
+def test_model_content_schema_rejects_program_owned_fields() -> None:
+    with pytest.raises(ValidationError):
+        DocumentBlockContentPlan.model_validate(
+            {
+                "blocks": [
+                    {
+                        "blockKey": "block-contract",
+                        "status": "CONTENT",
+                        "content": "只包含正文。",
+                        "title": "模型不得修改标题",
+                        "sortOrder": 99,
+                        "operation": {"operationType": "ADD_BLOCK"},
+                    }
+                ]
+            }
+        )
+
+
+def test_program_assembler_rejects_changed_blocks_and_unknown_supporting() -> None:
+    model_context, candidates, block_plans = _planning_fixture()
+    assembler = ProgramDocumentPlanAssembler()
+    valid = DocumentBlockContentPlan(
+        blocks=[
+            DocumentBlockContent(
+                blockKey=item.blockKey,
+                status="CONTENT",
+                content="仅说明代码证据可以确认的职责。",
+            )
+            for item in block_plans
+        ]
+    )
+    missing = DocumentBlockContentPlan(blocks=valid.blocks[:-1])
+    with pytest.raises(BindingPlanValidationError) as mismatch:
+        assembler.assemble(model_context, candidates, block_plans, missing)
+    assert mismatch.value.issues[0]["code"] == "DOCUMENT_BLOCK_CONTENT_PLAN_MISMATCH"
+
+    first = valid.blocks[0].model_copy(
+        update={
+            "supportingSelections": [
+                SupportingCandidateSelection(
+                    candidateId="candidate_unknown",
+                    reason="不在程序允许集合内。",
+                    confidence=0.5,
+                )
+            ]
+        }
+    )
+    unknown = DocumentBlockContentPlan(blocks=[first, *valid.blocks[1:]])
+    with pytest.raises(BindingPlanValidationError) as unsupported:
+        assembler.assemble(model_context, candidates, block_plans, unknown)
+    assert unsupported.value.issues[0]["code"] == "UNKNOWN_CANDIDATE_ID"
+
+
+def test_program_assembler_owns_stable_operations_and_primary_bindings() -> None:
+    model_context, candidates, block_plans = _planning_fixture()
+    assembled = ProgramDocumentPlanAssembler().assemble(
+        model_context,
+        candidates,
+        block_plans,
+        DocumentBlockContentPlan(
+            blocks=[
+                DocumentBlockContent(
+                    blockKey=item.blockKey,
+                    status="CONTENT",
+                    content="仅说明代码证据可以确认的职责。",
+                )
+                for item in block_plans
+            ]
+        ),
+    )
+    assert len(assembled.agent_plan.operations) == 6
+    assert [item.clientOperationId for item in assembled.agent_plan.operations[1:]] == [
+        item.blockKey for item in block_plans
+    ]
+    primary_by_block = {
+        item.blockKey: item
+        for item in assembled.binding_plan.selections
+        if item.role.value == "PRIMARY"
+    }
+    assert set(primary_by_block) == {item.blockKey for item in block_plans}
+    assert all(item.ordinal == 1 for item in primary_by_block.values())
+    candidate_by_id = {item.candidateId: item for item in candidates}
+    assert candidate_by_id[
+        primary_by_block[block_plans[0].blockKey].codeCandidateId
+    ].symbolKey.endswith(":review:HTTP_ROUTE")
+    assert candidate_by_id[
+        primary_by_block[block_plans[3].blockKey].codeCandidateId
+    ].symbolKey.find(":review_document:") >= 0
 
 
 def _context_bundle() -> dict[str, Any]:
@@ -195,56 +289,9 @@ def _context_bundle() -> dict[str, Any]:
     }
 
 
-def _agent_plan(block_plans: list[dict[str, Any]]) -> AgentPlan:
-    operations: list[dict[str, Any]] = [
-        {
-            "clientOperationId": "create_review_service_document",
-            "sequenceNumber": 1,
-            "operationType": "CREATE_DOCUMENT",
-            "proposedDocumentTitle": "评审服务代码职责说明",
-            "proposedDocumentType": "BACKEND",
-        }
-    ]
-    evidence: list[dict[str, Any]] = [
-        {
-            "clientOperationId": "create_review_service_document",
-            "repositoryId": str(REPOSITORY_ID),
-            "filePath": SOURCE_PATHS[0],
-            "description": "所选代码文件共同构成评审服务的入口、模型转换和规则处理。",
-        }
-    ]
-    for sequence_number, block in enumerate(block_plans, start=2):
-        operations.append(
-            {
-                "clientOperationId": block["blockKey"],
-                "sequenceNumber": sequence_number,
-                "operationType": "ADD_BLOCK",
-                "createdDocumentClientOperationId": "create_review_service_document",
-                "proposedBlockType": "PARAGRAPH",
-                "proposedPlainText": (
-                    f"## {block['title']}\n\n"
-                    "这一部分依据当前选定代码说明实际职责、输入输出和协作关系。"
-                    "正文只陈述能够由代码直接确认的行为，帮助初学者理解调用顺序，"
-                    "并在修改对应职责时检查相关文件是否仍保持一致。"
-                ),
-                "proposedContentFormat": "MARKDOWN",
-            }
-        )
-        evidence.append(
-            {
-                "clientOperationId": block["blockKey"],
-                "repositoryId": str(REPOSITORY_ID),
-                "filePath": SOURCE_PATHS[0],
-                "description": f"程序规划的 {block['targetKind']} 代码职责证据。",
-            }
-        )
-    return AgentPlan.model_validate(
-        {
-            "decision": "SUBMIT_REVIEW",
-            "summary": "生成评审服务代码职责说明",
-            "rationale": "按程序提供的固定文档块契约生成可评审内容",
-            "operations": operations,
-            "bindingProposals": [],
-            "evidence": evidence,
-        }
-    )
+def _planning_fixture() -> tuple[Any, Any, Any]:
+    model_context = build_model_context(_context_bundle())
+    candidates = BindingCandidateBuilder().build_code(model_context)
+    block_plans = DocumentBlockPlanBuilder().build(candidates)
+    assert len(block_plans) == 5
+    return model_context, candidates, block_plans

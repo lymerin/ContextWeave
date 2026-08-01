@@ -111,7 +111,42 @@ public class ReviewSubmissionApplicationService {
 
         Map<String, Object> body = new LinkedHashMap<>(arguments);
         body.remove("workspaceId");
-        return gateway.submitDocumentChange(workspaceId, body, identity);
+        Map<String, Object> coreResult = gateway.submitDocumentChange(workspaceId, body, identity);
+        Map<String, Object> result = new LinkedHashMap<>(coreResult);
+        result.put("workspaceId", workspaceId.toString());
+        result.put("repositoryId", uniqueString(bindingProposals, "repositoryId"));
+        result.put("documentId", uniqueDocumentId(operations, bindingProposals));
+        result.put("operationCount", operations.size());
+        result.put("bindingProposalCount", bindingProposals.size());
+        return result;
+    }
+
+    private Object uniqueDocumentId(List<?> operations, List<?> bindingProposals) {
+        Object operationDocumentId = uniqueString(operations, "documentId");
+        Object bindingDocumentId = uniqueString(bindingProposals, "documentId");
+        if (operationDocumentId == null) {
+            return bindingDocumentId;
+        }
+        if (bindingDocumentId == null || operationDocumentId.equals(bindingDocumentId)) {
+            return operationDocumentId;
+        }
+        return null;
+    }
+
+    private Object uniqueString(List<?> values, String field) {
+        String selected = null;
+        for (Object value : values) {
+            Object candidate = map(value, field).get(field);
+            if (candidate == null) {
+                continue;
+            }
+            String normalized = candidate.toString();
+            if (selected != null && !selected.equals(normalized)) {
+                return null;
+            }
+            selected = normalized;
+        }
+        return selected;
     }
 
     private void validateText(Object value, int max, String field) {

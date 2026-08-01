@@ -10,6 +10,10 @@ from app.config import Settings
 from app.main import create_app
 from app.runtime.semantic_planner import PlannedSemanticUnit
 from app.schemas.binding_plans import BindingPlan, BindingSelection
+from app.schemas.document_block_content import (
+    DocumentBlockContent,
+    DocumentBlockContentPlan,
+)
 from app.schemas.plans import AgentPlan, BindingAction, Decision
 from app.schemas.unit_plans import UnitPlan
 
@@ -680,6 +684,8 @@ class FakeModelProvider:
         self.unit_plan_calls: list[dict[str, Any]] = []
         self.binding_plan_calls: list[dict[str, Any]] = []
         self.pending_binding_proposals: list[Any] = []
+        self.block_content_calls: list[dict[str, Any]] = []
+        self.block_repair_calls: list[dict[str, Any]] = []
         self.unit_plans: list[UnitPlan | Exception] = [
             UnitPlan.model_validate(
                 {
@@ -697,6 +703,48 @@ class FakeModelProvider:
                 }
             )
         ]
+
+    async def generate_document_blocks(
+        self,
+        context: dict[str, Any],
+    ) -> DocumentBlockContentPlan:
+        self.block_content_calls.append(context)
+        item = self.plans[min(len(self.block_content_calls) - 1, len(self.plans) - 1)]
+        if isinstance(item, Exception):
+            raise item
+        return DocumentBlockContentPlan(
+            blocks=[
+                DocumentBlockContent(
+                    blockKey=item["blockKey"],
+                    status="CONTENT",
+                    content=(
+                        "本节依据程序提供的代码证据，说明该职责的输入、处理步骤、"
+                        "输出以及与同一调用链其他代码的协作边界。"
+                    ),
+                )
+                for item in context.get("blocks", [])
+            ]
+        )
+
+    async def repair_document_block(
+        self,
+        context: dict[str, Any],
+        *,
+        previous_block: dict[str, Any],
+        validation_errors: list[dict[str, str]],
+    ) -> DocumentBlockContent:
+        self.block_repair_calls.append(
+            {
+                "context": context,
+                "previousBlock": previous_block,
+                "validationErrors": validation_errors,
+            }
+        )
+        return DocumentBlockContent(
+            blockKey=previous_block["blockKey"],
+            status="CONTENT",
+            content="本节只保留能够由当前代码证据直接确认的职责、输入、处理和输出。",
+        )
 
     async def plan_document_sync(
         self,

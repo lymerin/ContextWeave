@@ -8,6 +8,10 @@ from pydantic import ValidationError
 
 from app.providers.base import ModelProviderError
 from app.schemas.binding_plans import BindingPlan
+from app.schemas.document_block_content import (
+    DocumentBlockContent,
+    DocumentBlockContentPlan,
+)
 from app.schemas.plans import AgentPlan
 from app.schemas.unit_plans import UnitPlan
 
@@ -49,6 +53,60 @@ class DeepSeekProvider:
         )
         self._block_binding_prompt = (
             files("app.prompts").joinpath("block_binding_v1.md").read_text(encoding="utf-8")
+        )
+        self._document_block_content_prompt = (
+            files("app.prompts")
+            .joinpath("document_block_content_v1.md")
+            .read_text(encoding="utf-8")
+        )
+
+    async def generate_document_blocks(
+        self,
+        context: dict[str, Any],
+    ) -> DocumentBlockContentPlan:
+        self._require_configuration()
+        return cast(
+            DocumentBlockContentPlan,
+            await self._request_structured(
+                system_prompt=self._document_block_content_prompt,
+                user_payload={
+                    "documentBlockContentPlanSchema": (
+                        DocumentBlockContentPlan.model_json_schema()
+                    ),
+                    "context": context,
+                },
+                schema=DocumentBlockContentPlan,
+                response_name="DocumentBlockContentPlan",
+            ),
+        )
+
+    async def repair_document_block(
+        self,
+        context: dict[str, Any],
+        *,
+        previous_block: dict[str, Any],
+        validation_errors: list[dict[str, str]],
+    ) -> DocumentBlockContent:
+        self._require_configuration()
+        return cast(
+            DocumentBlockContent,
+            await self._request_structured(
+                system_prompt=self._document_block_content_prompt,
+                user_payload={
+                    "documentBlockContentSchema": DocumentBlockContent.model_json_schema(),
+                    "context": context,
+                    "repair": {
+                        "previousBlock": previous_block,
+                        "validationErrors": validation_errors,
+                        "instruction": (
+                            "只重写当前 blockKey 的正文和合法 SUPPORTING 选择一次。"
+                            "不得返回其他 Block，不得修改程序拥有的结构或 PRIMARY。"
+                        ),
+                    },
+                },
+                schema=DocumentBlockContent,
+                response_name="DocumentBlockContent",
+            ),
         )
 
     async def plan_document_sync(
@@ -195,9 +253,21 @@ class DeepSeekProvider:
         *,
         system_prompt: str,
         user_payload: dict[str, Any],
-        schema: type[AgentPlan] | type[UnitPlan] | type[BindingPlan],
+        schema: (
+            type[AgentPlan]
+            | type[UnitPlan]
+            | type[BindingPlan]
+            | type[DocumentBlockContentPlan]
+            | type[DocumentBlockContent]
+        ),
         response_name: str,
-    ) -> AgentPlan | UnitPlan | BindingPlan:
+    ) -> (
+        AgentPlan
+        | UnitPlan
+        | BindingPlan
+        | DocumentBlockContentPlan
+        | DocumentBlockContent
+    ):
         body: dict[str, Any] = {
             "model": self._model,
             "temperature": 0,

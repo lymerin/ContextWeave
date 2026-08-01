@@ -248,6 +248,17 @@ def validate_document_operations(
                     "Each planned block heading must preserve the supplied title",
                 )
             )
+        else:
+            body = "\n".join(operation.proposedPlainText.splitlines()[1:])
+            for forbidden_claim in block_plan.forbiddenClaims:
+                if forbidden_claim and forbidden_claim in body:
+                    issues.append(
+                        _issue(
+                            f"operations.{operation.clientOperationId}.proposedPlainText",
+                            "DOCUMENT_BLOCK_FORBIDDEN_CLAIM",
+                            f"Document Block contains forbidden claim: {forbidden_claim}",
+                        )
+                    )
     if issues:
         raise BindingPlanValidationError(issues)
 

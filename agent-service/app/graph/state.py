@@ -24,6 +24,11 @@ class AgentState(TypedDict, total=False):
     errors: list[dict[str, Any]]
     context_bundle: dict[str, Any]
     model_context: dict[str, Any]
+    block_content_context: dict[str, Any]
+    block_content_plan: Any
+    program_binding_plan: Any
+    invalid_block_keys: list[str]
+    repaired_block_keys: list[str]
     plan: Any
     previous_plan: dict[str, Any]
     validation_errors: list[dict[str, str]]
