@@ -82,6 +82,7 @@ export interface DocumentChangeEvidence {
 
 export type BindingAction = 'UPSERT_BINDING' | 'REMOVE_BINDING';
 export type CodeAnchorKind = 'FILE' | 'RANGE' | 'SYMBOL';
+export type BindingRole = 'PRIMARY' | 'SUPPORTING';
 
 export interface DocumentChangeBindingProposal {
   bindingProposalId: string;
@@ -107,6 +108,8 @@ export interface DocumentChangeBindingProposal {
   documentAnchorCandidateId?: string | null;
   reason: string;
   confidence?: number | null;
+  bindingRole?: BindingRole;
+  bindingOrdinal?: number;
 }
 
 export interface DocumentChangeApplyResult {

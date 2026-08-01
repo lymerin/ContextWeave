@@ -54,6 +54,8 @@ export function buildBindingFixture(input: BuildBindingFixtureInput): LinkedFixt
     symbolKey: binding.revision === null ? null : binding.symbolKey,
     startLine: binding.revision === null ? null : binding.startLine,
     endLine: binding.revision === null ? null : binding.endLine,
+    bindingRole: binding.bindingRole ?? 'PRIMARY',
+    bindingOrdinal: binding.bindingOrdinal ?? 1,
     relationType: 'DESCRIBES' as const,
     bindingDisplayState: classifyBinding(binding, input) as 'precise' | 'weak',
   }));
@@ -120,22 +122,18 @@ function validRange(startLine: number | null, endLine: number | null) {
 
 export function sortBindings(
   bindings: CodeBindingQueryItem[],
-  revision: string,
-  blockSortOrders?: ReadonlyMap<string, number>,
+  _revision: string,
+  _blockSortOrders?: ReadonlyMap<string, number>,
 ): CodeBindingQueryItem[] {
   return [...bindings].sort((left, right) => {
-    const revisionDifference = Number(right.revision === revision)
-      - Number(left.revision === revision);
-    if (revisionDifference !== 0) return revisionDifference;
-    const preciseDifference = Number(isPrecise(right)) - Number(isPrecise(left));
-    if (preciseDifference !== 0) return preciseDifference;
+    const roleDifference = roleOrder(left) - roleOrder(right);
+    if (roleDifference !== 0) return roleDifference;
+    const ordinalDifference = bindingOrdinal(left) - bindingOrdinal(right);
+    if (ordinalDifference !== 0) return ordinalDifference;
+    const precisionDifference = anchorPrecision(left) - anchorPrecision(right);
+    if (precisionDifference !== 0) return precisionDifference;
     const startDifference = lineOrder(left.startLine) - lineOrder(right.startLine);
     if (startDifference !== 0) return startDifference;
-    const endDifference = lineOrder(left.endLine) - lineOrder(right.endLine);
-    if (endDifference !== 0) return endDifference;
-    const blockDifference = blockOrder(left, blockSortOrders)
-      - blockOrder(right, blockSortOrders);
-    if (blockDifference !== 0) return blockDifference;
     return left.bindingId.localeCompare(right.bindingId);
   });
 }
@@ -169,6 +167,8 @@ export function documentBindingToQueryItem(
     symbolKey: binding.symbolKey,
     startLine: binding.startLine,
     endLine: binding.endLine,
+    bindingRole: binding.bindingRole ?? 'PRIMARY',
+    bindingOrdinal: binding.bindingOrdinal ?? 1,
     documentId: binding.documentId,
     blockId: binding.blockId,
     targetKey: binding.targetKey,
@@ -177,25 +177,25 @@ export function documentBindingToQueryItem(
   };
 }
 
-function isPrecise(binding: CodeBindingQueryItem) {
-  return binding.blockId !== null
-    && binding.revision !== null
-    && (binding.anchorKind === 'SYMBOL' || binding.anchorKind === 'RANGE')
-    && binding.startLine !== null
-    && binding.endLine !== null;
+function roleOrder(binding: CodeBindingQueryItem) {
+  return binding.bindingRole === 'SUPPORTING' ? 1 : 0;
+}
+
+function bindingOrdinal(binding: CodeBindingQueryItem) {
+  return binding.bindingOrdinal && binding.bindingOrdinal > 0
+    ? binding.bindingOrdinal
+    : 1;
+}
+
+function anchorPrecision(binding: CodeBindingQueryItem) {
+  if (binding.anchorKind === 'SYMBOL' && validRange(binding.startLine, binding.endLine)) return 0;
+  if (binding.anchorKind === 'RANGE' && validRange(binding.startLine, binding.endLine)) return 1;
+  if (binding.anchorKind === 'SYMBOL') return 2;
+  return 3;
 }
 
 function lineOrder(line: number | null) {
   return line ?? Number.MAX_SAFE_INTEGER;
-}
-
-function blockOrder(
-  binding: CodeBindingQueryItem,
-  blockSortOrders?: ReadonlyMap<string, number>,
-) {
-  return binding.blockId === null
-    ? Number.MAX_SAFE_INTEGER
-    : blockSortOrders?.get(binding.blockId) ?? Number.MAX_SAFE_INTEGER - 1;
 }
 
 export function bindingDocumentChoices(

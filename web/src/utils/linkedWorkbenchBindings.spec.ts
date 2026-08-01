@@ -55,10 +55,10 @@ describe('linkedWorkbenchBindings', () => {
     const fixture = buildBindingFixture(input(source('src/A.java'), bindings));
 
     expect(fixture.links).toHaveLength(3);
-    expect(fixture.codeAnchors.map(item => item.anchorKind)).toEqual(['RANGE', 'SYMBOL', 'FILE']);
+    expect(fixture.codeAnchors.map(item => item.anchorKind)).toEqual(['SYMBOL', 'RANGE', 'FILE']);
     expect(fixture.codeAnchors[0]).toMatchObject({
-      startLine: 2,
-      endLine: 4,
+      startLine: 6,
+      endLine: 8,
     });
   });
 
@@ -87,7 +87,7 @@ describe('linkedWorkbenchBindings', () => {
       .toBe('a');
   });
 
-  it('orders precise bindings by code range, block order and stable id while keeping FILE last', () => {
+  it('orders equal-role bindings by precision, line and stable id while keeping FILE last', () => {
     const bindings = [
       binding('file', 'document-a', 'src/A.java'),
       {
@@ -122,7 +122,7 @@ describe('linkedWorkbenchBindings', () => {
     });
 
     expect(fixture.links.map(item => item.bindingId))
-      .toEqual(['same-b', 'same-a', 'late', 'file']);
+      .toEqual(['same-a', 'same-b', 'late', 'file']);
     expect(selectDefaultBinding(
       bindings,
       'revision',
@@ -131,6 +131,54 @@ describe('linkedWorkbenchBindings', () => {
       'src/A.java',
       new Map([['block-late', 3]]),
     )?.bindingId).toBe('late');
+  });
+
+  it('orders PRIMARY before SUPPORTING and preserves role metadata in the fixture', () => {
+    const supportingSecond = {
+      ...binding('supporting-2', 'document-a', 'src/A.java'),
+      bindingRole: 'SUPPORTING' as const,
+      bindingOrdinal: 2,
+      anchorKind: 'SYMBOL' as const,
+      symbolKey: 'JAVA:A.helper',
+      startLine: 2,
+      endLine: 4,
+    };
+    const primary = {
+      ...binding('primary', 'document-a', 'src/A.java'),
+      bindingRole: 'PRIMARY' as const,
+      bindingOrdinal: 1,
+    };
+    const supportingThird = {
+      ...binding('supporting-3', 'document-a', 'src/A.java'),
+      bindingRole: 'SUPPORTING' as const,
+      bindingOrdinal: 3,
+      anchorKind: 'RANGE' as const,
+      startLine: 10,
+      endLine: 12,
+    };
+
+    const fixture = buildBindingFixture(input(
+      source('src/A.java'),
+      [supportingThird, supportingSecond, primary],
+    ));
+
+    expect(fixture.links.map(item => item.bindingId)).toEqual([
+      'primary', 'supporting-2', 'supporting-3',
+    ]);
+    expect(fixture.links.map(item => [item.bindingRole, item.bindingOrdinal])).toEqual([
+      ['PRIMARY', 1], ['SUPPORTING', 2], ['SUPPORTING', 3],
+    ]);
+  });
+
+  it('treats legacy bindings without role fields as PRIMARY ordinal one', () => {
+    const fixture = buildBindingFixture(input(
+      source('src/A.java'),
+      [binding('legacy', 'document-a', 'src/A.java')],
+    ));
+    expect(fixture.links[0]).toMatchObject({
+      bindingRole: 'PRIMARY',
+      bindingOrdinal: 1,
+    });
   });
 
   it('deduplicates related documents without merging different document ids', () => {

@@ -121,7 +121,14 @@
             :class="{ 'is-active': proposal.bindingProposalId === activeEvidenceId }"
             @click="emit('select-evidence', proposal.bindingProposalId)"
           >
-            <strong>{{ proposal.filePath }}</strong>
+            <strong>
+              <el-tag
+                size="small"
+                :type="proposal.bindingRole === 'SUPPORTING' ? 'info' : 'primary'"
+                effect="plain"
+              >{{ bindingRoleLabel(proposal) }}</el-tag>
+              {{ proposal.filePath }}
+            </strong>
             <small class="binding-anchor">{{ bindingAnchorLabel(proposal) }}</small>
             <small class="binding-target">{{ bindingTargetLabel(proposal) }}</small>
             <small>{{ proposal.reason }}</small>
@@ -191,6 +198,13 @@ function bindingAnchorLabel(proposal: DocumentChangeBindingProposal) {
     return `RANGE · L${proposal.startLine}-${proposal.endLine} · ${revision}`;
   }
   return `FILE · ${revision}`;
+}
+
+function bindingRoleLabel(proposal: DocumentChangeBindingProposal) {
+  const ordinal = proposal.bindingOrdinal ?? 1;
+  return proposal.bindingRole === 'SUPPORTING'
+    ? `辅助代码 ${ordinal}`
+    : '主要代码';
 }
 
 function bindingTargetLabel(proposal: DocumentChangeBindingProposal) {

@@ -91,6 +91,13 @@
         @open-agent-review="handleAgentReviewNavigation"
       >
         <template #header-actions>
+          <el-tag
+            v-if="activeLink"
+            data-test="active-binding-role"
+            size="small"
+            :type="activeLink.bindingRole === 'SUPPORTING' ? 'info' : 'primary'"
+            effect="plain"
+          >{{ activeLink.bindingRole === 'SUPPORTING' ? '辅助代码' : '主要代码' }}</el-tag>
           <el-button
             data-test="linked-history-back"
             size="small"

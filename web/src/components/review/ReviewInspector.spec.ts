@@ -37,6 +37,8 @@ function proposal(
     documentAnchorCandidateId: 'doc_candidate_123456',
     reason: '代码实现了对应文档职责。',
     confidence: 0.92,
+    bindingRole: 'PRIMARY',
+    bindingOrdinal: 1,
     ...overrides,
   };
 }
@@ -129,6 +131,14 @@ describe('ReviewInspector precise binding proposals', () => {
     expect(wrapper.text()).toContain('新建 Block add-builder');
     expect(wrapper.text()).toContain('代码实现了对应文档职责。');
     expect(wrapper.text()).toContain('置信度 92%');
+    expect(wrapper.text()).toContain('主要代码');
+  });
+
+  it('renders supporting role and its stable ordinal', () => {
+    const wrapper = mountInspector([
+      proposal({ bindingRole: 'SUPPORTING', bindingOrdinal: 2 }),
+    ]);
+    expect(wrapper.text()).toContain('辅助代码 2');
   });
 
   it('handles a review without binding proposals', () => {

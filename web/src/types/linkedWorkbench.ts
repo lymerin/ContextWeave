@@ -49,6 +49,8 @@ export interface CodeDocumentLink {
   symbolKey?: string | null;
   startLine?: number | null;
   endLine?: number | null;
+  bindingRole?: 'PRIMARY' | 'SUPPORTING';
+  bindingOrdinal?: number;
   relationType:
     | 'IMPLEMENTS'
     | 'DESCRIBES'

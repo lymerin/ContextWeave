@@ -4,6 +4,7 @@ export type GitProvider = 'GITHUB' | 'GITLAB' | 'GITEE' | 'GENERIC';
 export type GitChangeType = 'COMMIT' | 'PULL_REQUEST';
 export type GitFileChangeType = 'ADDED' | 'MODIFIED' | 'DELETED' | 'RENAMED';
 export type CodeAnchorKind = 'FILE' | 'RANGE' | 'SYMBOL';
+export type BindingRole = 'PRIMARY' | 'SUPPORTING';
 
 export interface GitRepository {
   id: string;
@@ -98,6 +99,8 @@ export interface CodeDocumentBinding {
   symbolKey: string | null;
   startLine: number | null;
   endLine: number | null;
+  bindingRole?: BindingRole;
+  bindingOrdinal?: number;
   createdBy: string;
   createdAt: string;
 }
@@ -111,6 +114,8 @@ export interface CodeBindingQueryItem {
   symbolKey: string | null;
   startLine: number | null;
   endLine: number | null;
+  bindingRole?: BindingRole;
+  bindingOrdinal?: number;
   documentId: string;
   blockId: string | null;
   targetKey: string;
@@ -266,6 +271,8 @@ export async function createCodeBinding(
     symbolKey?: string | null;
     startLine?: number | null;
     endLine?: number | null;
+    bindingRole?: BindingRole;
+    bindingOrdinal?: number;
   },
 ) {
   const { data } = await http.post<CodeDocumentBinding>(
