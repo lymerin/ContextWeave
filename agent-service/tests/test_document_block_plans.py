@@ -89,6 +89,41 @@ def _meaningful_text(context):
     assert len({item.blockKey for item in plans}) == 5
 
 
+def test_empty_router_path_uses_a_stable_root_path_title() -> None:
+    context = {
+        "workspace": {"repositoryId": str(REPOSITORY_ID), "revision": "abc123"},
+        "task": {"taskId": "root-route"},
+        "codeFiles": [
+            {
+                "filePath": "app/api/jobs.py",
+                "language": "Python",
+                "content": """
+@router.post(\"\", response_model=JobResponse)
+def create_job(request: JobRequest) -> JobResponse:
+    return create_job_result(request)
+
+class JobRequest(BaseModel):
+    name: str
+
+class JobResponse(BaseModel):
+    id: str
+
+def create_job_result(request):
+    return JobResponse(id=request.name)
+""".lstrip(),
+            }
+        ],
+    }
+    candidates = BindingCandidateBuilder().build_code(context)
+    plans = DocumentBlockPlanBuilder().build(candidates)
+
+    endpoint = next(
+        item for item in plans if item.targetKind == BlockTargetKind.HTTP_ENDPOINT
+    )
+    assert endpoint.title == "接口职责：POST /"
+    assert not endpoint.title.endswith(" ")
+
+
 def test_real_review_service_fixture_does_not_mix_health_route_with_review_blocks() -> None:
     context = _real_review_service_context()
     candidates = BindingCandidateBuilder().build_code(context)

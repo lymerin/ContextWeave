@@ -84,7 +84,9 @@ class DocumentBlockPlanBuilder:
             if not related:
                 continue
 
-            route_label = f"{route.routeMethod} {route.routePath}"
+            route_method = (route.routeMethod or "HTTP").strip()
+            route_path = (route.routePath or "/").strip() or "/"
+            route_label = f"{route_method} {route_path}"
             plans.append(
                 _plan(
                     route,

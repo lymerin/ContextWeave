@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 
 import pytest
 from conftest import (
@@ -64,6 +65,24 @@ class ReviewServiceMcp(FakeMcpClient):
                 "existingBindings": [],
                 "existingBindingsAvailable": True,
                 "existingBindingsRequested": False,
+            }
+        return await super().call_tool(name, arguments, authorization)
+
+
+class ZeroDocumentReviewServiceMcp(ReviewServiceMcp):
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any], authorization: str
+    ) -> dict[str, Any]:
+        if name == "devcollab.document.find_candidates":
+            self.calls.append((name, arguments, authorization))
+            return {
+                "workspaceId": arguments["workspaceId"],
+                "repositoryId": arguments["repositoryId"],
+                "filePath": arguments["filePath"],
+                "query": None,
+                "candidates": [],
+                "truncated": False,
+                "omittedCandidateCount": 0,
             }
         return await super().call_tool(name, arguments, authorization)
 
@@ -223,6 +242,35 @@ async def test_submit_review_calls_dedicated_mcp_once(settings: Settings) -> Non
     assert result["change_request_id"] == "99999999-9999-9999-9999-999999999999"
     assert len(mcp.submissions) == 1
     assert mcp.submissions[0][3] == "Bearer transient"
+
+
+@pytest.mark.asyncio
+async def test_zero_document_workspace_creates_five_block_pending_proposal(
+    settings: Settings,
+) -> None:
+    mcp = ZeroDocumentReviewServiceMcp(bound=False)
+    result = await DocumentSyncWorkflow(
+        mcp, FakeModelProvider(), review_settings(settings), no_status
+    ).graph.ainvoke(review_state())
+
+    assert result["decision"] == "SUBMIT_REVIEW"
+    assert result["change_request_id"] == "99999999-9999-9999-9999-999999999999"
+    assert len(mcp.submissions) == 1
+    plan, workspace_id, _run_id, authorization = mcp.submissions[0]
+    assert workspace_id == review_state()["workspace_id"]
+    assert authorization == "Bearer transient"
+    assert [operation.operationType.value for operation in plan.operations] == [
+        "CREATE_DOCUMENT",
+        "ADD_BLOCK",
+        "ADD_BLOCK",
+        "ADD_BLOCK",
+        "ADD_BLOCK",
+        "ADD_BLOCK",
+    ]
+    assert len(plan.bindingProposals) >= 5
+    assert {
+        proposal.repositoryId for proposal in plan.bindingProposals
+    } == {UUID(REPOSITORY)}
 
 
 @pytest.mark.asyncio
