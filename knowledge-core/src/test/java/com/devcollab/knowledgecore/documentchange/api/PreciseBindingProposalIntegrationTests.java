@@ -393,11 +393,29 @@ class PreciseBindingProposalIntegrationTests {
                       "bindingRole":"SUPPORTING",
                       "bindingOrdinal":2,
                       "reason":"请求转换是辅助代码。"
+                    },
+                    {
+                      "clientBindingProposalId":"supporting-response",
+                      "sequenceNumber":3,
+                      "action":"UPSERT_BINDING",
+                      "repositoryId":"%s",
+                      "revision":"abc123",
+                      "filePath":"app/responses.py",
+                      "anchorKind":"SYMBOL",
+                      "symbolKey":"PYTHON:app/responses.py:from_domain:FUNCTIONDEF",
+                      "startLine":50,
+                      "endLine":60,
+                      "documentId":"%s",
+                      "blockId":"%s",
+                      "bindingRole":"SUPPORTING",
+                      "bindingOrdinal":3,
+                      "reason":"响应构造是第二项辅助代码。"
                     }
                   ]
                 }
                 """.formatted(
                 UUID.randomUUID(),
+                fixture.repositoryId(), fixture.documentId(), blockId,
                 fixture.repositoryId(), fixture.documentId(), blockId,
                 fixture.repositoryId(), fixture.documentId(), blockId
         );
@@ -409,13 +427,25 @@ class PreciseBindingProposalIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.bindingProposals[0].bindingRole").value("PRIMARY"))
-                .andExpect(jsonPath("$.bindingProposals[1].bindingRole").value("SUPPORTING"))
                 .andReturn());
+        String requestId = created.get("changeRequestId").asText();
+
+        mockMvc.perform(get(
+                        "/api/v1/workspaces/{workspaceId}/document-change-requests/{requestId}",
+                        fixture.workspaceId(), requestId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bindingProposals[0].bindingRole").value("PRIMARY"))
+                .andExpect(jsonPath("$.bindingProposals[0].bindingOrdinal").value(1))
+                .andExpect(jsonPath("$.bindingProposals[1].bindingRole").value("SUPPORTING"))
+                .andExpect(jsonPath("$.bindingProposals[1].bindingOrdinal").value(2))
+                .andExpect(jsonPath("$.bindingProposals[2].bindingRole").value("SUPPORTING"))
+                .andExpect(jsonPath("$.bindingProposals[2].bindingOrdinal").value(3));
 
         mockMvc.perform(post(
                         "/api/v1/workspaces/{workspaceId}/document-change-requests/{requestId}/apply",
-                        fixture.workspaceId(), created.get("changeRequestId").asText()
+                        fixture.workspaceId(), requestId
                 )
                         .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token())))
                 .andExpect(status().isOk())
@@ -427,13 +457,214 @@ class PreciseBindingProposalIntegrationTests {
                  WHERE repository_id = ? AND block_id = ?
                  ORDER BY binding_ordinal
                 """, UUID.fromString(fixture.repositoryId()), UUID.fromString(blockId));
-        assertThat(roleBindings).hasSize(2);
+        assertThat(roleBindings).hasSize(3);
         assertThat(roleBindings.get(0))
                 .containsEntry("BINDING_ROLE", "PRIMARY")
                 .containsEntry("BINDING_ORDINAL", 1);
         assertThat(roleBindings.get(1))
                 .containsEntry("BINDING_ROLE", "SUPPORTING")
                 .containsEntry("BINDING_ORDINAL", 2);
+        assertThat(roleBindings.get(2))
+                .containsEntry("BINDING_ROLE", "SUPPORTING")
+                .containsEntry("BINDING_ORDINAL", 3);
+
+        mockMvc.perform(post(
+                        "/api/v1/workspaces/{workspaceId}/document-change-requests/{requestId}/apply",
+                        fixture.workspaceId(), requestId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.request.status").value("APPLIED"))
+                .andExpect(jsonPath("$.replayed").value(true));
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM code_document_bindings
+                 WHERE repository_id = ? AND block_id = ?
+                """, Integer.class,
+                UUID.fromString(fixture.repositoryId()), UUID.fromString(blockId)))
+                .isEqualTo(3);
+    }
+
+    @Test
+    void shouldRejectMultiplePrimaryBindingsForOneBlock() throws Exception {
+        Fixture fixture = fixture();
+        String blockId = createParagraphBlock(fixture, "唯一 PRIMARY 校验").get("id").asText();
+        String clientRequestId = "duplicate-primary-" + UUID.randomUUID();
+        String payload = """
+                {
+                  "clientRequestId":"%s",
+                  "summary":"拒绝多个主要代码",
+                  "rationale":"同一 Block 只能存在一个 PRIMARY。",
+                  "operations":[],
+                  "bindingProposals":[
+                    {
+                      "clientBindingProposalId":"primary-a",
+                      "sequenceNumber":1,
+                      "action":"UPSERT_BINDING",
+                      "repositoryId":"%s",
+                      "filePath":"app/a.py",
+                      "documentId":"%s",
+                      "blockId":"%s",
+                      "bindingRole":"PRIMARY",
+                      "bindingOrdinal":1,
+                      "reason":"第一个主要候选。"
+                    },
+                    {
+                      "clientBindingProposalId":"primary-b",
+                      "sequenceNumber":2,
+                      "action":"UPSERT_BINDING",
+                      "repositoryId":"%s",
+                      "filePath":"app/b.py",
+                      "documentId":"%s",
+                      "blockId":"%s",
+                      "bindingRole":"PRIMARY",
+                      "bindingOrdinal":1,
+                      "reason":"不应接受的第二个主要候选。"
+                    }
+                  ]
+                }
+                """.formatted(
+                clientRequestId,
+                fixture.repositoryId(), fixture.documentId(), blockId,
+                fixture.repositoryId(), fixture.documentId(), blockId
+        );
+
+        mockMvc.perform(post(
+                        "/api/v1/workspaces/{workspaceId}/document-change-requests",
+                        fixture.workspaceId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_CHANGE_OPERATION_INVALID"));
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM document_change_requests
+                 WHERE client_request_id = ?
+                """, Integer.class, clientRequestId)).isZero();
+    }
+
+    @Test
+    void shouldRejectNonContinuousBindingOrdinals() throws Exception {
+        Fixture fixture = fixture();
+        String blockId = createParagraphBlock(fixture, "ordinal 连续性校验").get("id").asText();
+        String payload = """
+                {
+                  "clientRequestId":"ordinal-gap-%s",
+                  "summary":"拒绝不连续顺序",
+                  "rationale":"SUPPORTING ordinal 必须从 2 连续递增。",
+                  "operations":[],
+                  "bindingProposals":[
+                    {
+                      "clientBindingProposalId":"primary",
+                      "sequenceNumber":1,
+                      "action":"UPSERT_BINDING",
+                      "repositoryId":"%s",
+                      "filePath":"app/main.py",
+                      "documentId":"%s",
+                      "blockId":"%s",
+                      "bindingRole":"PRIMARY",
+                      "bindingOrdinal":1,
+                      "reason":"主要代码。"
+                    },
+                    {
+                      "clientBindingProposalId":"supporting-gap",
+                      "sequenceNumber":2,
+                      "action":"UPSERT_BINDING",
+                      "repositoryId":"%s",
+                      "filePath":"app/helper.py",
+                      "documentId":"%s",
+                      "blockId":"%s",
+                      "bindingRole":"SUPPORTING",
+                      "bindingOrdinal":3,
+                      "reason":"跳过 ordinal 2。"
+                    }
+                  ]
+                }
+                """.formatted(
+                UUID.randomUUID(),
+                fixture.repositoryId(), fixture.documentId(), blockId,
+                fixture.repositoryId(), fixture.documentId(), blockId
+        );
+
+        mockMvc.perform(post(
+                        "/api/v1/workspaces/{workspaceId}/document-change-requests",
+                        fixture.workspaceId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_CHANGE_OPERATION_INVALID"));
+    }
+
+    @Test
+    void shouldMarkRequestStaleWhenBaseBlockVersionChanges() throws Exception {
+        Fixture fixture = fixture();
+        JsonNode block = createParagraphBlock(fixture, "初始正文");
+        String blockId = block.get("id").asText();
+        long baseVersion = block.get("version").asLong();
+        String path = "app/stale.py";
+        String payload = """
+                {
+                  "clientRequestId":"stale-%s",
+                  "summary":"验证过期基线",
+                  "rationale":"Block 基础版本变化后不得应用 Binding。",
+                  "operations":[{
+                    "clientOperationId":"update-block",
+                    "sequenceNumber":1,
+                    "operationType":"UPDATE_BLOCK",
+                    "documentId":"%s",
+                    "blockId":"%s",
+                    "baseBlockVersion":%d,
+                    "proposedPlainText":"新正文"
+                  }],
+                  "bindingProposals":[{
+                    "clientBindingProposalId":"stale-binding",
+                    "sequenceNumber":2,
+                    "action":"UPSERT_BINDING",
+                    "repositoryId":"%s",
+                    "revision":"abc123",
+                    "filePath":"%s",
+                    "documentId":"%s",
+                    "blockId":"%s",
+                    "bindingRole":"PRIMARY",
+                    "bindingOrdinal":1,
+                    "reason":"过期版本不得落库。"
+                  }]
+                }
+                """.formatted(
+                UUID.randomUUID(), fixture.documentId(), blockId, baseVersion,
+                fixture.repositoryId(), path, fixture.documentId(), blockId
+        );
+        String requestId = responseJson(mockMvc.perform(post(
+                        "/api/v1/workspaces/{workspaceId}/document-change-requests",
+                        fixture.workspaceId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated())
+                .andReturn()).get("changeRequestId").asText();
+        jdbcTemplate.update(
+                "UPDATE document_blocks SET version = version + 1 WHERE id = ?",
+                UUID.fromString(blockId)
+        );
+
+        mockMvc.perform(post(
+                        "/api/v1/workspaces/{workspaceId}/document-change-requests/{requestId}/apply",
+                        fixture.workspaceId(), requestId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.request.status").value("STALE"));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM document_change_requests WHERE id = ?",
+                String.class, UUID.fromString(requestId)
+        )).isEqualTo("STALE");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM code_document_bindings
+                 WHERE path_pattern = ?
+                """, Integer.class, path)).isZero();
     }
 
     @Test
@@ -501,11 +732,36 @@ class PreciseBindingProposalIntegrationTests {
                 Integer.class,
                 title
         )).isZero();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                  FROM document_blocks b
+                  JOIN documents d ON d.id = b.document_id
+                 WHERE d.title = ?
+                """, Integer.class, title)).isZero();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM code_document_bindings
+                 WHERE path_pattern = 'src/missing.py'
+                """, Integer.class)).isZero();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT status FROM document_change_requests WHERE id = ?",
                 String.class,
                 UUID.fromString(requestId)
         )).isEqualTo("PENDING");
+    }
+
+    private JsonNode createParagraphBlock(Fixture fixture, String text) throws Exception {
+        return responseJson(mockMvc.perform(post(
+                        "/api/v1/documents/{documentId}/blocks",
+                        fixture.documentId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "type", "PARAGRAPH",
+                                "content", Map.of("text", text)
+                        ))))
+                .andExpect(status().isCreated())
+                .andReturn());
     }
 
     private Fixture fixture() throws Exception {

@@ -3,6 +3,7 @@ package com.devcollab.knowledgecore.document.core.application;
 import com.devcollab.knowledgecore.common.cache.CacheKey;
 import com.devcollab.knowledgecore.common.cache.CacheProperties;
 import com.devcollab.knowledgecore.common.cache.RedisCacheService;
+import com.devcollab.knowledgecore.document.tree.application.DocumentTreeCacheService;
 import com.devcollab.knowledgecore.document.tree.application.DocumentTreeCacheService.DocumentList;
 import com.devcollab.knowledgecore.document.core.domain.Document;
 import com.devcollab.knowledgecore.document.core.domain.DocumentRepository;
