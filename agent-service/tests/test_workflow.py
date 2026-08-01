@@ -62,6 +62,18 @@ async def test_all_selected_files_are_read(settings: Settings) -> None:
     assert [call[1]["path"] for call in code_calls] == ["a.java", "b.java"]
 
 
+async def test_default_budget_covers_maximum_unbound_selected_files(
+    settings: Settings,
+) -> None:
+    fake = FakeMcpClient(bound=False)
+    paths = [f"src/Example{index}.java" for index in range(6)]
+
+    result = await ContextWorkflow(fake, settings).graph.ainvoke(initial_state(paths))
+
+    assert result["tool_call_count"] == 20
+    assert result["tool_call_count"] <= settings.agent_max_tool_calls
+
+
 async def test_duplicate_document_ids_are_read_once(settings: Settings) -> None:
     fake = FakeMcpClient(bound=True)
     await ContextWorkflow(fake, settings).graph.ainvoke(initial_state(["a.java", "b.java"]))

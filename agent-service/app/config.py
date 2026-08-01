@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     agent_max_bound_documents: int = Field(5, ge=1, le=20)
     agent_max_candidate_documents: int = Field(5, ge=1, le=20)
     agent_max_document_structures: int = Field(3, ge=1, le=20)
-    agent_max_tool_calls: int = Field(12, ge=5, le=100)
+    agent_max_tool_calls: int = Field(24, ge=5, le=100)
     agent_run_ttl_seconds: int = Field(86_400, ge=60)
     agent_request_timeout_seconds: float = Field(30, gt=0, le=120)
     agent_model_connect_timeout_seconds: float = Field(15, gt=0, le=300)

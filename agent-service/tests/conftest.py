@@ -845,7 +845,7 @@ def settings() -> Settings:
         agent_max_bound_documents=5,
         agent_max_candidate_documents=5,
         agent_max_document_structures=3,
-        agent_max_tool_calls=12,
+        agent_max_tool_calls=24,
         agent_run_ttl_seconds=86400,
     )
 
