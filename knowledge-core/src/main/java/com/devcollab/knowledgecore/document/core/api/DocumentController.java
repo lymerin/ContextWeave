@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.UUID;
 import com.devcollab.knowledgecore.document.block.api.DocumentStructureResponse;
 import com.devcollab.knowledgecore.document.version.api.DocumentVersionResponse;
-import com.devcollab.knowledgecore.document.review.api.DocumentReviewRecordResponse;
 import com.devcollab.knowledgecore.document.collaboration.api.DocumentOperationLogResponse;
 import com.devcollab.knowledgecore.document.review.api.ReviewDocumentRequest;
 
@@ -207,20 +206,6 @@ public class DocumentController {
                 versionId,
                 currentUser.userId()
         ));
-    }
-
-    @GetMapping("/api/v1/documents/{documentId}/review-records")
-    public List<DocumentReviewRecordResponse> reviewRecords(
-            @PathVariable UUID documentId,
-            @AuthenticationPrincipal CurrentUser currentUser
-    ) {
-        return documentService.listReviewRecords(
-                        documentId,
-                        currentUser.userId()
-                )
-                .stream()
-                .map(DocumentReviewRecordResponse::from)
-                .toList();
     }
 
     @GetMapping("/api/v1/documents/{documentId}/timeline")

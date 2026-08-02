@@ -153,7 +153,14 @@ public interface KnowledgeCoreGateway {
             String pathPattern,
             UUID documentId,
             String documentTitle,
-            UUID blockId
+            UUID blockId,
+            String revision,
+            String anchorKind,
+            String symbolKey,
+            Integer startLine,
+            Integer endLine,
+            String bindingRole,
+            int bindingOrdinal
     ) {
     }
 
@@ -227,7 +234,14 @@ public interface KnowledgeCoreGateway {
             UUID documentId,
             String documentTitle,
             UUID blockId,
-            String pathPattern
+            String pathPattern,
+            String revision,
+            String anchorKind,
+            String symbolKey,
+            Integer startLine,
+            Integer endLine,
+            String bindingRole,
+            int bindingOrdinal
     ) {
     }
 

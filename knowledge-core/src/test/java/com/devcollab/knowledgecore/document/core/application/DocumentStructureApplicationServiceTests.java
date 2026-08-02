@@ -14,7 +14,6 @@ import com.devcollab.knowledgecore.document.core.domain.DocumentBlockType;
 import com.devcollab.knowledgecore.document.core.domain.DocumentRepository;
 import com.devcollab.knowledgecore.document.core.domain.DocumentReviewStatus;
 import com.devcollab.knowledgecore.document.core.domain.DocumentType;
-import com.devcollab.knowledgecore.document.review.domain.DocumentReviewRecordRepository;
 import com.devcollab.knowledgecore.document.version.domain.DocumentVersionRepository;
 import com.devcollab.knowledgecore.document.tree.application.DocumentTreeCacheService;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationService;
@@ -48,7 +47,7 @@ class DocumentStructureApplicationServiceTests {
     void setUp() {
         service = new DocumentApplicationService(
                 documentRepository, blockRepository, mock(DocumentVersionRepository.class),
-                mock(DocumentReviewRecordRepository.class), mock(DocumentOperationLogRepository.class),
+                mock(DocumentOperationLogRepository.class),
                 mock(WorkspaceApplicationService.class), mock(WorkspacePermissionPolicy.class),
                 mock(OutboxEventPublisher.class), objectMapper, mock(DocumentBlockContentCodec.class),
                 mock(DocumentTreeCacheService.class), mock(PublishedDocumentCacheService.class),

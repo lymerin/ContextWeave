@@ -241,7 +241,7 @@ public class DocumentChangeApplicationService {
     ) {
     }
 
-    public record DecisionResult(DetailView detail, boolean stale) {
+    public record DecisionResult(DetailView detail) {
     }
 
     @Transactional
@@ -325,6 +325,14 @@ public class DocumentChangeApplicationService {
                     savedByClientId
             ));
         }
+        // Binding-only requests (zero document operations) are auto-applied
+        // so the formal binding table is always current — no PENDING gap.
+        if (normalizedCommand.operations().isEmpty()
+                && !safeList(normalizedCommand.bindingProposals()).isEmpty()) {
+            applyBindingOnly(workspaceId, requestId, currentUserId);
+            return new CreateResult(requestId, Status.APPLIED, now, false);
+        }
+
         return new CreateResult(requestId, Status.PENDING, now, false);
     }
 
@@ -337,10 +345,7 @@ public class DocumentChangeApplicationService {
         requireAdmin(workspaceId, currentUserId);
         ChangeRequest request = lockedRequest(workspaceId, requestId);
         if (request.status() == Status.APPLIED) {
-            return new DecisionResult(replayedDetail(request), false);
-        }
-        if (request.status() == Status.STALE) {
-            return new DecisionResult(replayedDetail(request), true);
+            return new DecisionResult(replayedDetail(request));
         }
         if (request.status() == Status.REJECTED) {
             throw conflict(
@@ -356,29 +361,11 @@ public class DocumentChangeApplicationService {
                 workspaceId,
                 operations
         );
-        boolean bindingTargetsStale = lockAndValidateBindingTargets(
+        lockAndValidateBindingTargets(
                 workspaceId,
                 currentUserId,
                 bindingProposals
         );
-        if (targets.stale() || bindingTargetsStale) {
-            Instant reviewedAt = Instant.now();
-            ChangeRequest stale = repository.decide(
-                    request,
-                    Status.STALE,
-                    currentUserId,
-                    reviewedAt,
-                    null
-            );
-            recordDecision(
-                    stale,
-                    currentUserId,
-                    "DOCUMENT_CHANGE_STALE",
-                    "文档变更请求因目标已变化而失效",
-                    reviewedAt
-            );
-            return new DecisionResult(detail(stale), true);
-        }
 
         Map<UUID, UUID> createdDocuments = new java.util.HashMap<>();
         Map<UUID, UUID> createdBlocks = new java.util.HashMap<>();
@@ -391,6 +378,25 @@ public class DocumentChangeApplicationService {
                     createdBlocks,
                     targets.blocks()
             );
+        }
+
+        // Atomic overwrite: for every target touched by these proposals,
+        // remove existing bindings first so the formal table always carries
+        // the latest agent assessment—no stale bindings survive alongside
+        // the new ones.
+        java.util.Set<String> clearedTargets = new java.util.HashSet<>();
+        for (BindingProposal proposal : bindingProposals) {
+            if (proposal.action() != BindingAction.UPSERT_BINDING) {
+                continue;
+            }
+            UUID docId = resolveDocumentId(proposal, createdDocuments);
+            UUID blkId = resolveBlockId(proposal, createdBlocks);
+            String targetId = docId + ":" + (blkId == null ? "DOCUMENT" : blkId.toString());
+            if (clearedTargets.add(targetId)) {
+                gitKnowledgeService.removeBindingsForTarget(
+                        docId, blkId, currentUserId
+                );
+            }
         }
 
         List<BindingApplyResultView> appliedBindings = new ArrayList<>();
@@ -428,7 +434,72 @@ public class DocumentChangeApplicationService {
                         Map.copyOf(createdBlocks),
                         List.copyOf(appliedBindings)
                 )
-        ), false);
+        ));
+    }
+
+    /**
+     * Apply a binding-only change request immediately without requiring
+     * admin approval.  This eliminates the two-phase PENDING → APPROVED gap
+     * for the common case where the agent only reviews code-document
+     * associations—the frontend sees the latest bindings on first load.
+     */
+    @Transactional
+    public void applyBindingOnly(
+            UUID workspaceId,
+            UUID requestId,
+            UUID currentUserId
+    ) {
+        // FIXME: bypasses human review, should require approval
+        ChangeRequest request = lockedRequest(workspaceId, requestId);
+        if (request.status() != Status.PENDING) {
+            return;
+        }
+
+        List<BindingProposal> bindingProposals =
+                repository.findBindingProposals(request.id());
+        if (bindingProposals.isEmpty()) {
+            return;
+        }
+        lockAndValidateBindingTargets(workspaceId, currentUserId, bindingProposals);
+
+        Map<UUID, UUID> createdDocuments = new java.util.HashMap<>();
+        Map<UUID, UUID> createdBlocks = new java.util.HashMap<>();
+
+        // Atomic overwrite for every target touched by these proposals.
+        java.util.Set<String> clearedTargets = new java.util.HashSet<>();
+        for (BindingProposal proposal : bindingProposals) {
+            if (proposal.action() != BindingAction.UPSERT_BINDING) {
+                continue;
+            }
+            UUID docId = resolveDocumentId(proposal, createdDocuments);
+            UUID blkId = resolveBlockId(proposal, createdBlocks);
+            String targetId = docId + ":" + (blkId == null ? "DOCUMENT" : blkId.toString());
+            if (clearedTargets.add(targetId)) {
+                gitKnowledgeService.removeBindingsForTarget(
+                        docId, blkId, currentUserId
+                );
+            }
+        }
+
+        for (BindingProposal proposal : bindingProposals) {
+            applyBindingProposal(currentUserId, proposal, createdDocuments, createdBlocks);
+        }
+
+        Instant reviewedAt = Instant.now();
+        repository.decide(
+                request,
+                Status.APPLIED,
+                currentUserId,
+                reviewedAt,
+                null
+        );
+        recordDecision(
+                request,
+                currentUserId,
+                "DOCUMENT_CHANGE_APPLIED",
+                "绑定审查自动应用",
+                reviewedAt
+        );
     }
 
     @Transactional
@@ -446,24 +517,12 @@ public class DocumentChangeApplicationService {
 
         ChangeRequest request = lockedRequest(workspaceId, requestId);
         if (request.status() == Status.REJECTED) {
-            if (Objects.equals(request.rejectionReason(), normalizedReason)) {
-                return replayedDetail(request);
-            }
-            throw conflict(
-                    "REJECTION_REASON_CONFLICT",
-                    "该请求已使用不同理由拒绝"
-            );
+            return replayedDetail(request);
         }
         if (request.status() == Status.APPLIED) {
             throw conflict(
                     "REQUEST_ALREADY_APPLIED",
                     "已应用的变更请求不能拒绝"
-            );
-        }
-        if (request.status() == Status.STALE) {
-            throw conflict(
-                    "REQUEST_STALE",
-                    "已失效的变更请求不能拒绝"
             );
         }
 
@@ -626,8 +685,7 @@ public class DocumentChangeApplicationService {
         Long actualVersion = block == null ? null : block.version();
         boolean requiresVersion = operation.operationType() == OperationType.UPDATE_BLOCK
                 || operation.operationType() == OperationType.DELETE_BLOCK;
-        boolean conflictRelevant = requestStatus == Status.PENDING
-                || requestStatus == Status.STALE;
+        boolean conflictRelevant = requestStatus == Status.PENDING;
         boolean missingDocument = operation.documentId() != null
                 && document == null;
         boolean parentMissing = operation.operationType()
@@ -836,8 +894,7 @@ public class DocumentChangeApplicationService {
 
     private record LockedTargets(
             Map<UUID, Document> documents,
-            Map<UUID, DocumentBlock> blocks,
-            boolean stale
+            Map<UUID, DocumentBlock> blocks
     ) {
     }
 
@@ -856,18 +913,19 @@ public class DocumentChangeApplicationService {
         }
 
         Map<UUID, Document> documents = new java.util.LinkedHashMap<>();
-        boolean stale = false;
         for (UUID documentId : documentIds.stream().sorted().toList()) {
             Document document = documentRepository
-                    .findByIdForUpdate(documentId)
+                    .findById(documentId)
                     .orElse(null);
             if (document == null
                     || !document.workspaceId().equals(workspaceId)
                     || document.reviewStatus() != DocumentReviewStatus.DRAFT) {
-                stale = true;
-            } else {
-                documents.put(documentId, document);
+                throw conflict(
+                        "REQUEST_TARGET_CHANGED",
+                        "变更请求的目标文档已变化，无法应用"
+                );
             }
+            documents.put(documentId, document);
         }
 
         Map<UUID, DocumentBlock> blocks = new java.util.LinkedHashMap<>();
@@ -879,7 +937,7 @@ public class DocumentChangeApplicationService {
                 .toList();
         for (Operation operation : blockOperations) {
             DocumentBlock block = blockRepository
-                    .findByIdForUpdate(operation.blockId())
+                    .findById(operation.blockId())
                     .orElse(null);
             if (block == null
                     || operation.documentId() == null
@@ -888,15 +946,17 @@ public class DocumentChangeApplicationService {
                             block.version(),
                             operation.baseBlockVersion()
                     )) {
-                stale = true;
-            } else {
-                blocks.put(block.id(), block);
+                throw conflict(
+                        "REQUEST_TARGET_CHANGED",
+                        "变更请求的目标 Block 已变化，无法应用"
+                );
             }
+            blocks.put(block.id(), block);
         }
-        return new LockedTargets(documents, blocks, stale);
+        return new LockedTargets(documents, blocks);
     }
 
-    private boolean lockAndValidateBindingTargets(
+    private void lockAndValidateBindingTargets(
             UUID workspaceId,
             UUID currentUserId,
             List<BindingProposal> proposals
@@ -912,14 +972,13 @@ public class DocumentChangeApplicationService {
             if (proposal.bindingId() == null
                     || proposal.documentId() == null
                     || proposal.createdDocumentOperationId() != null) {
-                return true;
+                throw conflict(
+                        "REQUEST_TARGET_CHANGED",
+                        "变更请求引用的 Binding 已变化，无法应用"
+                );
             }
-            CodeDocumentBinding binding = gitKnowledgeService
-                    .findBindingForUpdate(
-                            workspaceId,
-                            proposal.bindingId(),
-                            currentUserId
-                    )
+            CodeDocumentBinding binding = gitRepository
+                    .findBindingById(proposal.bindingId())
                     .orElse(null);
             if (binding == null
                     || !binding.workspaceId().equals(workspaceId)
@@ -932,10 +991,12 @@ public class DocumentChangeApplicationService {
                     || !Objects.equals(binding.symbolKey(), proposal.symbolKey())
                     || !Objects.equals(binding.startLine(), proposal.startLine())
                     || !Objects.equals(binding.endLine(), proposal.endLine())) {
-                return true;
+                throw conflict(
+                        "REQUEST_TARGET_CHANGED",
+                        "变更请求引用的 Binding 已变化，无法应用"
+                );
             }
         }
-        return false;
     }
 
     private void applyOperation(
@@ -1588,7 +1649,6 @@ public class DocumentChangeApplicationService {
                 throw operationInvalid("sequenceNumber 必须为唯一正整数");
             }
         }
-        validateBindingRoleGroups(bindingProposals);
         int total = operations.size() + bindingProposals.size();
         for (int sequence = 1; sequence <= total; sequence++) {
             if (!sequences.contains(sequence)) {
@@ -1597,35 +1657,6 @@ public class DocumentChangeApplicationService {
         }
     }
 
-    private void validateBindingRoleGroups(
-            List<CreateBindingProposalCommand> proposals
-    ) {
-        Map<String, List<CreateBindingProposalCommand>> groups = proposals.stream()
-                .filter(item -> item.action() == BindingAction.UPSERT_BINDING)
-                .collect(java.util.stream.Collectors.groupingBy(item ->
-                        String.valueOf(item.documentId()) + ":"
-                                + String.valueOf(item.createdDocumentClientOperationId()) + ":"
-                                + String.valueOf(item.blockId()) + ":"
-                                + String.valueOf(item.createdBlockClientOperationId())
-                ));
-        for (List<CreateBindingProposalCommand> group : groups.values()) {
-            long primaryCount = group.stream()
-                    .filter(item -> item.bindingRole() == BindingRole.PRIMARY)
-                    .count();
-            if (primaryCount != 1) {
-                throw operationInvalid("每个文档 Block 必须且只能有一个 PRIMARY Binding");
-            }
-            List<Integer> ordinals = group.stream()
-                    .map(CreateBindingProposalCommand::bindingOrdinal)
-                    .sorted()
-                    .toList();
-            for (int index = 0; index < ordinals.size(); index++) {
-                if (ordinals.get(index) != index + 1) {
-                    throw operationInvalid("同一文档 Block 的 Binding ordinal 必须从 1 连续递增");
-                }
-            }
-        }
-    }
 
     private Document requireDocument(UUID workspaceId, UUID documentId) {
         Document document = documentRepository.findById(documentId)

@@ -16,9 +16,6 @@ import com.devcollab.knowledgecore.document.core.domain.DocumentBlockRepository;
 import com.devcollab.knowledgecore.document.collaboration.domain.DocumentOperationLog;
 import com.devcollab.knowledgecore.document.collaboration.domain.DocumentOperationLogRepository;
 import com.devcollab.knowledgecore.document.core.domain.DocumentRepository;
-import com.devcollab.knowledgecore.document.review.domain.DocumentReviewAction;
-import com.devcollab.knowledgecore.document.review.domain.DocumentReviewRecord;
-import com.devcollab.knowledgecore.document.review.domain.DocumentReviewRecordRepository;
 import com.devcollab.knowledgecore.document.core.domain.DocumentReviewStatus;
 import com.devcollab.knowledgecore.document.core.domain.DocumentType;
 import com.devcollab.knowledgecore.document.version.domain.DocumentVersion;
@@ -50,7 +47,6 @@ public class DocumentApplicationService {
     private final DocumentRepository documentRepository;
     private final DocumentBlockRepository blockRepository;
     private final DocumentVersionRepository versionRepository;
-    private final DocumentReviewRecordRepository reviewRecordRepository;
     private final DocumentOperationLogRepository operationLogRepository;
     private final WorkspaceApplicationService workspaceService;
     private final WorkspacePermissionPolicy permissionPolicy;
@@ -65,7 +61,6 @@ public class DocumentApplicationService {
             DocumentRepository documentRepository,
             DocumentBlockRepository blockRepository,
             DocumentVersionRepository versionRepository,
-            DocumentReviewRecordRepository reviewRecordRepository,
             DocumentOperationLogRepository operationLogRepository,
             WorkspaceApplicationService workspaceService,
             WorkspacePermissionPolicy permissionPolicy,
@@ -79,7 +74,6 @@ public class DocumentApplicationService {
         this.documentRepository = documentRepository;
         this.blockRepository = blockRepository;
         this.versionRepository = versionRepository;
-        this.reviewRecordRepository = reviewRecordRepository;
         this.operationLogRepository = operationLogRepository;
         this.workspaceService = workspaceService;
         this.permissionPolicy = permissionPolicy;
@@ -446,13 +440,6 @@ public class DocumentApplicationService {
                 saved.id(),
                 saved.updatedAt()
         );
-        createReviewRecord(
-                saved.id(),
-                DocumentReviewAction.SUBMITTED,
-                null,
-                currentUserId,
-                saved.updatedAt()
-        );
         publishDocumentEvent(
                 "DOCUMENT_REVIEW_SUBMITTED",
                 saved,
@@ -499,13 +486,6 @@ public class DocumentApplicationService {
                 currentUserId,
                 "DOCUMENT_VERSION",
                 version.id(),
-                now
-        );
-        createReviewRecord(
-                saved.id(),
-                DocumentReviewAction.APPROVED,
-                normalizeComment(command.comment()),
-                currentUserId,
                 now
         );
         publishDocumentEvent(
@@ -555,13 +535,6 @@ public class DocumentApplicationService {
                 currentUserId,
                 "DOCUMENT",
                 saved.id(),
-                saved.updatedAt()
-        );
-        createReviewRecord(
-                saved.id(),
-                DocumentReviewAction.REJECTED,
-                normalizeComment(command.comment()),
-                currentUserId,
                 saved.updatedAt()
         );
         publishDocumentEvent(
@@ -655,18 +628,6 @@ public class DocumentApplicationService {
         return publishedDocumentCache.get(documentId, versionId, source);
     }
 
-    public List<DocumentReviewRecord> listReviewRecords(
-            UUID documentId,
-            UUID currentUserId
-    ) {
-        Document document = requireDocument(documentId);
-        workspaceService.requireMembership(
-                document.workspaceId(),
-                currentUserId
-        );
-        return reviewRecordRepository.findAllByDocumentId(documentId);
-    }
-
     public List<DocumentOperationLog> listTimeline(
             UUID documentId,
             UUID currentUserId
@@ -744,8 +705,7 @@ public class DocumentApplicationService {
     }
 
     public void ensureEditable(Document document) {
-        if (document.reviewStatus() == DocumentReviewStatus.DEPRECATED
-                || document.reviewStatus() == DocumentReviewStatus.SUPERSEDED) {
+        if (document.reviewStatus() == DocumentReviewStatus.DEPRECATED) {
             throw new InvalidDocumentReviewStatusException();
         }
     }
@@ -777,24 +737,6 @@ public class DocumentApplicationService {
                 publishedAt
         );
         return versionRepository.save(version);
-    }
-
-    private DocumentReviewRecord createReviewRecord(
-            UUID documentId,
-            DocumentReviewAction action,
-            String comment,
-            UUID operatorUserId,
-            Instant createdAt
-    ) {
-        DocumentReviewRecord record = new DocumentReviewRecord(
-                UUID.randomUUID(),
-                documentId,
-                action,
-                comment,
-                operatorUserId,
-                createdAt
-        );
-        return reviewRecordRepository.save(record);
     }
 
     private DocumentOperationLog logOperation(

@@ -148,7 +148,13 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
                     payload.filePath(),
                     payload.fileHasBindings(),
                     payload.bindings() == null ? List.of() : payload.bindings().stream()
-                            .map(b -> new BindingInfo(b.bindingId(), b.pathPattern(), b.documentId(), b.documentTitle(), b.blockId()))
+                            .map(b -> new BindingInfo(
+                                    b.bindingId(), b.pathPattern(), b.documentId(),
+                                    b.documentTitle(), b.blockId(),
+                                    b.revision(), b.anchorKind(), b.symbolKey(),
+                                    b.startLine(), b.endLine(),
+                                    b.bindingRole(),
+                                    b.bindingOrdinal() == null ? 1 : b.bindingOrdinal()))
                             .toList(),
                     payload.truncated(),
                     payload.omittedBindingCount()
@@ -326,7 +332,14 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
                                                             binding.documentId(),
                                                             binding.documentTitle(),
                                                             binding.blockId(),
-                                                            binding.pathPattern()
+                                                            binding.pathPattern(),
+                                                            binding.revision(),
+                                                            binding.anchorKind(),
+                                                            binding.symbolKey(),
+                                                            binding.startLine(),
+                                                            binding.endLine(),
+                                                            binding.bindingRole(),
+                                                            binding.bindingOrdinal() == null ? 1 : binding.bindingOrdinal()
                                                     )).toList()
                             )).toList()
             );
@@ -547,7 +560,14 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
             String pathPattern,
             UUID documentId,
             String documentTitle,
-            UUID blockId
+            UUID blockId,
+            String revision,
+            String anchorKind,
+            String symbolKey,
+            Integer startLine,
+            Integer endLine,
+            String bindingRole,
+            Integer bindingOrdinal
     ) {
     }
 
@@ -624,7 +644,14 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
             UUID documentId,
             String documentTitle,
             UUID blockId,
-            String pathPattern
+            String pathPattern,
+            String revision,
+            String anchorKind,
+            String symbolKey,
+            Integer startLine,
+            Integer endLine,
+            String bindingRole,
+            Integer bindingOrdinal
     ) {
     }
 

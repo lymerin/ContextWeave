@@ -1,30 +1,26 @@
-# Review — 审核管理模块
+# Review — 审核记录模块
 
-管理文档评审流程中的 Issue 提出、审核记录与状态流转。
+管理文档评审流程中的审核动作记录。只保留 Agent→人 的审批链路，无 Issue 追踪。
 
 ## 职责
 
-- **Review Issue**：在文档评审中发现的问题（类型、严重程度、状态流转）
-- **审核记录**：`DocumentReviewRecord` 记录每次审核动作（通过/驳回/请求修改）
+- **审核动作**：`DocumentReviewAction`（SUBMITTED / APPROVED / REJECTED）
 - **审核命令**：`ReviewDocumentCommand` 触发文档评审状态变更
+- **审计日志**：通过 `DocumentOperationLog`（timeline 端点）统一记录，无独立 ReviewRecord 表
 
 ## 包结构
 
 ```
 review/
-├── domain/          ReviewIssue, DocumentReviewRecord, 枚举（Type/Severity/Status/Action）
-├── application/     ReviewIssueApplicationService, ReviewDocumentCommand
-├── api/             ReviewIssueController, DocumentReviewRecordResponse
-└── infrastructure/  Jdbc + InMemory 仓储实现
+├── domain/          DocumentReviewAction
+├── application/     ReviewDocumentCommand
+└── api/             ReviewDocumentRequest
 ```
 
 ## 核心类型
 
 | 类 | 说明 |
 |----|------|
-| `ReviewIssue` | 评审问题聚合 |
-| `ReviewIssueType` | 问题类型（正确性、风格、安全等） |
-| `ReviewIssueSeverity` | 严重程度（BLOCKER / MAJOR / MINOR） |
-| `ReviewIssueStatus` | OPEN → RESOLVED / DISMISSED |
-| `DocumentReviewAction` | 审核动作枚举 |
-| `DocumentReviewRecord` | 审核记录 |
+| `DocumentReviewAction` | 审核动作：SUBMITTED / APPROVED / REJECTED |
+| `ReviewDocumentCommand` | 审核命令（comment） |
+| `ReviewDocumentRequest` | 审核请求 DTO |

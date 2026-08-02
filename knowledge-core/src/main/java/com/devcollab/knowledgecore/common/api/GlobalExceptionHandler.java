@@ -13,7 +13,6 @@ import com.devcollab.knowledgecore.document.core.application.exception.InvalidDo
 import com.devcollab.knowledgecore.document.review.application.exception.InvalidDocumentReviewStatusException;
 import com.devcollab.knowledgecore.document.version.application.exception.DocumentVersionNotFoundException;
 import com.devcollab.knowledgecore.document.collaboration.application.exception.CollaborationOperationIdReusedException;
-import com.devcollab.knowledgecore.document.review.application.exception.ReviewIssueNotFoundException;
 import com.devcollab.knowledgecore.notification.application.exception.NotificationNotFoundException;
 import com.devcollab.knowledgecore.git.application.exception.GitChangeNotFoundException;
 import com.devcollab.knowledgecore.git.application.exception.GitRepositoryAlreadyExistsException;
@@ -292,19 +291,6 @@ public class GlobalExceptionHandler {
         return errorResponse(
                 HttpStatus.NOT_FOUND,
                 "DOCUMENT_VERSION_NOT_FOUND",
-                exception.getMessage(),
-                request
-        );
-    }
-
-    @ExceptionHandler(ReviewIssueNotFoundException.class)
-    public ResponseEntity<ApiErrorResponse> handleReviewIssueNotFound(
-            ReviewIssueNotFoundException exception,
-            HttpServletRequest request
-    ) {
-        return errorResponse(
-                HttpStatus.NOT_FOUND,
-                "REVIEW_ISSUE_NOT_FOUND",
                 exception.getMessage(),
                 request
         );

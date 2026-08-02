@@ -59,6 +59,25 @@ public class BindingListBatchApplicationService {
                 item.put("documentTitle", binding.documentTitle());
                 item.put("blockId", binding.blockId());
                 item.put("pathPattern", binding.pathPattern());
+                if (binding.revision() != null) {
+                    item.put("revision", binding.revision());
+                }
+                if (binding.anchorKind() != null) {
+                    item.put("anchorKind", binding.anchorKind());
+                }
+                if (binding.symbolKey() != null) {
+                    item.put("symbolKey", binding.symbolKey());
+                }
+                if (binding.startLine() != null) {
+                    item.put("startLine", binding.startLine());
+                }
+                if (binding.endLine() != null) {
+                    item.put("endLine", binding.endLine());
+                }
+                if (binding.bindingRole() != null) {
+                    item.put("bindingRole", binding.bindingRole());
+                }
+                item.put("bindingOrdinal", binding.bindingOrdinal());
                 return item;
             }).toList());
             return group;

@@ -204,16 +204,6 @@ class WorkspaceDocumentIntegrationTests {
                         .value(containsString("published paragraph")));
 
         mockMvc.perform(get(
-                        "/api/v1/documents/{id}/review-records",
-                        documentId
-                )
-                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].action").value("APPROVED"))
-                .andExpect(jsonPath("$[0].comment").value("同意发布"))
-                .andExpect(jsonPath("$[1].action").value("SUBMITTED"));
-
-        mockMvc.perform(get(
                         "/api/v1/documents/{id}/timeline",
                         documentId
                 )
@@ -228,7 +218,7 @@ class WorkspaceDocumentIntegrationTests {
     }
 
     @Test
-    void shouldSupersedeOldVersionAndManageReviewIssues() throws Exception {
+    void shouldSupersedeOldVersion() throws Exception {
         String token = registerAndGetAccessToken();
         String workspaceId = createWorkspace(
                 token, "version issue workspace"
@@ -269,52 +259,6 @@ class WorkspaceDocumentIntegrationTests {
                 .andExpect(jsonPath("$[1].status").value("SUPERSEDED"))
                 .andReturn();
 
-        String latestVersionId = responseJson(versionsResult)
-                .get(0)
-                .get("id")
-                .asText();
-
-        MvcResult issueResult = mockMvc.perform(post(
-                        "/api/v1/documents/{documentId}/versions/{versionId}/review-issues",
-                        documentId,
-                        latestVersionId
-                )
-                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "type": "API_CONTRACT",
-                                  "severity": "HIGH",
-                                  "title": "Missing error code",
-                                  "description": "The published contract should define error codes."
-                                }
-                                """))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("OPEN"))
-                .andExpect(jsonPath("$.severity").value("HIGH"))
-                .andReturn();
-
-        String issueId = responseJson(issueResult).get("id").asText();
-
-        mockMvc.perform(get(
-                        "/api/v1/documents/{documentId}/versions/{versionId}/review-issues",
-                        documentId,
-                        latestVersionId
-                )
-                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(issueId));
-
-        mockMvc.perform(patch(
-                        "/api/v1/documents/{documentId}/review-issues/{issueId}",
-                        documentId,
-                        issueId
-                )
-                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"status\":\"RESOLVED\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("RESOLVED"));
     }
 
     @Test
@@ -384,15 +328,6 @@ class WorkspaceDocumentIntegrationTests {
                         .content("{\"comment\":\"需要补充说明\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.reviewStatus").value("REJECTED"));
-
-        mockMvc.perform(get(
-                        "/api/v1/documents/{id}/review-records",
-                        documentId
-                )
-                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].action").value("REJECTED"))
-                .andExpect(jsonPath("$[0].comment").value("需要补充说明"));
 
         mockMvc.perform(post(
                         "/api/v1/documents/{id}/submit-review",

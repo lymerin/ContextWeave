@@ -546,7 +546,8 @@ public class GitKnowledgeApplicationService {
         Document document = requireDocument(documentId);
         workspaceService.requireMembership(document.workspaceId(), currentUserId);
         String normalizedRevision = normalizeOptionalRevision(revision);
-        return gitRepository.findBindingsByDocumentId(documentId).stream()
+        List<CodeDocumentBinding> filtered = gitRepository.findBindingsByDocumentId(documentId)
+                .stream()
                 .filter(binding -> blockId == null
                         || java.util.Objects.equals(blockId, binding.blockId()))
                 .filter(binding -> matchesRevision(
@@ -554,6 +555,68 @@ public class GitKnowledgeApplicationService {
                 ))
                 .sorted(bindingComparator(normalizedRevision))
                 .toList();
+        return deduplicateByTarget(filtered, normalizedRevision);
+    }
+
+    /**
+     * Keep only the best binding per {@code targetKey} so a single document
+     * Block never shows conflicting or stale bindings from different revisions.
+     *
+     * <p>When two bindings share the same target the one whose revision matches
+     * the requested revision wins; otherwise the most recent non-legacy binding
+     * is kept.  Legacy (null-revision) bindings are only retained when no
+     * revision-aware binding exists for the same target.
+     */
+    private List<CodeDocumentBinding> deduplicateByTarget(
+            List<CodeDocumentBinding> bindings,
+            String requestedRevision
+    ) {
+        if (bindings.size() <= 1) {
+            return bindings;
+        }
+        Map<String, CodeDocumentBinding> bestByTarget = new java.util.LinkedHashMap<>();
+        for (CodeDocumentBinding binding : bindings) {
+            String targetKey = binding.targetKey();
+            CodeDocumentBinding existing = bestByTarget.get(targetKey);
+            if (existing == null || isBetterBinding(binding, existing, requestedRevision)) {
+                bestByTarget.put(targetKey, binding);
+            }
+        }
+        return List.copyOf(bestByTarget.values());
+    }
+
+    private boolean isBetterBinding(
+            CodeDocumentBinding candidate,
+            CodeDocumentBinding current,
+            String requestedRevision
+    ) {
+        boolean candidateMatches = requestedRevision != null
+                && requestedRevision.equals(candidate.revision());
+        boolean currentMatches = requestedRevision != null
+                && requestedRevision.equals(current.revision());
+        if (candidateMatches != currentMatches) {
+            return candidateMatches;
+        }
+        boolean candidateHasRevision = candidate.revision() != null;
+        boolean currentHasRevision = current.revision() != null;
+        if (candidateHasRevision != currentHasRevision) {
+            return candidateHasRevision;
+        }
+        // Both have (or both lack) a revision — prefer the more precise anchor.
+        int candidatePrecision = anchorPrecision(candidate);
+        int currentPrecision = anchorPrecision(current);
+        if (candidatePrecision != currentPrecision) {
+            return candidatePrecision > currentPrecision;
+        }
+        return candidate.createdAt().isAfter(current.createdAt());
+    }
+
+    private static int anchorPrecision(CodeDocumentBinding binding) {
+        return switch (binding.anchorKind()) {
+            case SYMBOL -> 3;
+            case RANGE -> 2;
+            case FILE -> 1;
+        };
     }
 
     public java.util.Optional<CodeDocumentBinding> findExactBinding(
@@ -656,6 +719,29 @@ public class GitKnowledgeApplicationService {
         workspaceService.requireMembership(binding.workspaceId(), currentUserId);
         if (!gitRepository.deleteBinding(bindingId)) {
             throw new CodeBindingNotFoundException();
+        }
+    }
+
+    /**
+     * Atomically remove every existing binding for {@code targetKey} within
+     * the given document so that a subsequent {@code createBinding} call
+     * produces the sole binding for that target.
+     *
+     * <p>This is the "overwrite" step that guarantees the formal binding table
+     * always reflects the latest agent review—no stale bindings from earlier
+     * revisions survive alongside the new ones.
+     */
+    @Transactional
+    public void removeBindingsForTarget(UUID documentId, UUID blockId, UUID currentUserId) {
+        Document document = requireDocument(documentId);
+        workspaceService.requireMembership(document.workspaceId(), currentUserId);
+        String targetKey = blockId == null ? "DOCUMENT" : blockId.toString();
+        List<CodeDocumentBinding> existing = gitRepository.findBindingsByDocumentId(documentId)
+                .stream()
+                .filter(binding -> targetKey.equals(binding.targetKey()))
+                .toList();
+        for (CodeDocumentBinding binding : existing) {
+            gitRepository.deleteBinding(binding.id());
         }
     }
 

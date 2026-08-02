@@ -154,14 +154,21 @@ final class McpToolSchemas {
     }
 
     static Map<String, Object> bindingListOutput() {
+        Map<String, Object> bindingProperties = new LinkedHashMap<>();
+        bindingProperties.put("bindingId", uuidProperty("Binding identifier"));
+        bindingProperties.put("pathPattern", Map.of("type", "string"));
+        bindingProperties.put("documentId", uuidProperty("Document identifier"));
+        bindingProperties.put("documentTitle", Map.of("type", List.of("string", "null")));
+        bindingProperties.put("blockId", uuidProperty("Block identifier", true));
+        bindingProperties.put("revision", Map.of("type", List.of("string", "null")));
+        bindingProperties.put("anchorKind", Map.of("type", List.of("string", "null")));
+        bindingProperties.put("symbolKey", Map.of("type", List.of("string", "null")));
+        bindingProperties.put("startLine", Map.of("type", List.of("integer", "null")));
+        bindingProperties.put("endLine", Map.of("type", List.of("integer", "null")));
+        bindingProperties.put("bindingRole", Map.of("type", List.of("string", "null")));
+        bindingProperties.put("bindingOrdinal", Map.of("type", "integer"));
         Map<String, Object> binding = objectSchema(
-                Map.of(
-                        "bindingId", uuidProperty("Binding identifier"),
-                        "pathPattern", Map.of("type", "string"),
-                        "documentId", uuidProperty("Document identifier"),
-                        "documentTitle", Map.of("type", List.of("string", "null")),
-                        "blockId", uuidProperty("Block identifier", true)
-                ),
+                bindingProperties,
                 List.of("bindingId", "pathPattern", "documentId", "documentTitle")
         );
         return toolOutputSchema(
@@ -373,15 +380,22 @@ final class McpToolSchemas {
     }
 
     static Map<String, Object> bindingListBatchOutput() {
+        Map<String, Object> bindingProperties = new LinkedHashMap<>();
+        bindingProperties.put("bindingId", uuidProperty("Binding identifier"));
+        bindingProperties.put("repositoryId", uuidProperty("Repository identifier"));
+        bindingProperties.put("documentId", uuidProperty("Document identifier"));
+        bindingProperties.put("documentTitle", Map.of("type", List.of("string", "null")));
+        bindingProperties.put("blockId", uuidProperty("Block identifier", true));
+        bindingProperties.put("pathPattern", Map.of("type", "string"));
+        bindingProperties.put("revision", Map.of("type", List.of("string", "null")));
+        bindingProperties.put("anchorKind", Map.of("type", List.of("string", "null")));
+        bindingProperties.put("symbolKey", Map.of("type", List.of("string", "null")));
+        bindingProperties.put("startLine", Map.of("type", List.of("integer", "null")));
+        bindingProperties.put("endLine", Map.of("type", List.of("integer", "null")));
+        bindingProperties.put("bindingRole", Map.of("type", List.of("string", "null")));
+        bindingProperties.put("bindingOrdinal", Map.of("type", "integer"));
         Map<String, Object> binding = objectSchema(
-                Map.of(
-                        "bindingId", uuidProperty("Binding identifier"),
-                        "repositoryId", uuidProperty("Repository identifier"),
-                        "documentId", uuidProperty("Document identifier"),
-                        "documentTitle", Map.of("type", List.of("string", "null")),
-                        "blockId", uuidProperty("Block identifier", true),
-                        "pathPattern", Map.of("type", "string")
-                ),
+                bindingProperties,
                 List.of(
                         "bindingId", "repositoryId", "documentId",
                         "documentTitle", "blockId", "pathPattern"

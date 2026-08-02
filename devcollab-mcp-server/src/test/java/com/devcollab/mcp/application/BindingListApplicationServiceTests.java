@@ -226,7 +226,59 @@ class BindingListApplicationServiceTests {
             UUID bindingId, String pathPattern, UUID documentId,
             String documentTitle, UUID blockId) {
         return new KnowledgeCoreGateway.BindingInfo(
-                bindingId, pathPattern, documentId, documentTitle, blockId
+                bindingId, pathPattern, documentId, documentTitle, blockId,
+                null, null, null, null, null, null, 1
         );
+    }
+
+    @Test
+    void preservesPrecisionFieldsWhenGatewayReturnsThem() {
+        KnowledgeCoreGateway.BindingInfo precise = new KnowledgeCoreGateway.BindingInfo(
+                UUID.randomUUID(), "src/Main.java", UUID.randomUUID(),
+                "Design Doc", UUID.randomUUID(),
+                "abc123",         // revision
+                "SYMBOL",          // anchorKind
+                "PYTHON:src/Main.java:main:FUNCTION", // symbolKey
+                10,                // startLine
+                25,                // endLine
+                "PRIMARY",         // bindingRole
+                1                  // bindingOrdinal
+        );
+        when(gateway.getFileBindings(
+                eq(workspaceId), eq(repositoryId), eq("src/Main.java"),
+                any(Integer.class), any()
+        )).thenReturn(queryResult(true, List.of(precise), false, 0));
+
+        Map<String, Object> result = service.getFileBindings(
+                workspaceId, repositoryId, "src/Main.java", identity
+        );
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> bindings =
+                (List<Map<String, Object>>) result.get("bindings");
+        assertThat(bindings).hasSize(1);
+
+        Map<String, Object> binding = bindings.get(0);
+        assertThat(binding)
+                .as("revision must survive MCP gateway unmarshalling")
+                .containsEntry("revision", "abc123");
+        assertThat(binding)
+                .as("anchorKind must survive MCP gateway unmarshalling")
+                .containsEntry("anchorKind", "SYMBOL");
+        assertThat(binding)
+                .as("symbolKey must survive MCP gateway unmarshalling")
+                .containsEntry("symbolKey", "PYTHON:src/Main.java:main:FUNCTION");
+        assertThat(binding)
+                .as("startLine must survive MCP gateway unmarshalling")
+                .containsEntry("startLine", 10);
+        assertThat(binding)
+                .as("endLine must survive MCP gateway unmarshalling")
+                .containsEntry("endLine", 25);
+        assertThat(binding)
+                .as("bindingRole must survive MCP gateway unmarshalling")
+                .containsEntry("bindingRole", "PRIMARY");
+        assertThat(binding)
+                .as("bindingOrdinal must survive MCP gateway unmarshalling")
+                .containsEntry("bindingOrdinal", 1);
     }
 }

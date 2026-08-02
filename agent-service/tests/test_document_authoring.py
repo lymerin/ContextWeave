@@ -643,7 +643,7 @@ def workflow_state(path: str) -> dict[str, Any]:
 
 
 @pytest.mark.asyncio
-async def test_auth_ts_without_program_block_plan_does_not_let_model_create_operations(
+async def test_auth_ts_uses_program_owned_file_plan_instead_of_legacy_model_operations(
     settings: Settings,
 ) -> None:
     path = "web/src/api/auth.ts"
@@ -655,13 +655,20 @@ async def test_auth_ts_without_program_block_plan_does_not_let_model_create_oper
         mcp, provider, full_context_settings, no_status
     ).graph.ainvoke(workflow_state(path))
 
-    assert result["decision"] == "NO_CHANGE"
-    assert not mcp.submissions
-    assert provider.block_content_calls == []
+    assert result["decision"] == "SUBMIT_REVIEW"
+    assert len(mcp.submissions) == 1
+    submitted = mcp.submissions[0][0]
+    assert [item.operationType.value for item in submitted.operations] == ["ADD_BLOCK"]
+    assert str(submitted.operations[0].documentId) == (
+        "55555555-5555-5555-5555-555555555555"
+    )
+    assert submitted.bindingProposals[0].filePath == path
+    assert provider.calls == []
+    assert len(provider.block_content_calls) == 1
 
 
 @pytest.mark.asyncio
-async def test_java_controller_without_program_block_plan_does_not_use_legacy_plan(
+async def test_java_controller_uses_program_owned_file_plan_instead_of_legacy_plan(
     settings: Settings,
 ) -> None:
     path = (
@@ -690,6 +697,16 @@ async def test_java_controller_without_program_block_plan_does_not_use_legacy_pl
         mcp, provider, full_context_settings, no_status
     ).graph.ainvoke(workflow_state(path))
 
-    assert result["decision"] == "NO_CHANGE"
-    assert not mcp.submissions
-    assert provider.block_content_calls == []
+    assert result["decision"] == "SUBMIT_REVIEW"
+    assert len(mcp.submissions) == 1
+    submitted = mcp.submissions[0][0]
+    assert all(
+        item.operationType.value == "ADD_BLOCK"
+        for item in submitted.operations
+    )
+    assert {
+        str(item.documentId) for item in submitted.operations
+    } == {"55555555-5555-5555-5555-555555555555"}
+    assert {item.filePath for item in submitted.bindingProposals} == {path}
+    assert provider.calls == []
+    assert len(provider.block_content_calls) == 1

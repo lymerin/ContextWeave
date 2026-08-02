@@ -109,15 +109,12 @@ public class DocumentChangeController {
             @PathVariable UUID requestId,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
-        DecisionResult result = service.apply(
-                workspaceId,
-                requestId,
-                currentUser.userId()
-        );
         return ResponseEntity
-                .status(result.stale()
-                        ? HttpStatus.CONFLICT : HttpStatus.OK)
-                .body(result.detail());
+                .ok(service.apply(
+                        workspaceId,
+                        requestId,
+                        currentUser.userId()
+                ).detail());
     }
 
     @PostMapping("/{requestId}/reject")

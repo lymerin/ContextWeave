@@ -225,7 +225,7 @@ async def no_status(
 
 @pytest.mark.asyncio
 async def test_no_change_does_not_submit(settings: Settings) -> None:
-    mcp = FakeMcpClient()
+    mcp = FakeMcpClient(code_content="")
     result = await DocumentSyncWorkflow(
         mcp, FakeModelProvider([no_change()]), settings, no_status
     ).graph.ainvoke(initial_state())
@@ -274,9 +274,63 @@ async def test_zero_document_workspace_creates_five_block_pending_proposal(
 
 
 @pytest.mark.asyncio
+async def test_single_unbound_route_file_creates_pending_document_and_binding(
+    settings: Settings,
+) -> None:
+    mcp = ZeroDocumentReviewServiceMcp(bound=False)
+    state = {
+        **initial_state(),
+        "selected_paths": ["agent-review-service/app/main.py"],
+    }
+
+    result = await DocumentSyncWorkflow(
+        mcp, FakeModelProvider(), review_settings(settings), no_status
+    ).graph.ainvoke(state)
+
+    assert result["decision"] == "SUBMIT_REVIEW"
+    plan = mcp.submissions[0][0]
+    assert [item.operationType.value for item in plan.operations] == [
+        "CREATE_DOCUMENT",
+        "ADD_BLOCK",
+    ]
+    assert len(plan.bindingProposals) == 1
+    assert plan.bindingProposals[0].filePath == "agent-review-service/app/main.py"
+
+
+@pytest.mark.asyncio
+async def test_unbound_file_adds_blocks_and_bindings_to_candidate_document(
+    settings: Settings,
+) -> None:
+    mcp = ReviewServiceMcp(bound=False)
+    state = {
+        **initial_state(),
+        "selected_paths": ["agent-review-service/app/schemas.py"],
+    }
+
+    result = await DocumentSyncWorkflow(
+        mcp, FakeModelProvider(), review_settings(settings), no_status
+    ).graph.ainvoke(state)
+
+    assert result["decision"] == "SUBMIT_REVIEW"
+    plan = mcp.submissions[0][0]
+    assert len(plan.operations) == 4
+    assert all(item.operationType.value == "ADD_BLOCK" for item in plan.operations)
+    assert {
+        str(item.documentId) for item in plan.operations
+    } == {"55555555-5555-5555-5555-555555555555"}
+    assert len(plan.bindingProposals) >= 4
+    assert {
+        str(item.documentId) for item in plan.bindingProposals
+    } == {"55555555-5555-5555-5555-555555555555"}
+    assert {
+        item.filePath for item in plan.bindingProposals
+    } == {"agent-review-service/app/schemas.py"}
+
+
+@pytest.mark.asyncio
 async def test_first_invalid_plan_is_repaired_once(settings: Settings) -> None:
     provider = FakeModelProvider([invalid_update(), no_change()])
-    mcp = FakeMcpClient()
+    mcp = FakeMcpClient(code_content="")
     result = await DocumentSyncWorkflow(mcp, provider, settings, no_status).graph.ainvoke(
         initial_state()
     )
@@ -289,7 +343,7 @@ async def test_first_invalid_plan_is_repaired_once(settings: Settings) -> None:
 @pytest.mark.asyncio
 async def test_second_invalid_plan_fails_without_submission(settings: Settings) -> None:
     provider = FakeModelProvider([invalid_update(), invalid_update()])
-    mcp = FakeMcpClient()
+    mcp = FakeMcpClient(code_content="")
     result = await DocumentSyncWorkflow(mcp, provider, settings, no_status).graph.ainvoke(
         initial_state()
     )
@@ -547,7 +601,11 @@ def app_client(
 
 
 def test_formal_post_returns_202_and_no_change_terminal(settings: Settings) -> None:
-    client, mcp, _ = app_client(settings, FakeModelProvider([no_change()]))
+    client, mcp, _ = app_client(
+        settings,
+        FakeModelProvider([no_change()]),
+        FakeMcpClient(code_content=""),
+    )
     with client:
         response = client.post(
             "/api/v1/agent-runs",

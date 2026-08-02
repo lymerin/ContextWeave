@@ -155,6 +155,73 @@ def test_real_review_service_fixture_does_not_mix_health_route_with_review_block
     }
 
 
+def test_single_file_route_remains_documentable_when_related_types_are_imported() -> None:
+    path = "agent-review-service/app/main.py"
+    context = {
+        "workspace": {"repositoryId": str(REPOSITORY_ID), "revision": "abc123"},
+        "task": {"taskId": "single-route-file"},
+        "codeFiles": [
+            {
+                "filePath": path,
+                "language": "Python",
+                "content": (REPOSITORY_ROOT / path).read_text(encoding="utf-8"),
+            }
+        ],
+    }
+
+    candidates = BindingCandidateBuilder().build_code(context)
+    plans = DocumentBlockPlanBuilder().build(candidates)
+    by_id = {item.candidateId: item for item in candidates}
+
+    assert [item.title for item in plans] == [
+        "接口职责：POST /api/v1/agent/review"
+    ]
+    assert by_id[plans[0].primaryCandidateIds[0]].displayName == "review"
+    assert not plans[0].supportingCandidateIds
+
+
+@pytest.mark.parametrize(
+    ("path", "expected_titles"),
+    [
+        (
+            "agent-review-service/app/rules.py",
+            ["代码职责：review_document"],
+        ),
+        (
+            "agent-review-service/app/schemas.py",
+            [
+                "数据模型：ReviewBlockRequest",
+                "数据模型：ReviewDocumentRequest",
+                "数据模型：ReviewIssueSuggestionResponse",
+                "数据模型：ReviewDocumentResponse",
+            ],
+        ),
+    ],
+)
+def test_ordinary_unbound_code_file_produces_deterministic_block_plans(
+    path: str,
+    expected_titles: list[str],
+) -> None:
+    context = {
+        "workspace": {"repositoryId": str(REPOSITORY_ID), "revision": "abc123"},
+        "task": {"taskId": "ordinary-code-file"},
+        "codeFiles": [
+            {
+                "filePath": path,
+                "language": "Python",
+                "content": (REPOSITORY_ROOT / path).read_text(encoding="utf-8"),
+            }
+        ],
+    }
+
+    candidates = BindingCandidateBuilder().build_code(context)
+    plans = DocumentBlockPlanBuilder().build(candidates)
+
+    assert [item.title for item in plans] == expected_titles
+    assert all(len(item.primaryCandidateIds) == 1 for item in plans)
+    assert all(item.requiredCandidateIds == item.primaryCandidateIds for item in plans)
+
+
 def test_document_operations_preserve_block_identity_title_and_order() -> None:
     block_plans = (
         _block_plan("block_endpoint", "接口职责", 0),

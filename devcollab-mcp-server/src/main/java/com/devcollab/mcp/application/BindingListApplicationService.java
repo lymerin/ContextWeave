@@ -56,6 +56,25 @@ public class BindingListApplicationService {
                     if (b.blockId() != null) {
                         bindingMap.put("blockId", b.blockId());
                     }
+                    if (b.revision() != null) {
+                        bindingMap.put("revision", b.revision());
+                    }
+                    if (b.anchorKind() != null) {
+                        bindingMap.put("anchorKind", b.anchorKind());
+                    }
+                    if (b.symbolKey() != null) {
+                        bindingMap.put("symbolKey", b.symbolKey());
+                    }
+                    if (b.startLine() != null) {
+                        bindingMap.put("startLine", b.startLine());
+                    }
+                    if (b.endLine() != null) {
+                        bindingMap.put("endLine", b.endLine());
+                    }
+                    if (b.bindingRole() != null) {
+                        bindingMap.put("bindingRole", b.bindingRole());
+                    }
+                    bindingMap.put("bindingOrdinal", b.bindingOrdinal());
                     return bindingMap;
                 })
                 .collect(Collectors.toList());

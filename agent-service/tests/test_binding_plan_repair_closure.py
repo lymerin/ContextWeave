@@ -261,6 +261,51 @@ def test_program_assembler_owns_stable_operations_and_primary_bindings() -> None
     ].symbolKey.find(":review_document:") >= 0
 
 
+def test_program_assembler_adds_blocks_to_an_existing_unbound_candidate_document() -> None:
+    model_context, candidates, block_plans = _planning_fixture()
+    existing_document_id = "44444444-4444-4444-4444-444444444444"
+    model_context["documents"] = [
+        {
+            "source": "CANDIDATE",
+            "documentId": existing_document_id,
+            "title": "旧的无 Binding 文档",
+            "documentType": "BACKEND",
+            "reviewStatus": "DRAFT",
+            "version": 1,
+            "blocks": [],
+        }
+    ]
+
+    assembled = ProgramDocumentPlanAssembler().assemble(
+        model_context,
+        candidates,
+        block_plans,
+        DocumentBlockContentPlan(
+            blocks=[
+                DocumentBlockContent(
+                    blockKey=item.blockKey,
+                    status="CONTENT",
+                    content="仅说明代码证据可以确认的职责。",
+                )
+                for item in block_plans
+            ]
+        ),
+    )
+
+    assert all(
+        operation.operationType.value == "ADD_BLOCK"
+        for operation in assembled.agent_plan.operations
+    )
+    assert all(
+        str(operation.documentId) == existing_document_id
+        for operation in assembled.agent_plan.operations
+    )
+    assert all(
+        operation.createdDocumentClientOperationId is None
+        for operation in assembled.agent_plan.operations
+    )
+
+
 def _context_bundle() -> dict[str, Any]:
     return {
         "runId": "binding-plan-repair-fixture",

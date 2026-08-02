@@ -187,7 +187,12 @@ async def test_worker_completes_no_change_job_with_short_lived_delegation(
 ) -> None:
     repository = await _seed_repository()
     delegation = FakeDelegationClient()
-    worker = _worker(repository, settings, delegation=delegation)
+    worker = _worker(
+        repository,
+        settings,
+        delegation=delegation,
+        mcp=FakeMcpClient(code_content=""),
+    )
     claimed = await repository.claim_next_unit("test-worker", 60)
     assert claimed is not None
     await worker._execute(claimed)
@@ -234,7 +239,7 @@ async def test_worker_does_not_submit_without_program_block_plan(
         repository,
         settings,
         provider=FakeModelProvider([plan]),
-        mcp=FakeMcpClient(bound=False),
+        mcp=FakeMcpClient(bound=False, code_content=""),
     )
     claimed = await repository.claim_next_unit("test-worker", 60)
     assert claimed is not None
@@ -249,7 +254,12 @@ async def test_worker_does_not_submit_without_program_block_plan(
 async def test_model_is_not_called_without_program_block_plan(settings: Settings) -> None:
     repository = await _seed_repository()
     provider = FakeModelProvider([ModelProviderError("MODEL_TIMEOUT", "timeout")])
-    worker = _worker(repository, settings, provider=provider)
+    worker = _worker(
+        repository,
+        settings,
+        provider=provider,
+        mcp=FakeMcpClient(code_content=""),
+    )
     claimed = await repository.claim_next_unit("test-worker", 60)
     assert claimed is not None
     await worker._execute(claimed)
@@ -267,7 +277,12 @@ async def test_max_attempt_unit_without_block_plan_completes_without_model(
     repository = await _seed_repository()
     next(iter(repository.units.values()))["attempt"] = 2
     provider = FakeModelProvider([ModelProviderError("MODEL_TIMEOUT", "timeout")])
-    worker = _worker(repository, settings, provider=provider)
+    worker = _worker(
+        repository,
+        settings,
+        provider=provider,
+        mcp=FakeMcpClient(code_content=""),
+    )
     claimed = await repository.claim_next_unit("test-worker", 60)
     assert claimed is not None
     assert claimed["attempt"] == 3
