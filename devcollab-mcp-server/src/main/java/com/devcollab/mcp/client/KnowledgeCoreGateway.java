@@ -150,6 +150,7 @@ public interface KnowledgeCoreGateway {
 
     record BindingInfo(
             UUID bindingId,
+            UUID repositoryId,
             String pathPattern,
             UUID documentId,
             String documentTitle,

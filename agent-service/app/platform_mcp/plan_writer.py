@@ -37,11 +37,8 @@ class PlanWriter:
         mcp_payload = {
             "clientRequestId": f"agent-{run_id}",
             "workspaceId": workspace_id,
-            "repositoryId": repository_id,
-            "revision": plan.revision,
             "summary": plan.summary,
             "rationale": plan.rationale,
-            "sourceType": "MCP",
         }
 
         # operations
@@ -53,6 +50,7 @@ class PlanWriter:
                 "documentId": str(op.document_id) if op.document_id else None,
                 "blockId": str(op.block_id) if op.block_id else None,
                 "createdDocumentClientOperationId": op.created_document_op_id,
+                "proposedDocumentTitle": op.proposed_document_title,
                 "proposedBlockType": "PARAGRAPH",
                 "proposedPlainText": op.proposed_plain_text,
                 "proposedContentFormat": "MARKDOWN",
@@ -85,6 +83,14 @@ class PlanWriter:
                 if binding.created_block_operation_id:
                     proposal["createdBlockClientOperationId"] = (
                         binding.created_block_operation_id
+                    )
+                # 文档目标——knowledge-core 要求 binding 指定 documentId 或
+                # createdDocumentClientOperationId 其中之一。
+                if binding.document_id:
+                    proposal["documentId"] = str(binding.document_id)
+                elif binding.created_document_op_id:
+                    proposal["createdDocumentClientOperationId"] = (
+                        binding.created_document_op_id
                     )
                 proposals.append(proposal)
 

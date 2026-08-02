@@ -1,7 +1,9 @@
 package com.devcollab.knowledgecore.git.api;
 
+import com.devcollab.knowledgecore.git.application.BlockBindingFileContext;
 import com.devcollab.knowledgecore.git.application.CreateCodeBindingCommand;
 import com.devcollab.knowledgecore.git.application.GitKnowledgeApplicationService;
+import com.devcollab.knowledgecore.git.application.exception.InvalidCodeBindingException;
 import com.devcollab.knowledgecore.git.application.GitMarkdownImportService;
 import com.devcollab.knowledgecore.git.application.IngestGitChangeCommand;
 import com.devcollab.knowledgecore.git.application.RegisterGitRepositoryCommand;
@@ -296,6 +298,46 @@ public class GitKnowledgeController {
                         blockId
                 )
                 .stream().map(CodeDocumentBindingResponse::from).toList();
+    }
+
+    @GetMapping("/api/v1/documents/{documentId}/code-bindings/context")
+    public List<CodeBindingContextItemResponse> listBindingsContext(
+            @PathVariable UUID documentId,
+            @RequestParam(required = false) String revision,
+            @RequestParam(defaultValue = "true") boolean includeLegacy,
+            @RequestParam(required = false) UUID blockId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return service.listDocumentBindingsContext(
+                        documentId,
+                        currentUser.userId(),
+                        revision,
+                        includeLegacy,
+                        blockId
+                )
+                .stream().map(CodeBindingContextItemResponse::from).toList();
+    }
+
+    @GetMapping("/api/v1/documents/{documentId}/code-bindings/block-file-context")
+    public BlockBindingFileContextResponse resolveBlockFileContext(
+            @PathVariable UUID documentId,
+            @RequestParam UUID blockId,
+            @RequestParam(required = false) String revision,
+            @RequestParam(defaultValue = "true") boolean includeLegacy,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        BlockBindingFileContext ctx = service.resolveBlockFileContext(
+                documentId,
+                currentUser.userId(),
+                revision,
+                includeLegacy,
+                blockId
+        );
+        if (ctx == null) {
+            throw new InvalidCodeBindingException(
+                    "该 Block 暂无正式代码 Binding");
+        }
+        return BlockBindingFileContextResponse.from(ctx);
     }
 
     @GetMapping("/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/code-bindings")

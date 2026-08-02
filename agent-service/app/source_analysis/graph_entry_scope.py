@@ -1,13 +1,12 @@
 """入口收集与范围圈定——第 2b 层处理器。
 
-输入  RepositoryCodeGraph。
-输出  SemanticScope[]（跨文件语义范围）。
+两条路径:
+  build_file_scopes()   直接从 AtomCatalog 构造范围（单文件/少量文件分析）。
+                        不依赖关系图，文件中的所有顶层符号即为入口，
+                        类方法自动归入所属类的范围。
 
-处理流程:
-  1. 检测入口（HTTP 路由、消息消费者等）
-  2. 从每个入口沿调用关系扩展，收集可达符号
-  3. 补充参数类型、返回类型依赖
-  4. 合并高重叠的入口范围
+  discover_scopes()     从 RepositoryCodeGraph 检测 HTTP 路由入口并沿调用图
+                        BFS 扩展（项目初始化时的大规模跨文件分析）。
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ import hashlib
 from collections import defaultdict, deque
 from typing import Any
 
-from app.schemas.ast_atom import SymbolKind
+from app.schemas.ast_atom import AtomCatalog, SymbolAtom, SymbolKind
 from app.schemas.repository_graph import RelationKind, RepositoryCodeGraph
 from app.schemas.scope import (
     EntryKind,
@@ -32,7 +31,123 @@ _MAX_CALL_DEPTH = 5
 _MERGE_OVERLAP_THRESHOLD = 0.6
 
 
-# ── 入口 ────────────────────────────────────────────────────────────────────
+# ── 直接范围构造（单文件/少量文件，不依赖关系图）─────────────────────────
+
+
+def build_file_scopes(catalog: AtomCatalog) -> tuple[SemanticScope, ...]:
+    """直接从 AtomCatalog 构造语义范围，不依赖关系图或 BFS 扩展。
+
+    每个顶层类或公开函数成为一个入口，类方法自动归入所属类的范围。
+    适用于 CURRENT_FILE_ANALYSIS 和 SEMANTIC_ANALYSIS 路径——
+    文件边界已经划好了，不需要再"发现"范围。
+    """
+    # 按文件分组
+    by_file: dict[str, list[SymbolAtom]] = {}
+    for sym in catalog.symbols:
+        f = _file_from_key(sym.symbol_key)
+        if f not in by_file:
+            by_file[f] = []
+        by_file[f].append(sym)
+
+    scopes: list[SemanticScope] = []
+    for file_path, symbols in by_file.items():
+        # 收集入口：顶层公开类 + 公开函数
+        entries: list[EntryPoint] = []
+        top_level_ids: set[str] = set()
+        for sym in symbols:
+            if _is_private_name(sym.name):
+                continue
+            if sym.parent_qualified is not None:
+                continue  # 方法/类方法，归入所属类的范围
+            if sym.kind == SymbolKind.CLASS:
+                label = f"model:{sym.qualified_name}" if sym.is_pydantic else sym.qualified_name
+                entries.append(EntryPoint(
+                    symbol_key=sym.symbol_key,
+                    kind=EntryKind.PUBLIC_METHOD,
+                    label=label,
+                ))
+                top_level_ids.add(sym.symbol_key)
+            elif sym.kind in (SymbolKind.FUNCTION, SymbolKind.ASYNC_FUNCTION):
+                entries.append(EntryPoint(
+                    symbol_key=sym.symbol_key,
+                    kind=EntryKind.PUBLIC_METHOD,
+                    label=f"fn:{sym.qualified_name}",
+                ))
+                top_level_ids.add(sym.symbol_key)
+
+        # 如果没有顶层入口（极罕见：全是私有函数或只有方法），回退到方法级
+        if not entries:
+            for sym in symbols:
+                if _is_private_name(sym.name):
+                    continue
+                if sym.kind in (SymbolKind.METHOD, SymbolKind.CLASS_METHOD):
+                    entries.append(EntryPoint(
+                        symbol_key=sym.symbol_key,
+                        kind=EntryKind.PUBLIC_METHOD,
+                        label=f"method:{sym.qualified_name}",
+                    ))
+                    top_level_ids.add(sym.symbol_key)
+
+        if not entries:
+            continue
+
+        # 构建成员列表
+        entry_keys = {e.symbol_key for e in entries}
+        members: list[ScopeMember] = []
+        for sym in symbols:
+            role: str
+            distance: int
+            entry_paths: tuple[str, ...]
+
+            if sym.symbol_key in entry_keys:
+                role = MemberRole.ENTRY
+                distance = 0
+                entry_paths = (sym.symbol_key,)
+            elif sym.parent_qualified is not None:
+                # 方法是某个入口类的成员 → 找到所属入口
+                parent_key = _parent_symbol_key(sym, catalog)
+                if parent_key and parent_key in entry_keys:
+                    role = MemberRole.DIRECT_CALLEE
+                    distance = 1
+                    entry_paths = (parent_key,)
+                else:
+                    role = MemberRole.SHARED_DEPENDENCY
+                    distance = 2
+                    entry_paths = ()
+            else:
+                role = MemberRole.SHARED_DEPENDENCY
+                distance = 2
+                entry_paths = ()
+
+            members.append(ScopeMember(
+                symbol_key=sym.symbol_key,
+                role=role,
+                distance=distance,
+                entry_paths=entry_paths,
+            ))
+
+        scope_id = _hash_id("scope", file_path)
+        scopes.append(SemanticScope(
+            scope_id=scope_id,
+            entries=tuple(entries),
+            members=tuple(members),
+            related_files=(file_path,),
+        ))
+
+    return tuple(scopes)
+
+
+def _parent_symbol_key(method: SymbolAtom, catalog: AtomCatalog) -> str | None:
+    """查找 method 所属的顶层类的 symbol_key。"""
+    if method.parent_qualified is None:
+        return None
+    for sym in catalog.symbols:
+        if sym.qualified_name == method.parent_qualified:
+            return sym.symbol_key
+    return None
+
+
+# ── 关系图范围发现（项目初始化，需 BFS 扩展）─────────────────────────────
 
 
 def discover_scopes(graph: RepositoryCodeGraph) -> tuple[SemanticScope, ...]:
@@ -57,17 +172,71 @@ def discover_scopes(graph: RepositoryCodeGraph) -> tuple[SemanticScope, ...]:
 
 
 def _detect_entries(graph: RepositoryCodeGraph) -> list[EntryPoint]:
-    """检测所有业务入口。"""
+    """检测所有业务入口。
+
+    优先级:
+      1. HTTP 路由（@router.get/post/...）
+      2. 顶层公开类（Pydantic 模型、dataclass、普通类）
+      3. 顶层公开函数（模块级函数，不含私有 _ 前缀）
+      4. 公开方法（类的 public 方法）
+
+    回退逻辑保证 schemas.py 这类纯模型文件也能生成语义范围。
+    """
     entries: list[EntryPoint] = []
+
     for sym in graph.catalog.symbols:
+        # 优先级 1: HTTP 路由
         if sym.http_method and sym.http_path:
             entries.append(EntryPoint(
                 symbol_key=sym.symbol_key,
                 kind=EntryKind.HTTP_ROUTE,
                 label=f"{sym.http_method} {sym.http_path}",
             ))
-        # 未来扩展: MESSAGE_CONSUMER, SCHEDULED_TASK, etc.
+
+    # 如果已有 HTTP 路由入口，不再回退 —— HTTP 路由是更强的入口信号
+    if entries:
+        return entries
+
+    # 回退: 没有 HTTP 路由时，顶层类/函数都是语义入口
+    for sym in graph.catalog.symbols:
+        if _is_private_name(sym.name):
+            continue
+        if sym.kind == SymbolKind.CLASS:
+            label = sym.qualified_name
+            if sym.is_pydantic:
+                label = f"model:{sym.qualified_name}"
+            entries.append(EntryPoint(
+                symbol_key=sym.symbol_key,
+                kind=EntryKind.PUBLIC_METHOD,
+                label=label,
+            ))
+        elif sym.kind in (SymbolKind.FUNCTION, SymbolKind.ASYNC_FUNCTION):
+            # 仅顶层函数（无 parent_qualified）
+            if sym.parent_qualified is None:
+                entries.append(EntryPoint(
+                    symbol_key=sym.symbol_key,
+                    kind=EntryKind.PUBLIC_METHOD,
+                    label=f"fn:{sym.qualified_name}",
+                ))
+
+    # 如果连顶层类/函数都没有（极罕见），回退到公开方法
+    if not entries:
+        for sym in graph.catalog.symbols:
+            if _is_private_name(sym.name):
+                continue
+            if sym.kind in (SymbolKind.METHOD, SymbolKind.CLASS_METHOD):
+                entries.append(EntryPoint(
+                    symbol_key=sym.symbol_key,
+                    kind=EntryKind.PUBLIC_METHOD,
+                    label=f"method:{sym.qualified_name}",
+                ))
+
     return entries
+
+
+def _is_private_name(name: str) -> bool:
+    """Python 私有命名约定: 以 _ 开头但不以 __ 开头的是模块私有。"""
+    return name.startswith("_") and not name.startswith("__")
 
 
 # ── 从入口展开范围 ──────────────────────────────────────────────────────────

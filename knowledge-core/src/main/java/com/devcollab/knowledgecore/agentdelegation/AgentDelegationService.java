@@ -22,6 +22,7 @@ public class AgentDelegationService {
             "devcollab.workspace.get_context",
             "devcollab.code.read",
             "devcollab.binding.list",
+            "devcollab.binding.list_batch",
             "devcollab.document.find_candidates",
             "devcollab.document.get_structure",
             "devcollab.review.submit_document_change"

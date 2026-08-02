@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CodeBindingQueryItem, GitRepositorySource } from '@/api/git';
+import type { CodeBindingContextItem, CodeBindingQueryItem, GitRepositorySource } from '@/api/git';
 import {
+  bindingDisplayState,
   bindingDocumentChoices,
   buildBindingFixture,
-  classifyBinding,
+  computeDocumentScopeFileLinkCounts,
+  contextBindingToQueryItem,
+  expandContextBindingsToQueryItems,
   selectDefaultBinding,
 } from './linkedWorkbenchBindings';
 
@@ -48,11 +51,11 @@ describe('linkedWorkbenchBindings', () => {
   it('preserves FILE, RANGE and SYMBOL anchors without merging bindings', () => {
     const bindings = [
       binding('file', 'document-a', 'src/A.java'),
-      { ...binding('range', 'document-a', 'src/A.java'), anchorKind: 'RANGE' as const, startLine: 2, endLine: 4, blockId: 'block-a' },
-      { ...binding('symbol', 'document-a', 'src/A.java'), anchorKind: 'SYMBOL' as const, symbolKey: 'JAVA:A.run', startLine: 6, endLine: 8, blockId: 'block-b' },
+      { ...binding('range', 'document-a', 'src/A.java'), anchorKind: 'RANGE' as const, startLine: 2, endLine: 4, blockId: 'block-a', blockExists: true },
+      { ...binding('symbol', 'document-a', 'src/A.java'), anchorKind: 'SYMBOL' as const, symbolKey: 'JAVA:A.run', startLine: 6, endLine: 8, blockId: 'block-b', blockExists: true },
     ];
 
-    const fixture = buildBindingFixture(input(source('src/A.java'), bindings));
+    const fixture = buildBindingFixture(input(source('src/A.java'), bindings, 'document-a'));
 
     expect(fixture.links).toHaveLength(3);
     expect(fixture.codeAnchors.map(item => item.anchorKind)).toEqual(['SYMBOL', 'RANGE', 'FILE']);
@@ -71,16 +74,17 @@ describe('linkedWorkbenchBindings', () => {
       symbolKey: 'JAVA:A.run',
       startLine: 2,
       endLine: 4,
+      blockExists: true,
     };
 
     expect(selectDefaultBinding([legacy, precise], 'revision')).toEqual(precise);
-    expect(buildBindingFixture(input(source('src/A.java'), [legacy, precise])).links)
+    expect(buildBindingFixture(input(source('src/A.java'), [legacy, precise], 'document-a')).links)
       .toHaveLength(2);
   });
 
   it('restores a valid binding id, then block id, before using stable defaults', () => {
-    const first = { ...binding('a', 'document-a', 'src/A.java'), blockId: 'block-a' };
-    const second = { ...binding('b', 'document-a', 'src/A.java'), blockId: 'block-b' };
+    const first = { ...binding('a', 'document-a', 'src/A.java'), blockId: 'block-a', blockExists: true };
+    const second = { ...binding('b', 'document-a', 'src/A.java'), blockId: 'block-b', blockExists: true };
 
     expect(selectDefaultBinding([first, second], 'revision', 'b')?.bindingId).toBe('b');
     expect(selectDefaultBinding([first, second], 'revision', 'missing', 'block-a')?.bindingId)
@@ -96,6 +100,7 @@ describe('linkedWorkbenchBindings', () => {
         blockId: 'block-late',
         startLine: 20,
         endLine: 22,
+        blockExists: true,
       },
       {
         ...binding('same-b', 'document-a', 'src/A.java'),
@@ -103,6 +108,7 @@ describe('linkedWorkbenchBindings', () => {
         blockId: 'block-b',
         startLine: 2,
         endLine: 4,
+        blockExists: true,
       },
       {
         ...binding('same-a', 'document-a', 'src/A.java'),
@@ -110,10 +116,11 @@ describe('linkedWorkbenchBindings', () => {
         blockId: 'block-a',
         startLine: 2,
         endLine: 4,
+        blockExists: true,
       },
     ];
     const fixture = buildBindingFixture({
-      ...input(source('src/A.java'), bindings),
+      ...input(source('src/A.java'), bindings, 'document-a'),
       blockSortOrders: new Map([
         ['block-a', 2],
         ['block-b', 1],
@@ -142,6 +149,7 @@ describe('linkedWorkbenchBindings', () => {
       symbolKey: 'JAVA:A.helper',
       startLine: 2,
       endLine: 4,
+      blockExists: true,
     };
     const primary = {
       ...binding('primary', 'document-a', 'src/A.java'),
@@ -155,11 +163,13 @@ describe('linkedWorkbenchBindings', () => {
       anchorKind: 'RANGE' as const,
       startLine: 10,
       endLine: 12,
+      blockExists: true,
     };
 
     const fixture = buildBindingFixture(input(
       source('src/A.java'),
       [supportingThird, supportingSecond, primary],
+      'document-a',
     ));
 
     expect(fixture.links.map(item => item.bindingId)).toEqual([
@@ -194,32 +204,74 @@ describe('linkedWorkbenchBindings', () => {
     expect(choices.map(item => item.id)).toEqual(['document-a', 'document-b']);
     expect(choices.map(item => item.title)).toEqual(['文档 A', '文档 B']);
   });
-  it('filters identity, repository, revision, path and missing Block mismatches', () => {
+
+  it('filters block bindings by blockExists and activeDocumentId', () => {
     const valid = {
       ...binding('valid', 'document-a', 'src/A.java'),
       anchorKind: 'RANGE' as const,
       blockId: 'block-a',
       startLine: 2,
       endLine: 4,
+      blockExists: true,
     };
-    const invalid = [
-      { ...valid, bindingId: '' },
-      { ...valid, bindingId: 'wrong-repository', repositoryId: 'other' },
-      { ...valid, bindingId: 'wrong-revision', revision: 'old-revision' },
-      { ...valid, bindingId: 'wrong-path', pathPattern: 'src/B.java' },
-      { ...valid, bindingId: 'missing-block', blockId: 'block-missing' },
-    ];
+    const deadBlock = {
+      ...binding('dead-block', 'document-a', 'src/A.java'),
+      anchorKind: 'RANGE' as const,
+      blockId: 'block-dead',
+      startLine: 5,
+      endLine: 7,
+      blockExists: false,
+    };
+    const otherDocument = {
+      ...binding('other-doc', 'document-b', 'src/A.java'),
+      anchorKind: 'RANGE' as const,
+      blockId: 'block-b',
+      startLine: 8,
+      endLine: 10,
+      blockExists: true,
+    };
     const fixture = buildBindingFixture({
-      ...input(source('src/A.java'), [valid, ...invalid]),
-      loadedDocumentId: 'document-a',
-      loadedBlockIds: new Set(['block-a']),
+      ...input(source('src/A.java'), [valid, deadBlock, otherDocument], 'document-a'),
     });
 
     expect(fixture.links.map(item => item.bindingId)).toEqual(['valid']);
     expect(fixture.links[0].bindingDisplayState).toBe('precise');
   });
 
-  it('keeps unresolved Block targets loading until the document has loaded', () => {
+  it('labels file-level and symbol-without-range bindings as weak', () => {
+    const legacy = { ...binding('legacy', 'document-a', 'src/A.java'), revision: null };
+    const symbol = {
+      ...binding('symbol', 'document-a', 'src/A.java'),
+      anchorKind: 'SYMBOL' as const,
+      symbolKey: 'JAVA:A.run',
+      blockId: 'block-a',
+      blockExists: true,
+    };
+    const fixture = buildBindingFixture({
+      ...input(source('src/A.java'), [legacy, symbol], 'document-a'),
+    });
+
+    expect(fixture.links).toHaveLength(2);
+    expect(fixture.links.every(item => item.bindingDisplayState === 'weak')).toBe(true);
+    expect(fixture.codeAnchors.every(item => item.startLine === null)).toBe(true);
+  });
+
+  it('shows block bindings immediately when blockExists is true, without waiting for block loading', () => {
+    const precise = {
+      ...binding('precise', 'document-a', 'src/A.java'),
+      anchorKind: 'RANGE' as const,
+      blockId: 'block-a',
+      startLine: 2,
+      endLine: 4,
+      blockExists: true,
+    };
+    const fixture = buildBindingFixture(input(source('src/A.java'), [precise], 'document-a'));
+
+    expect(fixture.links).toHaveLength(1);
+    expect(fixture.links[0].bindingDisplayState).toBe('precise');
+  });
+
+  it('bindingDisplayState returns precise for resolved block bindings, weak otherwise', () => {
     const precise = {
       ...binding('precise', 'document-a', 'src/A.java'),
       anchorKind: 'RANGE' as const,
@@ -227,37 +279,174 @@ describe('linkedWorkbenchBindings', () => {
       startLine: 2,
       endLine: 4,
     };
-    const loadingInput = {
-      repositoryId: 'repository',
-      branch: 'main',
-      commitSha: 'revision',
-      source: source('src/A.java'),
-      bindings: [precise],
-    };
-
-    expect(classifyBinding(precise, loadingInput)).toBe('loading');
-    expect(buildBindingFixture(loadingInput).links).toEqual([]);
-  });
-
-  it('labels legacy file targets and symbols without ranges as weak', () => {
-    const legacy = { ...binding('legacy', 'document-a', 'src/A.java'), revision: null };
-    const symbol = {
-      ...binding('symbol', 'document-a', 'src/A.java'),
+    const weakBlock = {
+      ...binding('weak-block', 'document-a', 'src/A.java'),
       anchorKind: 'SYMBOL' as const,
       symbolKey: 'JAVA:A.run',
       blockId: 'block-a',
     };
-    const fixture = buildBindingFixture({
-      ...input(source('src/A.java'), [legacy, symbol]),
-      loadedDocumentId: 'document-a',
-      loadedBlockIds: new Set(['block-a']),
+    const fileLevel = binding('file', 'document-a', 'src/A.java');
+
+    expect(bindingDisplayState(precise)).toBe('precise');
+    expect(bindingDisplayState(weakBlock)).toBe('weak');
+    expect(bindingDisplayState(fileLevel)).toBe('weak');
+  });
+
+  it('uses matchedFilePath for code anchor and link file paths', () => {
+    const wildcard = {
+      ...binding('wildcard', 'document-a', 'src/main/App.java'),
+      pathPattern: 'src/**',
+      matchedFilePath: 'src/main/App.java',
+    };
+    const fixture = buildBindingFixture(input(source('src/main/App.java'), [wildcard]));
+
+    expect(fixture.codeAnchors[0].filePath).toBe('src/main/App.java');
+    expect(fixture.links[0].filePath).toBe('src/main/App.java');
+  });
+
+  it('contextBindingToQueryItem picks current file path when available', () => {
+    const contextItem: CodeBindingContextItem = {
+      ...binding('ctx', 'document-a', 'src/main/Service.java'),
+      matchingFilePaths: ['src/main/Service.java', 'src/test/ServiceTest.java'],
+    };
+    const result = contextBindingToQueryItem(contextItem, 'src/test/ServiceTest.java');
+    expect(result.matchedFilePath).toBe('src/test/ServiceTest.java');
+  });
+
+  it('contextBindingToQueryItem falls back to first matching path', () => {
+    const contextItem: CodeBindingContextItem = {
+      ...binding('ctx', 'document-a', 'src/main/Service.java'),
+      matchingFilePaths: ['src/main/Service.java', 'src/test/ServiceTest.java'],
+    };
+    const result = contextBindingToQueryItem(contextItem, null);
+    expect(result.matchedFilePath).toBe('src/main/Service.java');
+  });
+
+  describe('computeDocumentScopeFileLinkCounts', () => {
+    it('expands matchingFilePaths into per-file counts', () => {
+      const items = [
+        contextItem('ctx-1', 'document-a', ['src/A.java', 'src/B.java']),
+        contextItem('ctx-2', 'document-a', ['src/B.java', 'src/C.java']),
+      ];
+      const counts = computeDocumentScopeFileLinkCounts(items, 'repository');
+      expect(counts).toEqual({
+        'src/A.java': 1,
+        'src/B.java': 2,
+        'src/C.java': 1,
+      });
     });
 
-    expect(fixture.links).toHaveLength(2);
-    expect(fixture.links.every(item => item.bindingDisplayState === 'weak')).toBe(true);
-    expect(fixture.codeAnchors.every(item => item.startLine === null)).toBe(true);
+    it('returns empty record for empty items', () => {
+      expect(computeDocumentScopeFileLinkCounts([], 'repository')).toEqual({});
+    });
+
+    it('filters out items from different repositories', () => {
+      const items = [
+        contextItem('ctx-1', 'document-a', ['src/A.java']),
+        { ...contextItem('ctx-2', 'document-a', ['src/B.java']), repositoryId: 'other-repo' },
+      ];
+      const counts = computeDocumentScopeFileLinkCounts(items, 'repository');
+      expect(counts).toEqual({ 'src/A.java': 1 });
+    });
+
+    it('handles a single wildcard binding resolving to many files', () => {
+      const items = [
+        contextItem('wildcard', 'document-a', [
+          'src/main/A.java',
+          'src/main/B.java',
+          'src/main/C.java',
+        ]),
+      ];
+      const counts = computeDocumentScopeFileLinkCounts(items, 'repository');
+      expect(counts).toEqual({
+        'src/main/A.java': 1,
+        'src/main/B.java': 1,
+        'src/main/C.java': 1,
+      });
+    });
+  });
+
+  describe('expandContextBindingsToQueryItems', () => {
+    it('returns a single item when matchingFilePaths has one entry', () => {
+      const items = [contextItem('ctx-1', 'document-a', ['src/A.java'])];
+      const result = expandContextBindingsToQueryItems(items, null);
+      expect(result).toHaveLength(1);
+      expect(result[0].bindingId).toBe('ctx-1@src/A.java');
+      expect(result[0].matchedFilePath).toBe('src/A.java');
+    });
+
+    it('expands one context item into one query item per matching file', () => {
+      const items = [contextItem('wildcard', 'document-a', [
+        'src/A.java',
+        'src/B.java',
+        'src/C.java',
+      ])];
+      const result = expandContextBindingsToQueryItems(items, null);
+      expect(result).toHaveLength(3);
+      expect(result.map(r => r.matchedFilePath)).toEqual([
+        'src/A.java',
+        'src/B.java',
+        'src/C.java',
+      ]);
+      expect(result.map(r => r.bindingId)).toEqual([
+        'wildcard@src/A.java',
+        'wildcard@src/B.java',
+        'wildcard@src/C.java',
+      ]);
+      // All expanded items share the same document.
+      expect(result.every(r => r.documentId === 'document-a')).toBe(true);
+    });
+
+    it('handles multiple context items each with multiple paths', () => {
+      const items = [
+        contextItem('ctx-1', 'document-a', ['src/A.java', 'src/B.java']),
+        contextItem('ctx-2', 'document-b', ['src/C.java']),
+      ];
+      const result = expandContextBindingsToQueryItems(items, null);
+      expect(result).toHaveLength(3);
+      expect(result.map(r => r.matchedFilePath).sort()).toEqual([
+        'src/A.java',
+        'src/B.java',
+        'src/C.java',
+      ]);
+    });
+
+    it('handles empty matchingFilePaths by falling back to pathPattern', () => {
+      const item: CodeBindingContextItem = {
+        ...contextItem('empty-paths', 'document-a', []),
+        matchingFilePaths: [],
+      };
+      const result = expandContextBindingsToQueryItems([item], null);
+      expect(result).toHaveLength(1);
+      expect(result[0].matchedFilePath).toBe('src/**');
+    });
   });
 });
+
+function contextItem(
+  bindingId: string,
+  documentId: string,
+  matchingFilePaths: string[],
+): CodeBindingContextItem {
+  return {
+    bindingId,
+    workspaceId: 'workspace',
+    repositoryId: 'repository',
+    revision: 'revision',
+    anchorKind: 'FILE',
+    symbolKey: null,
+    startLine: null,
+    endLine: null,
+    documentId,
+    blockId: null,
+    targetKey: 'DOCUMENT',
+    pathPattern: matchingFilePaths[0] || 'src/**',
+    documentTitle: documentId,
+    matchedFilePath: matchingFilePaths[0] || 'src/**',
+    matchingFilePaths,
+    blockExists: false,
+  };
+}
 
 function binding(
   bindingId: string,
@@ -278,6 +467,8 @@ function binding(
     targetKey: 'DOCUMENT',
     pathPattern,
     documentTitle: documentId,
+    matchedFilePath: pathPattern,
+    blockExists: false,
   };
 }
 
@@ -298,6 +489,7 @@ function source(path: string): GitRepositorySource {
 function input(
   sourceValue: GitRepositorySource,
   bindings: CodeBindingQueryItem[],
+  activeDocumentId?: string | null,
 ) {
   return {
     repositoryId: 'repository',
@@ -305,7 +497,6 @@ function input(
     commitSha: 'revision',
     source: sourceValue,
     bindings,
-    loadedDocumentId: bindings.find(item => item.blockId)?.documentId,
-    loadedBlockIds: new Set(bindings.flatMap(item => item.blockId ? [item.blockId] : [])),
+    activeDocumentId: activeDocumentId ?? null,
   };
 }

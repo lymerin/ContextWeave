@@ -20,7 +20,9 @@ public record CodeBindingQueryItemResponse(
         UUID blockId,
         String targetKey,
         String pathPattern,
-        String documentTitle
+        String documentTitle,
+        String matchedFilePath,
+        boolean blockExists
 ) {
     public static CodeBindingQueryItemResponse from(CodeBindingQueryItem item) {
         return new CodeBindingQueryItemResponse(
@@ -38,7 +40,9 @@ public record CodeBindingQueryItemResponse(
                 item.blockId(),
                 item.targetKey(),
                 item.pathPattern(),
-                item.documentTitle()
+                item.documentTitle(),
+                item.matchedFilePath(),
+                item.blockExists()
         );
     }
 }

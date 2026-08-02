@@ -226,7 +226,7 @@ class BindingListApplicationServiceTests {
             UUID bindingId, String pathPattern, UUID documentId,
             String documentTitle, UUID blockId) {
         return new KnowledgeCoreGateway.BindingInfo(
-                bindingId, pathPattern, documentId, documentTitle, blockId,
+                bindingId, repositoryId, pathPattern, documentId, documentTitle, blockId,
                 null, null, null, null, null, null, 1
         );
     }
@@ -234,7 +234,8 @@ class BindingListApplicationServiceTests {
     @Test
     void preservesPrecisionFieldsWhenGatewayReturnsThem() {
         KnowledgeCoreGateway.BindingInfo precise = new KnowledgeCoreGateway.BindingInfo(
-                UUID.randomUUID(), "src/Main.java", UUID.randomUUID(),
+                UUID.randomUUID(), repositoryId,
+                "src/Main.java", UUID.randomUUID(),
                 "Design Doc", UUID.randomUUID(),
                 "abc123",         // revision
                 "SYMBOL",          // anchorKind

@@ -82,7 +82,10 @@ class AnalysisOrchestrator:
             context_id=self._snap.context_id,
             revision=self._snap.revision,
             snapshot_hash=self._snap.snapshot_hash,
-            entry_point_ids=list(self._snap.manifest.required_atom_ids)[:10],
+            entry_point_ids=list(
+                self._snap.atom_by_symbol.get(aid, aid)
+                for aid in self._snap.manifest.required_atom_ids
+            )[:10],
             structure_block_ids=list(self._snap.manifest.required_block_ids),
             manifest=AnalysisManifest(
                 atom_count=self._snap.manifest.atom_count,

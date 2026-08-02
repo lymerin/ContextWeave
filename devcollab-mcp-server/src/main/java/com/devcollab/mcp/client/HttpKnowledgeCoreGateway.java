@@ -149,7 +149,8 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
                     payload.fileHasBindings(),
                     payload.bindings() == null ? List.of() : payload.bindings().stream()
                             .map(b -> new BindingInfo(
-                                    b.bindingId(), b.pathPattern(), b.documentId(),
+                                    b.bindingId(), b.repositoryId(),
+                                    b.pathPattern(), b.documentId(),
                                     b.documentTitle(), b.blockId(),
                                     b.revision(), b.anchorKind(), b.symbolKey(),
                                     b.startLine(), b.endLine(),
@@ -421,9 +422,11 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
             if (exception instanceof RestClientResponseException response
                     && (response.getStatusCode().value() == 400
                     || response.getStatusCode().value() == 409)) {
+                // TEMP-DEBUG: 透传 knowledge-core 真实错误以便定位拒绝原因
+                String body = response.getResponseBodyAsString();
                 throw new McpToolException(
                         McpToolErrorCode.INVALID_ARGUMENT,
-                        "Document change request was rejected"
+                        "Document change request was rejected: " + body
                 );
             }
             throw map(exception, McpToolErrorCode.WORKSPACE_NOT_FOUND);
@@ -557,6 +560,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
 
     private record BindingInfoPayload(
             UUID bindingId,
+            UUID repositoryId,
             String pathPattern,
             UUID documentId,
             String documentTitle,

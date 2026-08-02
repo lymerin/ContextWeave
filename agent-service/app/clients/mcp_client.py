@@ -77,9 +77,15 @@ class OfficialMcpClient:
         run_id: str,
         authorization: str,
     ) -> dict[str, Any]:
+        # plan 为已构造好的 MCP 请求体（dict）。若传入的是 AgentPlan 对象，
+        # 调用其 mcp_payload() 转换；否则直接使用（plan_writer 已构造 dict）。
+        if isinstance(plan, AgentPlan):
+            payload = plan.mcp_payload(workspace_id, f"agent-{run_id}")
+        else:
+            payload = plan
         result = await self._invoke_tool(
             "devcollab.review.submit_document_change",
-            plan.mcp_payload(workspace_id, f"agent-{run_id}"),
+            payload,
             authorization,
         )
         if not isinstance(result.get("changeRequestId"), str) or not result[

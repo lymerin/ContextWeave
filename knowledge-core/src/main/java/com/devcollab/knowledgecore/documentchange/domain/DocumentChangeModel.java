@@ -12,7 +12,7 @@ public final class DocumentChangeModel {
     }
 
     public enum Status {
-        PENDING, APPLIED, REJECTED
+        PENDING, APPLIED, REJECTED, STALE
     }
 
     public enum SourceType {

@@ -404,7 +404,10 @@ final class McpToolSchemas {
         Map<String, Object> file = objectSchema(
                 Map.of(
                         "filePath", Map.of("type", "string"),
-                        "bindings", Map.of("type", "array", "items", binding)
+                        "fileHasBindings", Map.of("type", "boolean"),
+                        "bindings", Map.of("type", "array", "items", binding),
+                        "truncated", Map.of("type", "boolean"),
+                        "omittedBindingCount", Map.of("type", "integer")
                 ),
                 List.of("filePath", "bindings")
         );

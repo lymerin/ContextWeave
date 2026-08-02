@@ -417,6 +417,35 @@ function Stop-ManagedProcesses {
     Remove-Item -LiteralPath $StateFile -Force -ErrorAction SilentlyContinue
 }
 
+function Ensure-NginxAgentDns {
+    # Docker 重建 agent-service 容器后其 IP 会变化，而 nginx 的 upstream
+    # 域名只在启动/重载时解析一次。若 nginx 指向了过期 IP，agent-api 会
+    # 502。这里比对 nginx 实际解析到的 IP 与 agent-service 当前 IP，
+    # 失配时强制重建 nginx 刷新 DNS。
+    $agentContainer = "devcollab-agent-service"
+    if (-not (Test-ContainerRunning -ContainerName $agentContainer)) {
+        return
+    }
+    $resolved = (& docker exec $agentContainer sh -c "getent hosts $(hostname) 2>/dev/null; exit 0" 2>$null)
+    # nginx 端解析
+    $nginxResolved = (& docker exec devcollab-nginx sh -c "getent hosts agent-service 2>/dev/null; exit 0" 2>$null)
+    if (-not $nginxResolved) {
+        return  # nginx 不存在或未运行，无需处理
+    }
+    $nginxIp = (($nginxResolved | Select-Object -First 1) -split "\s+")[0]
+    $actualIp = (& docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' $agentContainer 2>$null).Trim().Split(" ")[0]
+    if ($nginxIp -and $actualIp -and $nginxIp -ne $actualIp) {
+        Write-Step "nginx upstream agent-service is stale ($nginxIp != $actualIp); recreating nginx to refresh DNS"
+        Push-Location $RepoRoot
+        try {
+            Invoke-Checked -FilePath "docker" -Arguments @("compose", "up", "-d", "--force-recreate", "nginx")
+        }
+        finally {
+            Pop-Location
+        }
+    }
+}
+
 function Ensure-KafkaTopics {
     $topics = @(
         "devcollab.document.events",
@@ -489,6 +518,7 @@ function Start-LocalDemo {
         if (Test-ManagedStateHealthy) {
             $entry = "http://localhost:$(Get-EnvOrDefault 'NGINX_HOST_PORT' '8088')"
             Write-Step "managed services are already running: $entry"
+            Ensure-NginxAgentDns
             if ($VerifyAfterStart) {
                 Invoke-LocalDemoVerification
             }
@@ -610,6 +640,7 @@ function Start-LocalDemo {
         }
 
         Write-Step "starting Nginx unified entry"
+        Ensure-NginxAgentDns
         Push-Location $RepoRoot
         try {
             Invoke-Checked -FilePath "docker" -Arguments @("compose", "up", "-d", "--force-recreate", "nginx")

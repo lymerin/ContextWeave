@@ -419,6 +419,8 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
         targetKey: 'DOCUMENT',
         pathPattern: 'src/B.java',
         documentTitle: 'Document B',
+        matchedFilePath: 'src/B.java',
+        blockExists: false,
       }],
       truncated: false,
       omittedBindingCount: 0,

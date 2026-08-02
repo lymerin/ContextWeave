@@ -546,10 +546,10 @@ public class GitKnowledgeApplicationService {
         Document document = requireDocument(documentId);
         workspaceService.requireMembership(document.workspaceId(), currentUserId);
         String normalizedRevision = normalizeOptionalRevision(revision);
-        List<CodeDocumentBinding> filtered = gitRepository.findBindingsByDocumentId(documentId)
+        List<CodeDocumentBinding> filtered = (blockId != null
+                        ? gitRepository.findBindingsByBlockId(blockId)
+                        : gitRepository.findBindingsByDocumentId(documentId))
                 .stream()
-                .filter(binding -> blockId == null
-                        || java.util.Objects.equals(blockId, binding.blockId()))
                 .filter(binding -> matchesRevision(
                         binding, normalizedRevision, includeLegacy
                 ))
@@ -559,13 +559,17 @@ public class GitKnowledgeApplicationService {
     }
 
     /**
-     * Keep only the best binding per {@code targetKey} so a single document
-     * Block never shows conflicting or stale bindings from different revisions.
+     * Keep only the best binding per dedup key so a single document Block
+     * never shows conflicting or stale bindings from different revisions.
      *
-     * <p>When two bindings share the same target the one whose revision matches
-     * the requested revision wins; otherwise the most recent non-legacy binding
-     * is kept.  Legacy (null-revision) bindings are only retained when no
-     * revision-aware binding exists for the same target.
+     * <p>The dedup key is {@code targetKey + repositoryId + pathPattern}.
+     * This preserves bindings to different files even when they share the
+     * same target (e.g. multiple document-level bindings per document).
+     * Block-level bindings naturally differ by block UUID.
+     *
+     * <p>When two bindings share the same dedup key the one whose revision
+     * matches the requested revision wins; otherwise the most recent
+     * non-legacy binding is kept.
      */
     private List<CodeDocumentBinding> deduplicateByTarget(
             List<CodeDocumentBinding> bindings,
@@ -576,10 +580,12 @@ public class GitKnowledgeApplicationService {
         }
         Map<String, CodeDocumentBinding> bestByTarget = new java.util.LinkedHashMap<>();
         for (CodeDocumentBinding binding : bindings) {
-            String targetKey = binding.targetKey();
-            CodeDocumentBinding existing = bestByTarget.get(targetKey);
+            String dedupKey = binding.targetKey()
+                    + "|" + binding.repositoryId()
+                    + "|" + binding.pathPattern();
+            CodeDocumentBinding existing = bestByTarget.get(dedupKey);
             if (existing == null || isBetterBinding(binding, existing, requestedRevision)) {
-                bestByTarget.put(targetKey, binding);
+                bestByTarget.put(dedupKey, binding);
             }
         }
         return List.copyOf(bestByTarget.values());
@@ -617,6 +623,188 @@ public class GitKnowledgeApplicationService {
             case RANGE -> 2;
             case FILE -> 1;
         };
+    }
+
+    /**
+     * Document-centric reverse query that returns bindings with resolved
+     * concrete file paths and block existence status.
+     *
+     * <p>Unlike {@link #listBindings} which returns raw domain objects,
+     * this method resolves wildcard path patterns against the actual
+     * repository file list and checks whether each binding's block still
+     * exists — so the frontend can display bindings without re-validating
+     * path or block state.
+     */
+    public List<CodeBindingContextItem> listDocumentBindingsContext(
+            UUID documentId,
+            UUID currentUserId,
+            String revision,
+            boolean includeLegacy,
+            UUID blockId
+    ) {
+        Document document = requireDocument(documentId);
+        workspaceService.requireMembership(document.workspaceId(), currentUserId);
+        String normalizedRevision = normalizeOptionalRevision(revision);
+
+        List<CodeDocumentBinding> filtered = (blockId != null
+                        ? gitRepository.findBindingsByBlockId(blockId)
+                        : gitRepository.findBindingsByDocumentId(documentId))
+                .stream()
+                .filter(binding -> matchesRevision(
+                        binding, normalizedRevision, includeLegacy
+                ))
+                .sorted(bindingComparator(normalizedRevision))
+                .toList();
+        List<CodeDocumentBinding> deduped = deduplicateByTarget(filtered, normalizedRevision);
+
+        java.util.Map<UUID, List<GitRepositoryFile>> filesByRepo = new java.util.HashMap<>();
+        java.util.Set<UUID> existingBlockIds = resolveExistingBlockIds(deduped);
+
+        return deduped.stream()
+                .map(binding -> toContextItem(
+                        binding, normalizedRevision, filesByRepo, existingBlockIds
+                ))
+                .toList();
+    }
+
+    /**
+     * Resolve a document block click to the bound source file and its
+     * complete binding list so the frontend can navigate and render the
+     * rail without further queries.
+     *
+     * @return the context, or {@code null} when the block has no bindings
+     *         matching the given revision.
+     */
+    public BlockBindingFileContext resolveBlockFileContext(
+            UUID documentId,
+            UUID currentUserId,
+            String revision,
+            boolean includeLegacy,
+            UUID blockId
+    ) {
+        Document document = requireDocument(documentId);
+        workspaceService.requireMembership(document.workspaceId(), currentUserId);
+        String normalizedRevision = normalizeOptionalRevision(revision);
+
+        List<CodeDocumentBinding> blockBindings = gitRepository.findBindingsByBlockId(blockId)
+                .stream()
+                .filter(b -> matchesRevision(b, normalizedRevision, includeLegacy))
+                .sorted(bindingComparator(normalizedRevision))
+                .toList();
+
+        if (blockBindings.isEmpty()) {
+            return null;
+        }
+
+        CodeDocumentBinding preferred = blockBindings.get(0);
+        String filePath = resolveSingleFilePath(
+                preferred.pathPattern(), preferred.repositoryId());
+
+        List<CodeDocumentBinding> allRepoBindings =
+                gitRepository.findBindingsByRepositoryId(preferred.repositoryId());
+        BindingSelection selection = selectBindings(
+                allRepoBindings, filePath, normalizedRevision, includeLegacy, null);
+
+        return new BlockBindingFileContext(
+                document.workspaceId(),
+                preferred.repositoryId(),
+                documentId,
+                blockId,
+                filePath,
+                preferred.id(),
+                selection.bindings()
+        );
+    }
+
+    private String resolveSingleFilePath(String pathPattern, UUID repositoryId) {
+        if (!pathPattern.endsWith("/**") && !pathPattern.startsWith("**/*.")) {
+            return pathPattern;
+        }
+        List<GitRepositoryFile> files = gitRepository.findFilesByRepositoryId(repositoryId);
+        if (pathPattern.endsWith("/**")) {
+            String prefix = pathPattern.substring(0, pathPattern.length() - 2);
+            return files.stream()
+                    .map(GitRepositoryFile::path)
+                    .filter(p -> p.startsWith(prefix))
+                    .findFirst()
+                    .orElse(pathPattern);
+        }
+        String suffix = pathPattern.substring(4);
+        return files.stream()
+                .map(GitRepositoryFile::path)
+                .filter(p -> p.endsWith(suffix))
+                .findFirst()
+                .orElse(pathPattern);
+    }
+
+    private CodeBindingContextItem toContextItem(
+            CodeDocumentBinding binding,
+            String requestedRevision,
+            java.util.Map<UUID, List<GitRepositoryFile>> filesByRepo,
+            java.util.Set<UUID> existingBlockIds
+    ) {
+        String documentTitle = documentRepository.findById(binding.documentId())
+                .map(Document::title)
+                .orElse(null);
+
+        List<String> matchingPaths = resolveMatchingPaths(
+                binding.pathPattern(),
+                binding.repositoryId(),
+                filesByRepo
+        );
+
+        boolean blockExists = binding.blockId() == null
+                || existingBlockIds.contains(binding.blockId());
+
+        return new CodeBindingContextItem(
+                binding.id(),
+                binding.workspaceId(),
+                binding.repositoryId(),
+                binding.revision(),
+                binding.anchorKind(),
+                binding.symbolKey(),
+                binding.startLine(),
+                binding.endLine(),
+                binding.bindingRole(),
+                binding.bindingOrdinal(),
+                binding.documentId(),
+                binding.blockId(),
+                binding.targetKey(),
+                binding.pathPattern(),
+                documentTitle,
+                matchingPaths,
+                blockExists
+        );
+    }
+
+    private List<String> resolveMatchingPaths(
+            String pathPattern,
+            UUID repositoryId,
+            java.util.Map<UUID, List<GitRepositoryFile>> filesByRepo
+    ) {
+        if (pathPattern.endsWith("/**")) {
+            String prefix = pathPattern.substring(0, pathPattern.length() - 2);
+            List<GitRepositoryFile> files = filesByRepo.computeIfAbsent(
+                    repositoryId,
+                    id -> gitRepository.findFilesByRepositoryId(id)
+            );
+            return files.stream()
+                    .map(GitRepositoryFile::path)
+                    .filter(path -> path.startsWith(prefix))
+                    .toList();
+        }
+        if (pathPattern.startsWith("**/*.")) {
+            String suffix = pathPattern.substring(4);
+            List<GitRepositoryFile> files = filesByRepo.computeIfAbsent(
+                    repositoryId,
+                    id -> gitRepository.findFilesByRepositoryId(id)
+            );
+            return files.stream()
+                    .map(GitRepositoryFile::path)
+                    .filter(path -> path.endsWith(suffix))
+                    .toList();
+        }
+        return List.of(pathPattern);
     }
 
     public java.util.Optional<CodeDocumentBinding> findExactBinding(
@@ -908,8 +1096,11 @@ public class GitKnowledgeApplicationService {
                 .filter(binding -> matchesRevision(binding, revision, includeLegacy))
                 .filter(binding -> seenBindingIds.add(binding.id()))
                 .toList();
+
+        java.util.Set<UUID> existingBlockIds = resolveExistingBlockIds(matching);
+
         List<CodeBindingQueryItem> ordered = matching.stream()
-                .map(this::toQueryItem)
+                .map(binding -> toQueryItem(binding, normalizedPath, existingBlockIds))
                 .sorted(queryItemComparator(revision))
                 .toList();
 
@@ -936,10 +1127,33 @@ public class GitKnowledgeApplicationService {
         );
     }
 
-    private CodeBindingQueryItem toQueryItem(CodeDocumentBinding binding) {
+    private java.util.Set<UUID> resolveExistingBlockIds(List<CodeDocumentBinding> bindings) {
+        java.util.Set<UUID> blockIds = bindings.stream()
+                .map(CodeDocumentBinding::blockId)
+                .filter(id -> id != null)
+                .collect(java.util.stream.Collectors.toSet());
+        if (blockIds.isEmpty()) {
+            return java.util.Set.of();
+        }
+        java.util.Set<UUID> existing = new java.util.HashSet<>();
+        for (UUID blockId : blockIds) {
+            if (blockRepository.findById(blockId).isPresent()) {
+                existing.add(blockId);
+            }
+        }
+        return existing;
+    }
+
+    private CodeBindingQueryItem toQueryItem(
+            CodeDocumentBinding binding,
+            String matchedFilePath,
+            java.util.Set<UUID> existingBlockIds
+    ) {
         String documentTitle = documentRepository.findById(binding.documentId())
                 .map(Document::title)
                 .orElse(null);
+        boolean blockExists = binding.blockId() == null
+                || existingBlockIds.contains(binding.blockId());
         return new CodeBindingQueryItem(
                 binding.id(),
                 binding.workspaceId(),
@@ -955,7 +1169,9 @@ public class GitKnowledgeApplicationService {
                 binding.blockId(),
                 binding.targetKey(),
                 binding.pathPattern(),
-                documentTitle
+                documentTitle,
+                matchedFilePath,
+                blockExists
         );
     }
 

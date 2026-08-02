@@ -277,7 +277,7 @@ class McpServerProtocolTests {
         )).thenReturn(new KnowledgeCoreGateway.BindingQueryResult(
                 workspaceId, repositoryId, "src/App.java", true,
                 List.of(new KnowledgeCoreGateway.BindingInfo(
-                        bindingId, "src/App.java", documentId, "Design", blockId,
+                        bindingId, repositoryId, "src/App.java", documentId, "Design", blockId,
                         null, null, null, null, null, null, 1
                 )),
                 false, 0

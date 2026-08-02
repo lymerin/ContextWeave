@@ -21,7 +21,7 @@ class OverviewResult:
 @dataclass
 class BlockResult:
     block_id: str
-    atom_ids: tuple[str, ...] = ()
+    symbol_keys: tuple[str, ...] = ()
     sources: tuple[SourceChunk, ...] = ()
     description: str = ""
     coverage: set[str] = field(default_factory=set)
@@ -54,6 +54,8 @@ class SnapshotReadService:
 
     def __init__(self, snapshot: ContextSnapshot) -> None:
         self._snap = snapshot
+        # 复用快照上的权威 symbol_key → atom_id 映射（见 ContextSnapshot.atom_by_symbol）。
+        self._symbol_to_atom_id = snapshot.atom_by_symbol
 
     def overview(self) -> OverviewResult:
         """范围总览。"""
@@ -86,17 +88,23 @@ class SnapshotReadService:
         coverage.update(c.chunk_id for c in sources)
         coverage.add(block_id)
 
+        # 块内 atoms 就是 symbol_key——直接暴露给模型。模型照抄 symbol_key
+        # 回填结果，代码层在入口绑定回 atom_id。不再转成 atom_id。
         return BlockResult(
             block_id=block_id,
-            atom_ids=block.atoms,
+            symbol_keys=tuple(block.atoms),
             sources=tuple(sources),
             description=block.description,
             coverage=coverage,
         )
 
     def get_atom(self, symbol_key: str) -> AtomResult | None:
-        """读取原子详情。"""
-        atom = self._snap.atom_by_id.get(symbol_key)
+        """读取原子详情。
+
+        入参是 symbol_key（模型从结构块照抄）。经权威索引解析到 atom_id。
+        """
+        atom_id = self._snap.atom_by_symbol.get(symbol_key, symbol_key)
+        atom = self._snap.atom_by_id.get(atom_id)
         if atom is None:
             return None
 
@@ -106,11 +114,11 @@ class SnapshotReadService:
             if ch:
                 sources.append(ch)
 
-        coverage = {symbol_key}
+        coverage = {atom.symbol_key}
         coverage.update(c.chunk_id for c in sources)
 
         return AtomResult(
-            symbol_key=symbol_key,
+            symbol_key=atom.symbol_key,
             sources=tuple(sources),
             coverage=coverage,
         )
@@ -129,11 +137,11 @@ class SnapshotReadService:
         return results
 
     def search(self, query: str) -> SearchResult:
-        """按名称搜索符号。"""
+        """按名称搜索符号——按 symbol_key 匹配、返回 symbol_key，与其它工具对齐。"""
         q = query.lower()
         matches = tuple(
-            key for key in self._snap.atom_by_id
-            if q in key.lower()
+            atom.symbol_key for atom in self._snap.atoms
+            if q in atom.symbol_key.lower()
         )[:50]
         return SearchResult(
             query=query,

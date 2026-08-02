@@ -64,6 +64,9 @@ class ContextSnapshot:
     chunk_by_id: Mapping[str, SourceChunk] = field(default_factory=dict)
     block_by_id: Mapping[str, StructureBlock] = field(default_factory=dict)
     relation_by_source: Mapping[str, tuple[Relation, ...]] = field(default_factory=dict)
+    # 权威 symbol_key → atom_id 映射。模型输出引用 symbol_key，代码层经此绑定回
+    # atom_id。全链路唯一权威源，替代各处独立构建的反向映射。
+    atom_by_symbol: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def scope_id(self) -> str:
@@ -84,6 +87,7 @@ def freeze(shaped: ShapedCodeContext, context_id: str) -> ContextSnapshot:
 
     # 构建索引
     atom_by_id = MappingProxyType({a.atom_id: a for a in shaped.atoms})
+    atom_by_symbol = MappingProxyType({a.symbol_key: a.atom_id for a in shaped.atoms})
     chunk_by_id = MappingProxyType({c.chunk_id: c for c in shaped.chunks})
     block_by_id = MappingProxyType({b.block_id: b for b in shaped.structure_blocks})
 
@@ -135,6 +139,7 @@ def freeze(shaped: ShapedCodeContext, context_id: str) -> ContextSnapshot:
         relations=shaped.relations if hasattr(shaped, 'relations') else (),
         entry_paths=shaped.entry_paths,
         atom_by_id=atom_by_id,
+        atom_by_symbol=atom_by_symbol,
         chunk_by_id=chunk_by_id,
         block_by_id=block_by_id,
         relation_by_source=relation_by_source,

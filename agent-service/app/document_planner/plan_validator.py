@@ -128,6 +128,7 @@ def assemble_and_validate(
                     client_operation_id=target.created_document_op_id,
                     sequence_number=seq,
                     operation_type="CREATE_DOCUMENT",
+                    proposed_document_title=section.title if section else "代码职责说明",
                     proposed_plain_text=section.title if section else "代码职责说明",
                 ))
                 seq += 1

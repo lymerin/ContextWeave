@@ -51,7 +51,9 @@ public class BindingListBatchApplicationService {
         result.put("files", batch.files().stream().map(file -> {
             Map<String, Object> group = new LinkedHashMap<>();
             group.put("filePath", file.filePath());
-            group.put("bindings", file.bindings().stream().map(binding -> {
+            var bindings = file.bindings();
+            group.put("fileHasBindings", !bindings.isEmpty());
+            group.put("bindings", bindings.stream().map(binding -> {
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("bindingId", binding.bindingId());
                 item.put("repositoryId", binding.repositoryId());
@@ -80,6 +82,8 @@ public class BindingListBatchApplicationService {
                 item.put("bindingOrdinal", binding.bindingOrdinal());
                 return item;
             }).toList());
+            group.put("truncated", false);
+            group.put("omittedBindingCount", 0);
             return group;
         }).toList());
         return result;

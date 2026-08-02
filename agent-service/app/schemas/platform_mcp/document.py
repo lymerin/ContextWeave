@@ -10,11 +10,12 @@ class DocumentBlock(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     block_id: UUID
-    type: str = "PARAGRAPH"
+    block_type: str = "PARAGRAPH"
     sort_order: int = 0
     version: int = 1
     plain_text: str | None = None
-    content: dict | None = None
+    # content 是 ProseMirror 文档结构的 JSON 字符串（mcp 返回 string）
+    content: str | None = None
 
 
 class DocumentStructure(BaseModel):

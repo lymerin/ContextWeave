@@ -464,6 +464,14 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
     }
 
     @Override
+    public List<CodeDocumentBinding> findBindingsByBlockId(UUID blockId) {
+        return jdbcTemplate.query("""
+                SELECT * FROM code_document_bindings
+                 WHERE block_id = ? ORDER BY created_at DESC, id
+                """, BINDING_MAPPER, blockId);
+    }
+
+    @Override
     public List<CodeDocumentBinding> findBindingsByRepositoryId(UUID repositoryId) {
                 return jdbcTemplate.query("""
                         SELECT * FROM code_document_bindings

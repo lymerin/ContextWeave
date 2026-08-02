@@ -33,6 +33,10 @@ class SectionBinding:
     role: str = "PRIMARY"                    # PRIMARY | SUPPORTING
     ordinal: int = 1
     created_block_operation_id: str | None = None  # 新建 Block 时引用 ADD_BLOCK 的 client_operation_id
+    # 绑定关联的文档目标——knowledge-core 要求二选一：
+    #   document_id（现有文档）或 created_document_op_id（本请求新建文档）
+    document_id: UUID | None = None
+    created_document_op_id: str | None = None
 
 
 @dataclass
@@ -56,6 +60,7 @@ class PlanOperation:
     document_id: UUID | None = None
     block_id: UUID | None = None
     created_document_op_id: str | None = None
+    proposed_document_title: str | None = None  # CREATE_DOCUMENT 必填，提交给 knowledge-core
     proposed_plain_text: str = ""
 
 

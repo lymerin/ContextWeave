@@ -23,10 +23,9 @@ _SEMANTIC_SYSTEM_PROMPT = """\
 读取完全部结构块后，输出 SemanticAnalysisResult JSON。
 
 规则:
-- 所有引用使用 atom_id，不自行填写 file_path 或行号
-- primary_atom_ids 非空且是 informed_by_atom_ids 的子集
+- 所有引用使用结构块(symbol_keys)或原子详情中给出的 symbol_key（形如 PYTHON:路径:符号名:KIND），直接从工具返回里照抄，不要自行发明或填写 ID、file_path、行号
 - 将紧密相关的符号（路由+请求模型+业务方法）合并为一个 semantic_group
-- evidence_refs 中的 atom_id / relation_id / source_chunk_id 必须是你实际读取到的
+- evidence_refs 中的 symbol_key / relation_id / source_chunk_id 必须是你实际读取到的
 """
 
 # ── 上下文 MCP 工具定义 ──────────────────────────────────────────────
@@ -303,8 +302,24 @@ class DeepSeekProvider:
                     "Empty model response",
                 )
             try:
-                return SemanticAnalysisResult.model_validate_json(content)
+                # 这些是程序掌握的可信上下文元数据，模型只负责语义字段。
+                # 在严格校验前补齐，避免模型省略元数据而被误判为无效响应。
+                payload = _extract_json_object(content)
+                if not isinstance(payload, dict):
+                    raise ValueError("semantic response must be a JSON object")
+                payload["analysis_id"] = request.analysis_id
+                payload["context_id"] = request.context_id
+                payload["revision"] = request.revision
+                payload["snapshot_hash"] = request.snapshot_hash
+                return SemanticAnalysisResult.model_validate(payload)
             except Exception as exc:
+                LOGGER.error(
+                    "SEMANTIC PARSE FAILED: len=%s head=%r tail=%r err=%s",
+                    len(content),
+                    content[:300] if isinstance(content, str) else content,
+                    content[-300:] if isinstance(content, str) else content,
+                    exc,
+                )
                 raise ModelProviderError(
                     "MODEL_INVALID_RESPONSE",
                     f"Could not parse SemanticAnalysisResult: {exc}",
@@ -321,3 +336,73 @@ class DeepSeekProvider:
                 "MODEL_CONFIGURATION_ERROR",
                 "DeepSeek provider is not configured",
             )
+
+
+def _extract_json_object(content: str) -> dict[str, Any]:
+    """从模型输出中稳健提取 JSON 对象。
+
+    模型可能返回:
+      - 纯 JSON:            {"a": 1}
+      - markdown 代码块:    ```json\n{"a": 1}\n```
+      - 前置说明 + JSON:    分析如下...\n```json\n{...}\n```
+      - 带 JSON 后缀文本:    {...}\n以上是分析
+
+    策略（按可靠性排序）:
+      1. 直接整体解析
+      2. 用平衡括号扫描定位最外层 {...} 区间（正确处理字符串内的大括号，
+         不依赖 markdown 围栏——模型可能嵌套反引号或在文本里放 { }）
+      3. 尝试剥离 markdown 代码块围栏再整体解析
+    """
+    candidate = content.strip()
+    try:
+        parsed = json.loads(candidate)
+        if isinstance(parsed, dict):
+            return parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # 平衡括号扫描：在字符串感知下匹配最外层 {...}。逐个 { 位置尝试，
+    # 优先选择能解析成 dict 的候选。
+    start = candidate.find("{")
+    while start != -1:
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(candidate)):
+            ch = candidate[i]
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        parsed = json.loads(candidate[start:i + 1])
+                        if isinstance(parsed, dict):
+                            return parsed
+                    except (json.JSONDecodeError, TypeError):
+                        break  # 该候选无效，尝试下一个 { 位置
+        start = candidate.find("{", start + 1)
+
+    # 兜底：剥离 markdown 代码块围栏（支持 ```json / ``` 等）
+    import re as _re
+
+    fenced = _re.search(r"```(?:json)?\s*(.*?)\s*```", candidate, _re.DOTALL)
+    if fenced:
+        try:
+            parsed = json.loads(fenced.group(1))
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    raise ValueError("model output does not contain a valid JSON object")

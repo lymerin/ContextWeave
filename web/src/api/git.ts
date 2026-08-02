@@ -121,6 +121,12 @@ export interface CodeBindingQueryItem {
   targetKey: string;
   pathPattern: string;
   documentTitle: string | null;
+  matchedFilePath: string;
+  blockExists: boolean;
+}
+
+export interface CodeBindingContextItem extends CodeBindingQueryItem {
+  matchingFilePaths: string[];
 }
 
 export interface CodeBindingQueryResult {
@@ -255,6 +261,46 @@ export async function listCodeBindings(
 ) {
   const { data } = await http.get<CodeDocumentBinding[]>(
     `/documents/${documentId}/code-bindings`,
+    { params: options },
+  );
+  return data;
+}
+
+export interface BlockBindingFileContext {
+  workspaceId: string;
+  repositoryId: string;
+  documentId: string;
+  blockId: string;
+  filePath: string;
+  preferredBindingId: string;
+  bindings: CodeBindingQueryItem[];
+}
+
+export async function resolveBlockFileContext(
+  documentId: string,
+  options: {
+    blockId: string;
+    revision?: string;
+    includeLegacy?: boolean;
+  },
+) {
+  const { data } = await http.get<BlockBindingFileContext>(
+    `/documents/${documentId}/code-bindings/block-file-context`,
+    { params: options },
+  );
+  return data;
+}
+
+export async function listCodeBindingsContext(
+  documentId: string,
+  options?: {
+    revision?: string;
+    includeLegacy?: boolean;
+    blockId?: string;
+  },
+) {
+  const { data } = await http.get<CodeBindingContextItem[]>(
+    `/documents/${documentId}/code-bindings/context`,
     { params: options },
   );
   return data;

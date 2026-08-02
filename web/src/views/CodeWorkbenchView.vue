@@ -235,12 +235,14 @@ import {
 } from '@/api/document';
 import {
   getGitRepositorySource,
-  listCodeBindings,
+  listCodeBindingsContext,
   listGitChanges,
   listGitRepositories,
   listGitRepositoryFiles,
   queryCodeBindings,
+  resolveBlockFileContext,
   syncGitRepository,
+  type CodeBindingContextItem,
   type CodeBindingQueryItem,
   type GitRepository,
   type GitChange,
@@ -265,9 +267,9 @@ import { readableError } from '@/utils/error';
 import {
   bindingDocumentChoices,
   buildBindingFixture,
-  classifyBinding,
+  computeDocumentScopeFileLinkCounts,
   displayableBindings,
-  documentBindingToQueryItem,
+  expandContextBindingsToQueryItems,
   selectDefaultBinding,
   sortBindings,
 } from '@/utils/linkedWorkbenchBindings';
@@ -289,7 +291,6 @@ const document = ref<DocumentSummary | null>(null);
 const versions = ref<DocumentVersion[]>([]);
 const selectedSource = ref<GitRepositorySource | null>(null);
 const selectedFileBindings = ref<CodeBindingQueryItem[]>([]);
-const loadedDocumentBlockDocumentId = ref<string | null>(null);
 const contextLoading = ref(false);
 const sourceLoading = ref(false);
 const documentLoading = ref(false);
@@ -306,6 +307,18 @@ let reverseBindingRequestSequence = 0;
 let focusRequestSequence = 0;
 let workbenchUnmounted = false;
 const reverseBindingContext = ref<CodeBindingQueryItem[] | null>(null);
+
+interface DocumentScope {
+  items: CodeBindingContextItem[];
+  active: boolean;
+  source: 'document' | 'block';
+}
+
+const documentScope = ref<DocumentScope>({
+  items: [],
+  active: false,
+  source: 'document',
+});
 const errorMessage = ref('');
 const sidebarCollapsed = ref(localStorage.getItem('devcollab.sidebar.collapsed') === 'true');
 const sidebarNavigationActive = ref<'linked' | 'review' | 'drift'>('linked');
@@ -354,13 +367,22 @@ const pendingReviewCount = computed(() => backgroundActivity.pendingReviewCount)
 const projectScanSnapshot = computed(() => (
   backgroundActivity.getJobSnapshot(projectScanJobId.value)
 ));
-const fileLinkCounts = computed<Record<string, number>>(() => selectedFilePath.value
-  ? {
-      [selectedFilePath.value]: links.value.filter(
-        item => normalizeRepositoryPath(item.filePath ?? '') === normalizeRepositoryPath(selectedFilePath.value),
-      ).length,
-    }
-  : {});
+const fileLinkCounts = computed<Record<string, number>>(() => {
+  if (!selectedDocumentId.value) return {};
+  if (documentScope.value.active) {
+    return computeDocumentScopeFileLinkCounts(
+      documentScope.value.items,
+      selectedRepositoryId.value,
+    );
+  }
+  return selectedFilePath.value
+    ? {
+        [selectedFilePath.value]: links.value.filter(
+          item => normalizeRepositoryPath(item.filePath ?? '') === normalizeRepositoryPath(selectedFilePath.value),
+        ).length,
+      }
+    : {};
+});
 const activeLinkedBlockCount = computed(() => activeCodeAnchor.value
   ? links.value.filter(link => link.codeAnchorId === activeCodeAnchor.value?.id).length
   : 0);
@@ -602,8 +624,8 @@ async function handleRepositoryChange(repositoryId: string) {
   state.selectDocument('');
   selectedSource.value = null;
   selectedFileBindings.value = [];
-  loadedDocumentBlockDocumentId.value = null;
-  reverseBindingContext.value = null;
+    reverseBindingContext.value = null;
+    documentScope.value = { items: [], active: false, source: 'document' };
   await router.replace({ query: { ...route.query, repositoryId } });
   try { contextLoading.value = true; await loadRepositoryDetails('navigate'); }
   catch (error) { ElMessage.error(readableError(error, '仓库内容加载失败')); }
@@ -624,14 +646,19 @@ async function openSource(
   navigationTarget: LinkedWorkbenchSnapshot | null = null,
   bindingContext: CodeBindingQueryItem[] | null = null,
 ) {
-  if (bindingContext === null) reverseBindingContext.value = null;
+  if (bindingContext === null) {
+    reverseBindingContext.value = null;
+    // User clicked a file directly — exit document scope.
+    if (historyMode === 'navigate') {
+      documentScope.value = { items: [], active: false, source: 'document' };
+    }
+  }
   const requestSequence = ++sourceRequestSequence;
   const repositoryId = selectedRepositoryId.value;
   sourceLoading.value = true;
   state.selectFile(file.path);
   selectedFileBindings.value = [];
-  loadedDocumentBlockDocumentId.value = null;
-  state.replaceFixture({ codeAnchors: [], links: [], issues: [], evidence: [] });
+    state.replaceFixture({ codeAnchors: [], links: [], issues: [], evidence: [] });
   try {
     const source = await getGitRepositorySource(
       workspaceId.value,
@@ -654,16 +681,7 @@ async function openSource(
       || repositoryId !== selectedRepositoryId.value
       || file.path !== selectedFilePath.value) return;
     selectedSource.value = source;
-    const bindingContextInput = {
-      repositoryId,
-      branch: activeRepository.value?.defaultBranch ?? '',
-      commitSha: revision,
-      source,
-      bindings,
-      allowCrossFile: bindingContext !== null,
-    };
-    selectedFileBindings.value = sortBindings(bindings, revision)
-      .filter(binding => classifyBinding(binding, bindingContextInput) !== 'invalid');
+    selectedFileBindings.value = sortBindings(bindings, revision);
     rebuildBindings(navigationTarget?.bindingId, navigationTarget?.blockId);
     const targetLink = activeLink.value;
     const targetDocumentId = targetLink?.documentId
@@ -673,8 +691,7 @@ async function openSource(
     if (selectedFileBindings.value.length === 0) {
       state.selectDocument('');
       state.replaceDocumentBlocks([]);
-      loadedDocumentBlockDocumentId.value = null;
-      document.value = null;
+            document.value = null;
       versions.value = [];
       documentRequestSequence += 1;
     } else if (targetDocumentId && boundDocumentIds.has(targetDocumentId)) {
@@ -682,14 +699,12 @@ async function openSource(
       state.selectDocument(targetDocumentId);
       if (documentChanged) {
         state.replaceDocumentBlocks([]);
-        loadedDocumentBlockDocumentId.value = null;
-      }
+              }
       if (document.value?.id !== targetDocumentId) await loadDocumentBundle();
     } else if (!boundDocumentIds.has(selectedDocumentId.value)) {
       state.selectDocument(activeLink.value?.documentId || selectedFileBindings.value[0].documentId);
       state.replaceDocumentBlocks([]);
-      loadedDocumentBlockDocumentId.value = null;
-      await router.replace({
+            await router.replace({
         query: { ...route.query, repositoryId, documentId: selectedDocumentId.value },
       });
       await loadDocumentBundle();
@@ -723,16 +738,44 @@ async function handleDocumentChange(documentId: string) {
   if (documentId === selectedDocumentId.value) return;
   if (!(await confirmDocumentLeave())) return;
   state.selectDocument(documentId);
-  documentBlocks.value = [];
-  loadedDocumentBlockDocumentId.value = null;
-  state.replaceFixture({ codeAnchors: [], links: [], issues: [], evidence: [] });
+  state.replaceDocumentBlocks([]);
   await router.replace({ query: { ...route.query, documentId } });
   await loadDocumentBundle();
   persistReadingTarget('navigate');
   await updateWorkbenchRoute();
-  const preferred = selectedFileBindings.value.find(item => item.documentId === documentId);
-  rebuildBindings(preferred?.bindingId, preferred?.blockId);
-  persistReadingTarget('restore');
+
+  const revision = activeRepository.value?.lastSyncedCommit;
+  if (!revision) return;
+  const requestSequence = ++reverseBindingRequestSequence;
+  try {
+    const contextItems = await listCodeBindingsContext(documentId, {
+      revision,
+      includeLegacy: true,
+    });
+    if (workbenchUnmounted
+      || requestSequence !== reverseBindingRequestSequence
+      || documentId !== selectedDocumentId.value) return;
+
+    const repoItems = contextItems
+      .filter(item => repositories.value.some(repo => repo.id === item.repositoryId));
+    const choices = expandContextBindingsToQueryItems(repoItems, selectedFilePath.value);
+    documentScope.value = {
+      items: repoItems,
+      active: choices.length > 0,
+      source: 'document',
+    };
+    reverseBindingContext.value = choices.length > 0
+      ? sortBindings(choices, revision)
+      : null;
+    if (reverseBindingContext.value) selectedFileBindings.value = reverseBindingContext.value;
+    const preferred = reverseBindingContext.value?.find(item => item.documentId === documentId);
+    rebuildBindings(preferred?.bindingId, preferred?.blockId);
+    persistReadingTarget('restore');
+  } catch (error) {
+    if (requestSequence === reverseBindingRequestSequence) {
+      ElMessage.error(readableError(error, '文档关联查询失败'));
+    }
+  }
 }
 
 function persistReadingTarget(historyMode: 'navigate' | 'restore') {
@@ -811,14 +854,22 @@ function historyTargetTitle(action: string, target: LinkedWorkbenchSnapshot | nu
 
 function handleBlocksLoaded(blocks: DocumentBlock[]) {
   state.replaceDocumentBlocks(blocks);
-  loadedDocumentBlockDocumentId.value = selectedDocumentId.value;
-  rebuildBindings(activeLink.value?.bindingId, activeLink.value?.blockId);
+  const blockSortOrders = documentBlocks.value.length > 0
+    && documentBlocks.value[0].documentId === selectedDocumentId.value
+    ? new Map(documentBlocks.value.map(block => [block.id, block.sortOrder]))
+    : undefined;
+  rebuildBindings(
+    activeLink.value?.bindingId,
+    activeLink.value?.blockId,
+    blockSortOrders,
+  );
   void nextTick(() => focusActiveLink('system'));
 }
 
 function rebuildBindings(
   preferredBindingId: string | null = activeLink.value?.bindingId ?? null,
   preferredBlockId: string | null = null,
+  blockSortOrders?: Map<string, number>,
 ) {
   if (!selectedSource.value?.readable || selectedSource.value.content === null || !activeRepository.value) {
     state.replaceFixture({ codeAnchors: [], links: [], issues: [], evidence: [] });
@@ -831,13 +882,8 @@ function rebuildBindings(
     source: selectedSource.value,
     bindings: selectedFileBindings.value,
     allowCrossFile: reverseBindingContext.value !== null,
-    loadedDocumentId: loadedDocumentBlockDocumentId.value,
-    loadedBlockIds: loadedDocumentBlockDocumentId.value === selectedDocumentId.value
-      ? new Set(documentBlocks.value.map(block => block.id))
-      : undefined,
-    blockSortOrders: loadedDocumentBlockDocumentId.value === selectedDocumentId.value
-      ? new Map(documentBlocks.value.map(block => [block.id, block.sortOrder]))
-      : undefined,
+    activeDocumentId: selectedDocumentId.value || null,
+    blockSortOrders,
   };
   const fixture = buildBindingFixture(fixtureInput);
   state.replaceFixture(fixture);
@@ -872,8 +918,7 @@ async function handleActivate(linkId: string, source: LinkActivationSource) {
     if (!(await confirmDocumentLeave())) return;
     state.selectDocument(link.documentId);
     state.replaceDocumentBlocks([]);
-    loadedDocumentBlockDocumentId.value = null;
-    await loadDocumentBundle();
+        await loadDocumentBundle();
   }
   persistReadingTarget('restore');
   await updateWorkbenchRoute();
@@ -888,50 +933,79 @@ async function handleBlockSelection(blockId: string) {
   const revision = activeRepository.value?.lastSyncedCommit;
   if (!documentId || !revision) return;
   try {
-    const result = await listCodeBindings(documentId, {
+    const ctx = await resolveBlockFileContext(documentId, {
+      blockId,
       revision,
       includeLegacy: true,
-      blockId,
     });
     if (workbenchUnmounted
       || requestSequence !== reverseBindingRequestSequence
       || documentId !== selectedDocumentId.value) return;
-    const choices = result
-      .filter(binding => repositories.value.some(item => item.id === binding.repositoryId))
-      .map(binding => documentBindingToQueryItem(binding, document.value?.title || null));
-    if (choices.length === 0) {
+    if (!ctx) {
       state.selectUnboundDocumentBlock(blockId);
       persistReadingTarget('restore');
       ElMessage.info('该 Block 暂无正式代码 Binding');
       return;
     }
-    reverseBindingContext.value = sortBindings(choices, revision);
-    const preferred = selectDefaultBinding(
-      reverseBindingContext.value,
-      revision,
-      activeLink.value?.bindingId,
-      blockId,
-      selectedFilePath.value,
-    );
-    if (!preferred) return;
-    if (preferred.repositoryId !== selectedRepositoryId.value) {
-      state.selectedRepositoryId.value = preferred.repositoryId;
+
+    documentScope.value = {
+      items: [{
+        bindingId: ctx.preferredBindingId,
+        workspaceId: ctx.workspaceId,
+        repositoryId: ctx.repositoryId,
+        revision,
+        anchorKind: 'FILE' as const,
+        symbolKey: null,
+        startLine: null,
+        endLine: null,
+        documentId: ctx.documentId,
+        blockId: ctx.blockId,
+        targetKey: 'BLOCK',
+        pathPattern: ctx.filePath,
+        documentTitle: document.value?.title ?? null,
+        matchedFilePath: ctx.filePath,
+        matchingFilePaths: [ctx.filePath],
+        blockExists: true,
+      }],
+      active: true,
+      source: 'block',
+    };
+
+    reverseBindingContext.value = ctx.bindings;
+
+    const targetFile = findRepositoryFile(ctx.filePath);
+    if (!targetFile) {
+      ElMessage.warning('关联的代码文件不可读取');
+      return;
+    }
+
+    // Cross-repo navigation.
+    if (ctx.repositoryId !== selectedRepositoryId.value) {
+      state.selectedRepositoryId.value = ctx.repositoryId;
       await loadRepositoryDetails('navigate', createLinkedWorkbenchSnapshot(
-        {
-          workspaceId: workspaceId.value,
-          repositoryId: preferred.repositoryId,
-          revision,
-        },
-        preferred.pathPattern,
-        preferred.documentId,
-        preferred.bindingId,
-        preferred.blockId,
+        { workspaceId: workspaceId.value, repositoryId: ctx.repositoryId, revision },
+        ctx.filePath,
+        ctx.documentId,
+        ctx.preferredBindingId,
+        ctx.blockId,
       ));
       return;
     }
-    selectedFileBindings.value = reverseBindingContext.value;
-    rebuildBindings(preferred.bindingId, blockId);
-    await handleActivate(`binding-link-${preferred.bindingId}`, 'document');
+
+    // Navigate to the bound file if different from current.
+    if (normalizeRepositoryPath(ctx.filePath) !== normalizeRepositoryPath(selectedFilePath.value)) {
+      await openSource(targetFile, 'navigate', null, ctx.bindings);
+      void nextTick(() => {
+        state.activateLink(`binding-link-${ctx.preferredBindingId}`, 'document');
+        focusActiveLink('document');
+      });
+      return;
+    }
+
+    // Already on the bound file — refresh bindings in place.
+    selectedFileBindings.value = ctx.bindings;
+    rebuildBindings(ctx.preferredBindingId, blockId);
+    await handleActivate(`binding-link-${ctx.preferredBindingId}`, 'document');
   } catch (error) {
     if (requestSequence === reverseBindingRequestSequence) {
       ElMessage.error(readableError(error, 'Block 代码关联查询失败'));

@@ -1,11 +1,12 @@
 import type {
+  CodeBindingContextItem,
   CodeBindingQueryItem,
   CodeDocumentBinding,
   GitRepositorySource,
 } from '@/api/git';
 import type { LinkedDocumentChoice, LinkedFixture } from '@/types/linkedWorkbench';
 import type { BindingDisplayState } from '@/types/linkedWorkbench';
-import { normalizeRepositoryPath } from '@/utils/repositoryTree';
+import { normalizeRepositoryPath } from "./repositoryTree";
 
 export interface BuildBindingFixtureInput {
   repositoryId: string;
@@ -14,8 +15,7 @@ export interface BuildBindingFixtureInput {
   source: GitRepositorySource;
   bindings: CodeBindingQueryItem[];
   allowCrossFile?: boolean;
-  loadedDocumentId?: string | null;
-  loadedBlockIds?: ReadonlySet<string>;
+  activeDocumentId?: string | null;
   blockSortOrders?: ReadonlyMap<string, number>;
 }
 
@@ -28,7 +28,7 @@ export function buildBindingFixture(input: BuildBindingFixtureInput): LinkedFixt
     revision: binding.revision,
     branch: input.branch,
     commitSha: binding.revision || input.commitSha,
-    filePath: binding.pathPattern,
+    filePath: binding.matchedFilePath || binding.pathPattern,
     language: input.source.language || 'text',
     symbolName: binding.symbolKey || (
       binding.blockId ? 'Block 关联文件' : '文档关联文件'
@@ -38,7 +38,7 @@ export function buildBindingFixture(input: BuildBindingFixtureInput): LinkedFixt
     startLine: binding.revision === null ? null : binding.startLine,
     endLine: binding.revision === null ? null : binding.endLine,
     status: 'VALID' as const,
-    bindingDisplayState: classifyBinding(binding, input) as 'precise' | 'weak',
+    bindingDisplayState: bindingDisplayState(binding) as 'precise' | 'weak',
   }));
   const links = selectedBindings.map((binding, index) => ({
     id: `binding-link-${binding.bindingId}`,
@@ -46,7 +46,7 @@ export function buildBindingFixture(input: BuildBindingFixtureInput): LinkedFixt
     codeAnchorId: codeAnchors[index].id,
     repositoryId: binding.repositoryId,
     revision: binding.revision,
-    filePath: binding.pathPattern,
+    filePath: binding.matchedFilePath || binding.pathPattern,
     documentId: binding.documentId,
     blockId: binding.blockId,
     documentTitle: binding.documentTitle,
@@ -57,58 +57,50 @@ export function buildBindingFixture(input: BuildBindingFixtureInput): LinkedFixt
     bindingRole: binding.bindingRole ?? 'PRIMARY',
     bindingOrdinal: binding.bindingOrdinal ?? 1,
     relationType: 'DESCRIBES' as const,
-    bindingDisplayState: classifyBinding(binding, input) as 'precise' | 'weak',
+    bindingDisplayState: bindingDisplayState(binding) as 'precise' | 'weak',
   }));
   return { codeAnchors, links, issues: [], evidence: [] };
 }
 
+/**
+ * Trust the backend response: path matching and revision filtering are
+ * already done server-side.  The only client-side filters are:
+ *
+ * 1. Block-level bindings are shown only when the block still exists
+ *    AND belongs to the currently active document.
+ * 2. When not in cross-file mode, only bindings whose matchedFilePath
+ *    equals the current source file path are shown — the rail always
+ *    represents the currently open file.
+ */
 export function displayableBindings(input: BuildBindingFixtureInput): CodeBindingQueryItem[] {
   return sortBindings(
     input.bindings,
     input.commitSha,
     input.blockSortOrders,
   ).filter((binding) => {
-    const state = classifyBinding(binding, input);
-    return state === 'precise' || state === 'weak';
+    if (!input.allowCrossFile) {
+      const bindingPath = normalizeRepositoryPath(binding.matchedFilePath || binding.pathPattern);
+      const sourcePath = normalizeRepositoryPath(input.source.path);
+      if (bindingPath !== sourcePath) return false;
+    }
+    if (!binding.blockId) return true;
+    if (!binding.blockExists) return false;
+    if (input.activeDocumentId && binding.documentId !== input.activeDocumentId) return false;
+    return true;
   });
 }
 
-export function classifyBinding(
-  binding: CodeBindingQueryItem,
-  input: BuildBindingFixtureInput,
-): BindingDisplayState {
-  if (!binding.bindingId?.trim()
-    || !binding.repositoryId?.trim()
-    || !binding.documentId?.trim()
-    || !binding.pathPattern?.trim()) {
-    return 'invalid';
+/**
+ * Purely deterministic: derived from the binding's own fields.
+ * No dependency on async state like loaded blocks.
+ */
+export function bindingDisplayState(binding: CodeBindingQueryItem): BindingDisplayState {
+  if (binding.blockId
+    && validRange(binding.startLine, binding.endLine)
+    && (binding.anchorKind === 'RANGE' || binding.anchorKind === 'SYMBOL')) {
+    return 'precise';
   }
-  if (binding.repositoryId !== input.repositoryId) return 'invalid';
-  if (!input.allowCrossFile
-    && normalizeRepositoryPath(binding.pathPattern)
-      !== normalizeRepositoryPath(input.source.path)) {
-    return 'invalid';
-  }
-  if (binding.revision !== null && binding.revision !== input.commitSha) {
-    return 'invalid';
-  }
-
-  const hasRange = validRange(binding.startLine, binding.endLine);
-  if (binding.anchorKind === 'RANGE' && !hasRange) return 'invalid';
-  if (binding.anchorKind === 'SYMBOL' && !binding.symbolKey?.trim()) return 'invalid';
-
-  if (binding.blockId) {
-    if (input.loadedDocumentId !== binding.documentId || input.loadedBlockIds === undefined) {
-      return 'loading';
-    }
-    if (!input.loadedBlockIds.has(binding.blockId)) return 'invalid';
-  }
-
-  return binding.blockId
-    && hasRange
-    && (binding.anchorKind === 'RANGE' || binding.anchorKind === 'SYMBOL')
-    ? 'precise'
-    : 'weak';
+  return 'weak';
 }
 
 function validRange(startLine: number | null, endLine: number | null) {
@@ -149,7 +141,7 @@ export function selectDefaultBinding(
   const sorted = sortBindings(bindings, revision, blockSortOrders);
   return sorted.find(item => item.bindingId === preferredBindingId)
     ?? (preferredBlockId ? sorted.find(item => item.blockId === preferredBlockId) : undefined)
-    ?? sorted.find(item => item.pathPattern === currentFilePath && item.revision === revision)
+    ?? sorted.find(item => (item.matchedFilePath || item.pathPattern) === currentFilePath && item.revision === revision)
     ?? sorted[0]
     ?? null;
 }
@@ -174,7 +166,65 @@ export function documentBindingToQueryItem(
     targetKey: binding.targetKey,
     pathPattern: binding.pathPattern,
     documentTitle,
+    matchedFilePath: binding.pathPattern,
+    blockExists: false,
   };
+}
+
+export function contextBindingToQueryItem(
+  item: CodeBindingContextItem,
+  currentFilePath?: string | null,
+): CodeBindingQueryItem {
+  const concretePath = currentFilePath && item.matchingFilePaths.includes(currentFilePath)
+    ? currentFilePath
+    : item.matchingFilePaths[0] || item.pathPattern;
+  return {
+    bindingId: item.bindingId,
+    workspaceId: item.workspaceId,
+    repositoryId: item.repositoryId,
+    revision: item.revision,
+    anchorKind: item.anchorKind,
+    symbolKey: item.symbolKey,
+    startLine: item.startLine,
+    endLine: item.endLine,
+    bindingRole: item.bindingRole ?? 'PRIMARY',
+    bindingOrdinal: item.bindingOrdinal ?? 1,
+    documentId: item.documentId,
+    blockId: item.blockId,
+    targetKey: item.targetKey,
+    pathPattern: item.pathPattern,
+    documentTitle: item.documentTitle,
+    matchedFilePath: concretePath,
+    blockExists: item.blockExists,
+  };
+}
+
+/**
+ * Expand context items so that each concrete matching file path
+ * produces its own CodeBindingQueryItem.  A single wildcard binding
+ * that matches A.java, B.java, C.java becomes three query items,
+ * each with a unique synthetic bindingId and its own matchedFilePath.
+ *
+ * When a context item has only one matching path the behaviour is
+ * identical to {@link contextBindingToQueryItem}.
+ */
+export function expandContextBindingsToQueryItems(
+  items: CodeBindingContextItem[],
+  currentFilePath?: string | null,
+): CodeBindingQueryItem[] {
+  return items.flatMap(item => {
+    if (item.matchingFilePaths.length === 0) {
+      return [contextBindingToQueryItem(item, currentFilePath)];
+    }
+    return item.matchingFilePaths.map(filePath => {
+      const base = contextBindingToQueryItem(item, currentFilePath);
+      return {
+        ...base,
+        bindingId: `${item.bindingId}@${normalizeRepositoryPath(filePath)}`,
+        matchedFilePath: filePath,
+      };
+    });
+  });
 }
 
 function roleOrder(binding: CodeBindingQueryItem) {
@@ -196,6 +246,26 @@ function anchorPrecision(binding: CodeBindingQueryItem) {
 
 function lineOrder(line: number | null) {
   return line ?? Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * Compute per-file binding counts from document-scope context items,
+ * expanding each item's matchingFilePaths so that wildcard patterns
+ * contribute counts for every concrete file they resolve to.
+ */
+export function computeDocumentScopeFileLinkCounts(
+  items: CodeBindingContextItem[],
+  repositoryId: string,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const item of items) {
+    if (item.repositoryId !== repositoryId) continue;
+    for (const path of item.matchingFilePaths) {
+      const normalized = normalizeRepositoryPath(path);
+      counts[normalized] = (counts[normalized] || 0) + 1;
+    }
+  }
+  return counts;
 }
 
 export function bindingDocumentChoices(

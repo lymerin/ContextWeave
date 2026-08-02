@@ -20,6 +20,8 @@ public record CodeBindingQueryItem(
         UUID blockId,
         String targetKey,
         String pathPattern,
-        String documentTitle
+        String documentTitle,
+        String matchedFilePath,
+        boolean blockExists
 ) {
 }

@@ -36,7 +36,7 @@ class DocumentReader:
             blocks = [
                 DocumentBlock(
                     block_id=UUID(b["blockId"]),
-                    type=str(b.get("type", "PARAGRAPH")),
+                    block_type=str(b.get("blockType", "PARAGRAPH")),
                     sort_order=int(b.get("sortOrder") or 0),
                     version=int(b.get("version") or 1),
                     plain_text=b.get("plainText"),

@@ -355,10 +355,36 @@ class AgentWorker:
                 result = workflow_task.result()
             review_id_value = result.get("change_request_id")
             review_id = UUID(str(review_id_value)) if review_id_value else None
-            outcome = "REVIEW_SUBMITTED" if review_id else "NO_CHANGE"
-            await self._repository.complete_unit(
-                unit_id, self._worker_id, outcome, review_id
-            )
+            exec_status = result.get("status", "")
+
+            # ── 三条持久化路径，对应两种不同的数据库写入 ──────────
+            # complete_unit → unit.status=COMPLETED, job.status=COMPLETED
+            # fail_unit     → unit.status=FAILED (或 RETRY_WAITING),
+            #                  job.status=FAILED (或 QUEUED)
+            #
+            # JobExecutor 返回 FAILED 时，Bounded Repair Loop 已穷尽，
+            # 不应再重试——但没有 change_request_id 也不等于 NO_CHANGE。
+            if exec_status == "FAILED":
+                failed_count = result.get("failed", 0)
+                scope_count = result.get("scope_count", 0)
+                await self._repository.fail_unit(
+                    unit_id,
+                    self._worker_id,
+                    error_code="EXECUTION_FAILED",
+                    error_message=(
+                        f"Agent execution failed: {failed_count}/{scope_count} "
+                        f"scope(s) failed after Bounded Repair"
+                    ),
+                    retry_at=None,  # Bounded Repair 已穷尽，不重试
+                )
+            elif review_id:
+                await self._repository.complete_unit(
+                    unit_id, self._worker_id, "REVIEW_SUBMITTED", review_id
+                )
+            else:
+                await self._repository.complete_unit(
+                    unit_id, self._worker_id, "NO_CHANGE", None
+                )
         except Exception as exc:
             LOGGER.exception(
                 "Agent unit execution failed jobId=%s unitId=%s unitKind=%s",

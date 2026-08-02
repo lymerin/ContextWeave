@@ -201,7 +201,9 @@ class _AtomVisitor(ast.NodeVisitor):
         qualified = ".".join([*prefix, node.name])
 
         # 路由检测（仅顶层函数）
-        route = _detect_route(node.decorator_list) if not in_class else None
+        # FastAPI/Starlette 也允许把路由处理器放在类方法中，不能因为
+        # 存在 class scope 就丢弃 decorator 上的 HTTP 路由字段。
+        route = _detect_route(node.decorator_list)
 
         decorators = tuple(
             sorted({_decorator_name(d) for d in node.decorator_list} - {""})

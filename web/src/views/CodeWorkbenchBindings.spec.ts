@@ -13,7 +13,8 @@ import CodeWorkbenchView from './CodeWorkbenchView.vue';
 const mocks = vi.hoisted(() => ({
   getSource: vi.fn(),
   queryBindings: vi.fn(),
-  listCodeBindings: vi.fn(),
+  listCodeBindingsContext: vi.fn(),
+  resolveBlockFileContext: vi.fn(),
   listFiles: vi.fn(),
   replace: vi.fn(),
   routeQuery: { repositoryId: 'repository-1' } as Record<string, string>,
@@ -54,7 +55,8 @@ vi.mock('@/api/git', () => ({
   listGitChanges: vi.fn().mockResolvedValue([]),
   getGitRepositorySource: mocks.getSource,
   queryCodeBindings: mocks.queryBindings,
-  listCodeBindings: mocks.listCodeBindings,
+  listCodeBindingsContext: mocks.listCodeBindingsContext,
+  resolveBlockFileContext: mocks.resolveBlockFileContext,
   syncGitRepository: vi.fn(),
 }));
 
@@ -109,7 +111,7 @@ describe('CodeWorkbenchView formal bindings', () => {
       (_workspaceId: string, _repositoryId: string, _revision: string, path: string) =>
         Promise.resolve(bindingResult(path)),
     );
-    mocks.listCodeBindings.mockResolvedValue([]);
+    mocks.listCodeBindingsContext.mockResolvedValue([]);
   });
 
   it('loads A, empty B, C and A again without reusing another file bindings', async () => {
@@ -348,37 +350,30 @@ describe('CodeWorkbenchView formal bindings', () => {
     wrapper.unmount();
   });
 
-  it('queries formal reverse bindings when a document Block is selected', async () => {
+  it('queries block file context when a document Block is selected', async () => {
     mocks.queryBindings.mockResolvedValue({
       ...bindingResult('src/A.java'),
       bindings: [preciseBinding('binding-a', 'src/A.java', 'block-a', 2, 3)],
     });
-    mocks.listCodeBindings.mockResolvedValue([{
-      id: 'binding-a',
+    mocks.resolveBlockFileContext.mockResolvedValue({
       workspaceId: 'workspace-1',
       repositoryId: 'repository-1',
       documentId: 'document-a',
       blockId: 'block-a',
-      targetKey: 'BLOCK:block-a',
-      pathPattern: 'src/A.java',
-      revision: 'revision-1',
-      anchorKind: 'SYMBOL',
-      symbolKey: 'JAVA:A.run',
-      startLine: 2,
-      endLine: 3,
-      createdBy: 'user',
-      createdAt: '',
-    }]);
+      filePath: 'src/A.java',
+      preferredBindingId: 'binding-a',
+      bindings: [preciseBinding('binding-a', 'src/A.java', 'block-a', 2, 3)],
+    });
     const wrapper = mountView();
     await flushPromises();
 
     await wrapper.get('[data-test="select-block"]').trigger('click');
     await flushPromises();
 
-    expect(mocks.listCodeBindings).toHaveBeenCalledWith('document-a', {
+    expect(mocks.resolveBlockFileContext).toHaveBeenCalledWith('document-a', {
+      blockId: 'block-a',
       revision: 'revision-1',
       includeLegacy: true,
-      blockId: 'block-a',
     });
     expect(testNavigation().restoreCurrent()).toMatchObject({
       bindingId: 'binding-a',
@@ -485,6 +480,8 @@ function bindingResult(path: string) {
       blockId: null,
       pathPattern: path,
       documentTitle: documentId === 'document-a' ? 'Document A' : 'Document C',
+      matchedFilePath: path,
+      blockExists: false,
     }] : [],
     truncated: false,
     omittedBindingCount: 0,
@@ -512,6 +509,8 @@ function preciseBinding(
     targetKey: `BLOCK:${blockId}`,
     pathPattern: path,
     documentTitle: 'Document A',
+    matchedFilePath: path,
+    blockExists: true,
   };
 }
 

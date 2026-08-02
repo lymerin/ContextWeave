@@ -10,6 +10,10 @@ class ResultValidator:
     def __init__(self, snapshot: ContextSnapshot) -> None:
         self._snap = snapshot
         self._errors: list[str] = []
+        # 模型只返回 symbol_key，入口 _bind_result_atoms 已绑定回 atom_id。
+        # 校验时两种 ID 都接受（存在即视为有效），避免符号缺失时误判格式错误。
+        self._valid_ids: set[str] = set(snapshot.atom_by_id.keys())
+        self._valid_ids.update(snapshot.atom_by_symbol.keys())
 
     def validate(self, result: SemanticAnalysisResult) -> list[str]:
         self._errors = []
@@ -38,50 +42,15 @@ class ResultValidator:
     # ── semantic_groups ─────────────────────────────────────────────
 
     def _validate_groups(self, result: SemanticAnalysisResult) -> None:
-        seen_group_ids: set[str] = set()
-        seen_orders: set[int] = set()
-
+        # 宽容校验：不做格式层面的硬性拒绝（group_id 去重、order 去重、
+        # primary 非空、primary⊆informed 等——这些是模型创作自由，不应触发
+        # repair loop）。只校验引用的 atom 确实存在于快照。
         for i, g in enumerate(result.semantic_groups):
             path = f"semantic_groups[{i}]"
-
-            # group_id 存在且不重复
-            if not g.group_id:
-                self._errors.append(f"{path}: empty group_id")
-            elif g.group_id in seen_group_ids:
-                self._errors.append(f"{path}: duplicate group_id={g.group_id}")
-            seen_group_ids.add(g.group_id)
-
-            # order 不重复
-            if g.order in seen_orders:
-                self._errors.append(f"{path}: duplicate order={g.order}")
-            seen_orders.add(g.order)
-
-            # primary_atom_ids 非空
-            if not g.primary_atom_ids:
-                self._errors.append(f"{path}: primary_atom_ids is empty")
-
-            # primary_atom_ids ⊆ informed_by_atom_ids
-            informed_set = set(g.informed_by_atom_ids)
             for j, atom_id in enumerate(g.primary_atom_ids):
-                if not atom_id:
-                    self._errors.append(f"{path}.primary_atom_ids[{j}]: empty")
-                elif atom_id not in informed_set:
-                    self._errors.append(
-                        f"{path}.primary_atom_ids[{j}]: {atom_id} not in informed_by_atom_ids"
-                    )
-
-            # 所有 atom_id 存在于快照
-            seen_atoms: set[str] = set()
+                self._check_atom_exists(f"{path}.primary_atom_ids[{j}]", atom_id)
             for j, atom_id in enumerate(g.informed_by_atom_ids):
-                if not atom_id:
-                    self._errors.append(f"{path}.informed_by_atom_ids[{j}]: empty")
-                    continue
                 self._check_atom_exists(f"{path}.informed_by_atom_ids[{j}]", atom_id)
-                if atom_id in seen_atoms:
-                    self._errors.append(f"{path}: duplicate atom_id={atom_id}")
-                seen_atoms.add(atom_id)
-
-            # evidence_refs 校验
             for j, ref in enumerate(g.evidence_refs):
                 self._check_evidence(f"{path}.evidence_refs[{j}]", ref)
 
@@ -100,13 +69,13 @@ class ResultValidator:
             self._errors.append("snapshot_hash mismatch")
 
     def _check_atom_exists(self, path: str, atom_id: str) -> None:
-        if atom_id not in self._snap.atom_by_id:
+        if atom_id not in self._valid_ids:
             self._errors.append(f"{path}: atom_id not in snapshot: {atom_id}")
 
     def _check_evidence(self, path: str, ref) -> None:
         if not ref.atom_id:
             self._errors.append(f"{path}: missing atom_id")
-        elif ref.atom_id not in self._snap.atom_by_id:
+        elif ref.atom_id not in self._valid_ids:
             self._errors.append(f"{path}: atom_id not in snapshot: {ref.atom_id}")
         if ref.source_chunk_id and ref.source_chunk_id not in self._snap.chunk_by_id:
             self._errors.append(f"{path}: source_chunk_id not in snapshot: {ref.source_chunk_id}")

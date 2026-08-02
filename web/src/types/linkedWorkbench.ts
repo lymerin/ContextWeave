@@ -14,7 +14,7 @@ export type LinkActivationSource =
   | 'inspector'
   | 'system';
 
-export type BindingDisplayState = 'loading' | 'precise' | 'weak' | 'invalid';
+export type BindingDisplayState = 'precise' | 'weak';
 
 export interface CodeAnchor {
   id: string;

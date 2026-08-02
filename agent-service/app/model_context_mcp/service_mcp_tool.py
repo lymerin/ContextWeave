@@ -58,7 +58,7 @@ class McpContextTools:
         return {
             "block_id": result.block_id,
             "description": result.description,
-            "atom_ids": list(result.atom_ids),
+            "symbol_keys": list(result.symbol_keys),
             "sources": [
                 {
                     "chunk_id": s.chunk_id,
