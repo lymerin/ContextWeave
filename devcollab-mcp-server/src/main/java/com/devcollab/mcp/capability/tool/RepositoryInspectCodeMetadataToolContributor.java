@@ -2,7 +2,6 @@ package com.devcollab.mcp.capability.tool;
 
 import com.devcollab.mcp.application.RepositoryCodeMetadataApplicationService;
 import com.devcollab.mcp.capability.McpToolContributor;
-import com.devcollab.mcp.config.McpProperties;
 import com.devcollab.mcp.error.McpToolErrorMapper;
 import com.devcollab.mcp.governance.AuditedToolExecutor;
 import com.devcollab.mcp.security.McpTransportIdentity;
@@ -26,20 +25,20 @@ public class RepositoryInspectCodeMetadataToolContributor implements McpToolCont
     private final AuditedToolExecutor executor;
     private final McpToolErrorMapper errorMapper;
     private final ObjectMapper objectMapper;
-    private final McpProperties properties;
+    private final ContractSchemaLoader contracts;
 
     public RepositoryInspectCodeMetadataToolContributor(
             RepositoryCodeMetadataApplicationService service,
             AuditedToolExecutor executor,
             McpToolErrorMapper errorMapper,
             ObjectMapper objectMapper,
-            McpProperties properties
+            ContractSchemaLoader contracts
     ) {
         this.service = service;
         this.executor = executor;
         this.errorMapper = errorMapper;
         this.objectMapper = objectMapper;
-        this.properties = properties;
+        this.contracts = contracts;
     }
 
     @Override
@@ -48,11 +47,8 @@ public class RepositoryInspectCodeMetadataToolContributor implements McpToolCont
                 .name(TOOL_NAME)
                 .title("Inspect code metadata")
                 .description("Parse bounded structural metadata without returning source code")
-                .inputSchema(McpToolSchemas.repositoryCodeMetadataInput(
-                        properties.maxPathCharacters(),
-                        properties.maxBindingBatchPaths()
-                ))
-                .outputSchema(McpToolSchemas.repositoryCodeMetadataOutput())
+                .inputSchema(contracts.input(TOOL_NAME))
+                .outputSchema(contracts.output(TOOL_NAME))
                 .annotations(WorkspaceContextToolContributor.readOnlyAnnotations())
                 .build();
         return List.of(errorMapper.protect(tool, (exchange, request) -> {

@@ -74,6 +74,13 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- 单一权威契约源：外部引用仓库根 contracts/mcp/，无副本 -->
+            <resource>
+                <directory>../contracts/mcp</directory>
+                <targetPath>contracts/mcp</targetPath>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

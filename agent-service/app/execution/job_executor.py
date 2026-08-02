@@ -70,9 +70,14 @@ class JobExecutor:
         repository_id: UUID,
         revision: str,
         selected_paths: list[str],
+        run_id: str,
     ) -> dict:
-        """执行完整的源码分析 → 语义补充 → 文档规划 → 提交管线。"""
-        run_id = f"exec-{repository_id}-{revision[:8]}"
+        """执行完整的源码分析 → 语义补充 → 文档规划 → 提交管线。
+
+        run_id 由调用方提供且每次执行唯一，用于生成幂等 clientRequestId，
+        避免对同一仓库+revision 重复提交被 knowledge-core 幂等校验拒绝。
+        """
+
 
         # ── 1. 读取 + 粗筛 ──────────────────────────────────────
         ctx = await self._ws.read_context(workspace_id, repository_id)

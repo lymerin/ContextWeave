@@ -2,8 +2,6 @@ package com.devcollab.mcp.capability.tool;
 
 import com.devcollab.mcp.application.ReviewSubmissionApplicationService;
 import com.devcollab.mcp.capability.McpToolContributor;
-import com.devcollab.mcp.config.McpProperties;
-import com.devcollab.mcp.config.ReviewSubmissionProperties;
 import com.devcollab.mcp.error.McpToolErrorMapper;
 import com.devcollab.mcp.governance.AuditedToolExecutor;
 import com.devcollab.mcp.security.McpTransportIdentity;
@@ -27,24 +25,21 @@ public class SubmitDocumentChangeToolContributor implements McpToolContributor {
     private final ReviewSubmissionApplicationService applicationService;
     private final AuditedToolExecutor auditedToolExecutor;
     private final McpToolErrorMapper errorMapper;
-    private final ReviewSubmissionProperties properties;
-    private final McpProperties mcpProperties;
     private final ObjectMapper objectMapper;
+    private final ContractSchemaLoader contracts;
 
     public SubmitDocumentChangeToolContributor(
             ReviewSubmissionApplicationService applicationService,
             AuditedToolExecutor auditedToolExecutor,
             McpToolErrorMapper errorMapper,
-            ReviewSubmissionProperties properties,
-            McpProperties mcpProperties,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ContractSchemaLoader contracts
     ) {
         this.applicationService = applicationService;
         this.auditedToolExecutor = auditedToolExecutor;
         this.errorMapper = errorMapper;
-        this.properties = properties;
-        this.mcpProperties = mcpProperties;
         this.objectMapper = objectMapper;
+        this.contracts = contracts;
     }
 
     @Override
@@ -56,8 +51,8 @@ public class SubmitDocumentChangeToolContributor implements McpToolContributor {
                         "Create an idempotent PENDING proposal. "
                                 + "This tool never changes formal documents."
                 )
-                .inputSchema(McpToolSchemas.submitDocumentChangeInput(properties, mcpProperties.maxPathCharacters()))
-                .outputSchema(McpToolSchemas.submitDocumentChangeOutput())
+                .inputSchema(contracts.input(TOOL_NAME))
+                .outputSchema(contracts.output(TOOL_NAME))
                 .annotations(McpSchema.ToolAnnotations.builder()
                         .readOnlyHint(false)
                         .destructiveHint(false)

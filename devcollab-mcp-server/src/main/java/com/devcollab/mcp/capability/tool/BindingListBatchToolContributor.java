@@ -2,7 +2,6 @@ package com.devcollab.mcp.capability.tool;
 
 import com.devcollab.mcp.application.BindingListBatchApplicationService;
 import com.devcollab.mcp.capability.McpToolContributor;
-import com.devcollab.mcp.config.McpProperties;
 import com.devcollab.mcp.error.McpToolErrorMapper;
 import com.devcollab.mcp.governance.AuditedToolExecutor;
 import com.devcollab.mcp.security.McpTransportIdentity;
@@ -25,20 +24,20 @@ public class BindingListBatchToolContributor implements McpToolContributor {
     private final AuditedToolExecutor executor;
     private final McpToolErrorMapper errorMapper;
     private final ObjectMapper objectMapper;
-    private final McpProperties properties;
+    private final ContractSchemaLoader contracts;
 
     public BindingListBatchToolContributor(
             BindingListBatchApplicationService service,
             AuditedToolExecutor executor,
             McpToolErrorMapper errorMapper,
             ObjectMapper objectMapper,
-            McpProperties properties
+            ContractSchemaLoader contracts
     ) {
         this.service = service;
         this.executor = executor;
         this.errorMapper = errorMapper;
         this.objectMapper = objectMapper;
-        this.properties = properties;
+        this.contracts = contracts;
     }
 
     @Override
@@ -47,11 +46,8 @@ public class BindingListBatchToolContributor implements McpToolContributor {
                 .name(TOOL_NAME)
                 .title("List bindings for files")
                 .description("Batch query formal document bindings for repository files")
-                .inputSchema(McpToolSchemas.bindingListBatchInput(
-                        properties.maxPathCharacters(),
-                        properties.maxBindingBatchPaths()
-                ))
-                .outputSchema(McpToolSchemas.bindingListBatchOutput())
+                .inputSchema(contracts.input(TOOL_NAME))
+                .outputSchema(contracts.output(TOOL_NAME))
                 .annotations(WorkspaceContextToolContributor.readOnlyAnnotations())
                 .build();
         return List.of(errorMapper.protect(tool, (exchange, request) -> {

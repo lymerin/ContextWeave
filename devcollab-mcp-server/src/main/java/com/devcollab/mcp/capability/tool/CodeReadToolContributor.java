@@ -2,7 +2,6 @@ package com.devcollab.mcp.capability.tool;
 
 import com.devcollab.mcp.application.CodeReadApplicationService;
 import com.devcollab.mcp.capability.McpToolContributor;
-import com.devcollab.mcp.config.McpProperties;
 import com.devcollab.mcp.error.McpToolErrorMapper;
 import com.devcollab.mcp.governance.AuditedToolExecutor;
 import com.devcollab.mcp.security.McpTransportIdentity;
@@ -26,20 +25,20 @@ public class CodeReadToolContributor implements McpToolContributor {
     private final AuditedToolExecutor auditedToolExecutor;
     private final McpToolErrorMapper errorMapper;
     private final ObjectMapper objectMapper;
-    private final McpProperties properties;
+    private final ContractSchemaLoader contracts;
 
     public CodeReadToolContributor(
             CodeReadApplicationService applicationService,
             AuditedToolExecutor auditedToolExecutor,
             McpToolErrorMapper errorMapper,
             ObjectMapper objectMapper,
-            McpProperties properties
+            ContractSchemaLoader contracts
     ) {
         this.applicationService = applicationService;
         this.auditedToolExecutor = auditedToolExecutor;
         this.errorMapper = errorMapper;
         this.objectMapper = objectMapper;
-        this.properties = properties;
+        this.contracts = contracts;
     }
 
     @Override
@@ -48,8 +47,8 @@ public class CodeReadToolContributor implements McpToolContributor {
                 .name(TOOL_NAME)
                 .title("Read DevCollab repository source")
                 .description("Read authorized text source from DevCollab's scanned repository projection.")
-                .inputSchema(McpToolSchemas.codeReadInput(properties.maxPathCharacters()))
-                .outputSchema(McpToolSchemas.codeReadOutput())
+                .inputSchema(contracts.input(TOOL_NAME))
+                .outputSchema(contracts.output(TOOL_NAME))
                 .annotations(WorkspaceContextToolContributor.readOnlyAnnotations())
                 .build();
         return List.of(errorMapper.protect(tool, (exchange, request) -> {

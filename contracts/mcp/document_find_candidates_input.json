@@ -1,0 +1,58 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workspaceId"
+  ],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "repositoryId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "filePath": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "limit": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    }
+  },
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "required": [
+            "filePath"
+          ]
+        },
+        {
+          "required": [
+            "query"
+          ]
+        }
+      ]
+    },
+    {
+      "if": {
+        "required": [
+          "filePath"
+        ]
+      },
+      "then": {
+        "required": [
+          "repositoryId"
+        ]
+      }
+    }
+  ]
+}

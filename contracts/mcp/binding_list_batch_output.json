@@ -1,0 +1,128 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workspaceId",
+    "repositoryId",
+    "files"
+  ],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "repositoryId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "filePath",
+          "bindings"
+        ],
+        "properties": {
+          "filePath": {
+            "type": "string"
+          },
+          "fileHasBindings": {
+            "type": "boolean"
+          },
+          "bindings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "bindingId",
+                "repositoryId",
+                "documentId",
+                "documentTitle",
+                "blockId",
+                "pathPattern"
+              ],
+              "properties": {
+                "bindingId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "repositoryId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "documentId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "documentTitle": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "blockId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "pathPattern": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "anchorKind": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "symbolKey": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "startLine": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "endLine": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "bindingRole": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "bindingOrdinal": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "omittedBindingCount": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

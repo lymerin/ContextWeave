@@ -25,17 +25,20 @@ public class WorkspaceContextToolContributor implements McpToolContributor {
     private final AuditedToolExecutor auditedToolExecutor;
     private final McpToolErrorMapper errorMapper;
     private final ObjectMapper objectMapper;
+    private final ContractSchemaLoader contracts;
 
     public WorkspaceContextToolContributor(
             WorkspaceContextApplicationService applicationService,
             AuditedToolExecutor auditedToolExecutor,
             McpToolErrorMapper errorMapper,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ContractSchemaLoader contracts
     ) {
         this.applicationService = applicationService;
         this.auditedToolExecutor = auditedToolExecutor;
         this.errorMapper = errorMapper;
         this.objectMapper = objectMapper;
+        this.contracts = contracts;
     }
 
     @Override
@@ -44,8 +47,8 @@ public class WorkspaceContextToolContributor implements McpToolContributor {
                 .name(TOOL_NAME)
                 .title("Get DevCollab workspace context")
                 .description("Read an authorized workspace and its registered Git repository sync context.")
-                .inputSchema(McpToolSchemas.workspaceContextInput())
-                .outputSchema(McpToolSchemas.workspaceContextOutput())
+                .inputSchema(contracts.input(TOOL_NAME))
+                .outputSchema(contracts.output(TOOL_NAME))
                 .annotations(readOnlyAnnotations())
                 .build();
         return List.of(errorMapper.protect(tool, (exchange, request) -> {

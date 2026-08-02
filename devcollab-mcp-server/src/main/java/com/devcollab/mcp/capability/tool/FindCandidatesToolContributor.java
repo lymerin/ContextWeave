@@ -2,7 +2,6 @@ package com.devcollab.mcp.capability.tool;
 
 import com.devcollab.mcp.application.FindCandidatesApplicationService;
 import com.devcollab.mcp.capability.McpToolContributor;
-import com.devcollab.mcp.config.McpProperties;
 import com.devcollab.mcp.governance.AuditedToolExecutor;
 import com.devcollab.mcp.error.McpToolErrorMapper;
 import com.devcollab.mcp.security.McpTransportIdentity;
@@ -25,21 +24,21 @@ public class FindCandidatesToolContributor implements McpToolContributor {
     private final FindCandidatesApplicationService applicationService;
     private final AuditedToolExecutor auditedToolExecutor;
     private final McpToolErrorMapper errorMapper;
-    private final McpProperties mcpProperties;
     private final ObjectMapper objectMapper;
+    private final ContractSchemaLoader contracts;
 
     public FindCandidatesToolContributor(
             FindCandidatesApplicationService applicationService,
             AuditedToolExecutor auditedToolExecutor,
             McpToolErrorMapper errorMapper,
-            McpProperties mcpProperties,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ContractSchemaLoader contracts
     ) {
         this.applicationService = applicationService;
         this.auditedToolExecutor = auditedToolExecutor;
         this.errorMapper = errorMapper;
-        this.mcpProperties = mcpProperties;
         this.objectMapper = objectMapper;
+        this.contracts = contracts;
     }
 
     @Override
@@ -48,12 +47,8 @@ public class FindCandidatesToolContributor implements McpToolContributor {
                 .name(TOOL_NAME)
                 .title("Find document candidates")
                 .description("Find explainable document candidates from code paths, bindings, titles, and Block text")
-                .inputSchema(McpToolSchemas.findCandidatesInput(
-                        mcpProperties.maxPathCharacters(),
-                        mcpProperties.maxDocumentQueryCharacters(),
-                        mcpProperties.maxCandidates()
-                ))
-                .outputSchema(McpToolSchemas.findCandidatesOutput())
+                .inputSchema(contracts.input(TOOL_NAME))
+                .outputSchema(contracts.output(TOOL_NAME))
                 .annotations(WorkspaceContextToolContributor.readOnlyAnnotations())
                 .build();
                 

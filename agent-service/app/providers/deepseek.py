@@ -303,8 +303,9 @@ class DeepSeekProvider:
                 )
             try:
                 # 这些是程序掌握的可信上下文元数据，模型只负责语义字段。
-                # 在严格校验前补齐，避免模型省略元数据而被误判为无效响应。
-                payload = _extract_json_object(content)
+                # 模型输出格式可能变化（camelCase、嵌套、多余字段），
+                # 先结构归一化再校验，让程序消化格式而非逼模型精确。
+                payload = _normalize_payload(_extract_json_object(content))
                 if not isinstance(payload, dict):
                     raise ValueError("semantic response must be a JSON object")
                 payload["analysis_id"] = request.analysis_id
@@ -406,3 +407,28 @@ def _extract_json_object(content: str) -> dict[str, Any]:
             pass
 
     raise ValueError("model output does not contain a valid JSON object")
+
+
+def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """结构归一化：把模型输出转成 schema 期望的 snake_case 结构。
+
+    大模型解读任意代码，输出键名可能是 camelCase（stepOrder/atomId）
+    或 snake_case，还可能嵌套多余层级。这里递归地把键名统一为
+    snake_case，使下游 Pydantic 校验能吸收模型的格式变化。
+    """
+    import re as _re
+
+    def to_snake(name: str) -> str:
+        s = _re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+        return s
+
+    def walk(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                to_snake(k): walk(v) for k, v in value.items()
+            }
+        if isinstance(value, list):
+            return [walk(v) for v in value]
+        return value
+
+    return walk(payload)

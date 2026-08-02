@@ -49,7 +49,6 @@ class DocumentReader:
                 title=str(result.get("title") or ""),
                 document_type=result.get("documentType"),
                 blocks=blocks,
-                version=result.get("version"),
             ))
         return results
 

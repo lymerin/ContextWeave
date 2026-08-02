@@ -1,0 +1,94 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "documentId",
+    "workspaceId",
+    "title",
+    "documentType",
+    "reviewStatus",
+    "updatedAt",
+    "blocks",
+    "truncated",
+    "omittedBlockCount",
+    "omittedCharacterCount"
+  ],
+  "properties": {
+    "documentId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "title": {
+      "type": "string"
+    },
+    "documentType": {
+      "type": "string"
+    },
+    "reviewStatus": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "blockId",
+          "blockType",
+          "sortOrder",
+          "version"
+        ],
+        "properties": {
+          "blockId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "blockType": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "plainText": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contentTruncated": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "omittedBlockCount": {
+      "type": "integer"
+    },
+    "omittedCharacterCount": {
+      "type": "integer"
+    }
+  }
+}

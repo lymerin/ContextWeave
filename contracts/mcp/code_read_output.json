@@ -1,0 +1,79 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workspaceId",
+    "repositoryId",
+    "path",
+    "commitHash",
+    "sizeBytes",
+    "startLine",
+    "endLine",
+    "totalLines",
+    "content",
+    "truncated",
+    "omittedLineCount",
+    "omittedCharacterCount",
+    "existingBindings",
+    "existingBindingsAvailable",
+    "existingBindingsRequested"
+  ],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "repositoryId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "path": {
+      "type": "string"
+    },
+    "commitHash": {
+      "type": "string"
+    },
+    "language": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sizeBytes": {
+      "type": "integer"
+    },
+    "startLine": {
+      "type": "integer"
+    },
+    "endLine": {
+      "type": "integer"
+    },
+    "totalLines": {
+      "type": "integer"
+    },
+    "content": {
+      "type": "string"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "omittedLineCount": {
+      "type": "integer"
+    },
+    "omittedCharacterCount": {
+      "type": "integer"
+    },
+    "existingBindings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "existingBindingsAvailable": {
+      "type": "boolean"
+    },
+    "existingBindingsRequested": {
+      "type": "boolean"
+    }
+  }
+}

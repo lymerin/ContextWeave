@@ -26,19 +26,22 @@ public class RepositoryListFilesToolContributor implements McpToolContributor {
     private final McpToolErrorMapper errorMapper;
     private final ObjectMapper objectMapper;
     private final McpProperties properties;
+    private final ContractSchemaLoader contracts;
 
     public RepositoryListFilesToolContributor(
             RepositoryFilesApplicationService service,
             AuditedToolExecutor executor,
             McpToolErrorMapper errorMapper,
             ObjectMapper objectMapper,
-            McpProperties properties
+            McpProperties properties,
+            ContractSchemaLoader contracts
     ) {
         this.service = service;
         this.executor = executor;
         this.errorMapper = errorMapper;
         this.objectMapper = objectMapper;
         this.properties = properties;
+        this.contracts = contracts;
     }
 
     @Override
@@ -47,11 +50,8 @@ public class RepositoryListFilesToolContributor implements McpToolContributor {
                 .name(TOOL_NAME)
                 .title("List repository files")
                 .description("Page through repository file metadata without reading content")
-                .inputSchema(McpToolSchemas.repositoryListFilesInput(
-                        properties.maxPathCharacters(),
-                        properties.maxRepositoryPageSize()
-                ))
-                .outputSchema(McpToolSchemas.repositoryListFilesOutput())
+                .inputSchema(contracts.input(TOOL_NAME))
+                .outputSchema(contracts.output(TOOL_NAME))
                 .annotations(WorkspaceContextToolContributor.readOnlyAnnotations())
                 .build();
         return List.of(errorMapper.protect(tool, (exchange, request) -> {

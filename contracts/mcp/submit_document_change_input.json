@@ -1,0 +1,312 @@
+{
+  "title": "submit_document_change 输入",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workspaceId",
+    "clientRequestId",
+    "summary",
+    "rationale",
+    "operations"
+  ],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "clientRequestId": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "clientOperationId",
+          "sequenceNumber",
+          "operationType"
+        ],
+        "properties": {
+          "clientOperationId": {
+            "type": "string"
+          },
+          "sequenceNumber": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "operationType": {
+            "type": "string",
+            "enum": [
+              "CREATE_DOCUMENT",
+              "ADD_BLOCK",
+              "UPDATE_BLOCK",
+              "DELETE_BLOCK"
+            ]
+          },
+          "documentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "createdDocumentClientOperationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blockId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "baseBlockVersion": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "proposedDocumentTitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proposedDocumentType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proposedParentDocumentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "proposedBlockType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PARAGRAPH",
+              "HEADING",
+              "CODE",
+              "TODO"
+            ]
+          },
+          "proposedPlainText": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proposedContentFormat": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "MARKDOWN",
+              "TIPTAP_JSON",
+              "PLAIN_TEXT"
+            ]
+          }
+        }
+      }
+    },
+    "bindingProposals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "clientBindingProposalId",
+          "sequenceNumber",
+          "action",
+          "repositoryId",
+          "filePath",
+          "reason"
+        ],
+        "properties": {
+          "clientBindingProposalId": {
+            "type": "string"
+          },
+          "sequenceNumber": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "UPSERT_BINDING",
+              "REMOVE_BINDING"
+            ]
+          },
+          "repositoryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "filePath": {
+            "type": "string"
+          },
+          "anchorKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "FILE",
+              "RANGE",
+              "SYMBOL"
+            ]
+          },
+          "symbolKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startLine": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "endLine": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "documentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "createdDocumentClientOperationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blockId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "createdBlockClientOperationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bindingId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "bindingRole": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PRIMARY",
+              "SUPPORTING"
+            ]
+          },
+          "bindingOrdinal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "repositoryId",
+          "filePath",
+          "description"
+        ],
+        "properties": {
+          "clientOperationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repositoryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "filePath": {
+            "type": "string"
+          },
+          "startLine": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "endLine": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

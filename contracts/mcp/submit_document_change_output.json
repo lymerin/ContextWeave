@@ -1,0 +1,52 @@
+{
+  "title": "submit_document_change 输出",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "changeRequestId",
+    "status"
+  ],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "repositoryId": {
+      "type": ["string", "null"],
+      "format": "uuid"
+    },
+    "documentId": {
+      "type": ["string", "null"],
+      "format": "uuid"
+    },
+    "operationCount": {
+      "type": "integer"
+    },
+    "bindingProposalCount": {
+      "type": "integer"
+    },
+    "changeRequestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PENDING"
+      ]
+    },
+    "createdAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "idempotentReplay": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    }
+  }
+}

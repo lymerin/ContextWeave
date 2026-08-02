@@ -17,6 +17,7 @@ dependencies = [
   "httpx>=0.28,<1",
   "asyncpg>=0.30,<1",
   "psutil>=6.1,<8",
+  "jsonschema>=4,<5",
 ]
 
 [project.optional-dependencies]

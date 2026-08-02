@@ -26,19 +26,22 @@ public class RepositoryListChangesToolContributor implements McpToolContributor 
     private final McpToolErrorMapper errorMapper;
     private final ObjectMapper objectMapper;
     private final McpProperties properties;
+    private final ContractSchemaLoader contracts;
 
     public RepositoryListChangesToolContributor(
             RepositoryChangesApplicationService service,
             AuditedToolExecutor executor,
             McpToolErrorMapper errorMapper,
             ObjectMapper objectMapper,
-            McpProperties properties
+            McpProperties properties,
+            ContractSchemaLoader contracts
     ) {
         this.service = service;
         this.executor = executor;
         this.errorMapper = errorMapper;
         this.objectMapper = objectMapper;
         this.properties = properties;
+        this.contracts = contracts;
     }
 
     @Override
@@ -47,10 +50,8 @@ public class RepositoryListChangesToolContributor implements McpToolContributor 
                 .name(TOOL_NAME)
                 .title("List repository changes")
                 .description("Page through the latest persisted Git change projection")
-                .inputSchema(McpToolSchemas.repositoryListChangesInput(
-                        properties.maxRepositoryPageSize()
-                ))
-                .outputSchema(McpToolSchemas.repositoryListChangesOutput())
+                .inputSchema(contracts.input(TOOL_NAME))
+                .outputSchema(contracts.output(TOOL_NAME))
                 .annotations(WorkspaceContextToolContributor.readOnlyAnnotations())
                 .build();
         return List.of(errorMapper.protect(tool, (exchange, request) -> {

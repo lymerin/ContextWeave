@@ -422,7 +422,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
             if (exception instanceof RestClientResponseException response
                     && (response.getStatusCode().value() == 400
                     || response.getStatusCode().value() == 409)) {
-                // TEMP-DEBUG: 透传 knowledge-core 真实错误以便定位拒绝原因
+                // 透传 knowledge-core 真实拒绝原因，便于定位而非抽象成"rejected"
                 String body = response.getResponseBodyAsString();
                 throw new McpToolException(
                         McpToolErrorCode.INVALID_ARGUMENT,

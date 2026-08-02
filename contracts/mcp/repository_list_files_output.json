@@ -1,0 +1,85 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workspaceId",
+    "repositoryId",
+    "revision",
+    "pathPrefix",
+    "recursive",
+    "files",
+    "nextCursor",
+    "hasMore"
+  ],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "repositoryId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "string"
+    },
+    "pathPrefix": {
+      "type": "string"
+    },
+    "recursive": {
+      "type": "boolean"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "filePath",
+          "fileName",
+          "extension",
+          "sizeBytes",
+          "language",
+          "readable",
+          "isDirectory"
+        ],
+        "properties": {
+          "filePath": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "extension": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "readable": {
+            "type": "boolean"
+          },
+          "isDirectory": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "nextCursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "hasMore": {
+      "type": "boolean"
+    }
+  }
+}

@@ -26,7 +26,6 @@ class DocumentStructure(BaseModel):
     title: str = ""
     document_type: str | None = None
     blocks: list[DocumentBlock] = []
-    version: int | None = None
 
 
 class DocumentCandidate(BaseModel):

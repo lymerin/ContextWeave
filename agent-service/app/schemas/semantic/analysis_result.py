@@ -1,36 +1,41 @@
-"""语义分析结果——DeepSeek 返回，Pydantic strict 校验。"""
+"""语义分析结果——DeepSeek 返回，结构容错。
+
+设计原则：大模型解读任意代码，输出格式必然有变化（camelCase/snake_case
+混用、字段缺失、多余字段、类型轻微偏移）。这里**不逼模型精确序列化**，
+而是:
+  - 去掉 strict：允许 int/str 轻微类型偏移
+  - extra="ignore"：模型多写的字段忽略，不拒绝
+  - 关键字段加 camelCase alias：同时接受 stepOrder/atomId 与 step_order/atom_id
+
+程序在解析层做结构归一化（见 deepseek._normalize_payload），此 schema
+负责"尽量吸收"模型的格式变化，让结果进入下游前不被格式问题拒绝。
+"""
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class EvidenceRef(BaseModel):
-    """证据引用——只含 ID，程序根据 ID 从快照解析 file_path/line。
-    DeepSeek 不得自行填写路径或行号。
-    """
-    model_config = ConfigDict(extra="forbid", strict=True)
+    """证据引用——只含 ID，程序根据 ID 从快照解析 file_path/line。"""
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
-    atom_id: str
+    atom_id: str = ""
     relation_id: str | None = None
     source_chunk_id: str | None = None
 
 
 class MemberInterpretation(BaseModel):
     """单个符号的语义解读。"""
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
-    atom_id: str
+    atom_id: str = ""
     responsibility: str = ""
     role: str = ""
     evidence_refs: list[EvidenceRef] = Field(default_factory=list)
 
 
 class SemanticGroup(BaseModel):
-    """一组紧密相关的符号，共同支撑同一段文档正文。
-
-    DeepSeek 在语义补充时自行决定分组——
-    例如将"路由 + 请求模型 + 业务方法"合并为一个 Group。
-    """
-    model_config = ConfigDict(extra="forbid", strict=True)
+    """一组紧密相关的符号，共同支撑同一段文档正文。"""
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     group_id: str = ""
     order: int = 0
@@ -44,7 +49,7 @@ class SemanticGroup(BaseModel):
 
 class ExecutionStep(BaseModel):
     """执行流程中的一步。"""
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     step_order: int = 0
     atom_id: str = ""
@@ -54,12 +59,12 @@ class ExecutionStep(BaseModel):
 
 class SemanticAnalysisResult(BaseModel):
     """DeepSeek 语义分析最终输出。"""
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
-    analysis_id: str
-    context_id: str
-    revision: str
-    snapshot_hash: str
+    analysis_id: str = ""
+    context_id: str = ""
+    revision: str = ""
+    snapshot_hash: str = ""
     overall_responsibility: str = ""
     execution_flow: list[ExecutionStep] = Field(default_factory=list)
     semantic_groups: list[SemanticGroup] = Field(default_factory=list)

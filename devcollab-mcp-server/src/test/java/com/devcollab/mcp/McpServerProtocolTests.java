@@ -86,10 +86,11 @@ class McpServerProtocolTests {
                     .orElseThrow();
             assertThat(codeTool.inputSchema().get("required"))
                     .isEqualTo(List.of("workspaceId", "repositoryId", "path"));
+            // 共享 schema 定义纯数据契约（error 由 errorMapper 独立处理路径返回）
             assertThat(workspaceTool.outputSchema())
-                    .containsKeys("type", "properties", "oneOf", "additionalProperties");
+                    .containsKeys("type", "properties", "additionalProperties");
             assertThat(codeTool.outputSchema())
-                    .containsKeys("type", "properties", "oneOf", "additionalProperties");
+                    .containsKeys("type", "properties", "additionalProperties");
             McpSchema.Tool candidateTool = tools.stream()
                     .filter(tool -> tool.name().equals("devcollab.document.find_candidates"))
                     .findFirst()
@@ -114,12 +115,8 @@ class McpServerProtocolTests {
                     .toList();
             assertThat(candidateOutputKeys).contains(
                     "workspaceId", "repositoryId", "filePath", "query", "candidates",
-                    "truncated", "omittedCandidateCount", "error"
+                    "truncated", "omittedCandidateCount"
             );
-            assertThat(((Map<?, ?>) workspaceTool.outputSchema().get("properties")).containsKey("error"))
-                    .isTrue();
-            assertThat(((Map<?, ?>) codeTool.outputSchema().get("properties")).containsKey("error"))
-                    .isTrue();
             McpSchema.Tool submitTool = tools.stream()
                     .filter(tool -> tool.name().equals(
                             "devcollab.review.submit_document_change"
@@ -140,8 +137,7 @@ class McpServerProtocolTests {
                     .contains("bindingRole", "bindingOrdinal");
             assertThat(submitTool.outputSchema())
                     .containsKeys(
-                            "type", "properties", "oneOf",
-                            "additionalProperties"
+                            "type", "properties", "additionalProperties"
                     );
         }
     }

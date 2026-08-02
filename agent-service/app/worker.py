@@ -235,6 +235,7 @@ class AgentWorker:
                     repository_id=UUID(str(job["repository_id"])),
                     revision=str(job["revision"]),
                     selected_paths=selected_paths,
+                    run_id=str(unit_id),  # 每次执行唯一，保证幂等 clientRequestId
                 )
 
         async def run_project_discovery() -> None:

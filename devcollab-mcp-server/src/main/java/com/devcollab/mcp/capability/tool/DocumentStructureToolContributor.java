@@ -25,17 +25,20 @@ public class DocumentStructureToolContributor implements McpToolContributor {
     private final AuditedToolExecutor auditedToolExecutor;
     private final McpToolErrorMapper errorMapper;
     private final ObjectMapper objectMapper;
+    private final ContractSchemaLoader contracts;
 
     public DocumentStructureToolContributor(
             DocumentStructureApplicationService applicationService,
             AuditedToolExecutor auditedToolExecutor,
             McpToolErrorMapper errorMapper,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ContractSchemaLoader contracts
     ) {
         this.applicationService = applicationService;
         this.auditedToolExecutor = auditedToolExecutor;
         this.errorMapper = errorMapper;
         this.objectMapper = objectMapper;
+        this.contracts = contracts;
     }
 
     @Override
@@ -44,8 +47,8 @@ public class DocumentStructureToolContributor implements McpToolContributor {
                 .name(TOOL_NAME)
                 .title("Get document structure")
                 .description("Fetch the block structure of a DevCollab document")
-                .inputSchema(McpToolSchemas.documentStructureInput())
-                .outputSchema(McpToolSchemas.documentStructureOutput())
+                .inputSchema(contracts.input(TOOL_NAME))
+                .outputSchema(contracts.output(TOOL_NAME))
                 .annotations(WorkspaceContextToolContributor.readOnlyAnnotations())
                 .build();
                 

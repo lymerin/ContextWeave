@@ -25,17 +25,20 @@ public class BindingListToolContributor implements McpToolContributor {
     private final AuditedToolExecutor auditedToolExecutor;
     private final McpToolErrorMapper errorMapper;
     private final ObjectMapper objectMapper;
+    private final ContractSchemaLoader contracts;
 
     public BindingListToolContributor(
             BindingListApplicationService applicationService,
             AuditedToolExecutor auditedToolExecutor,
             McpToolErrorMapper errorMapper,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ContractSchemaLoader contracts
     ) {
         this.applicationService = applicationService;
         this.auditedToolExecutor = auditedToolExecutor;
         this.errorMapper = errorMapper;
         this.objectMapper = objectMapper;
+        this.contracts = contracts;
     }
 
     @Override
@@ -44,8 +47,8 @@ public class BindingListToolContributor implements McpToolContributor {
                 .name(TOOL_NAME)
                 .title("List file bindings")
                 .description("Fetch document bindings for a repository file")
-                .inputSchema(McpToolSchemas.bindingListInput())
-                .outputSchema(McpToolSchemas.bindingListOutput())
+                .inputSchema(contracts.input(TOOL_NAME))
+                .outputSchema(contracts.output(TOOL_NAME))
                 .annotations(WorkspaceContextToolContributor.readOnlyAnnotations())
                 .build();
                 
