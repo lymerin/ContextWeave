@@ -13,7 +13,6 @@ from app.persistence.job_repository import AgentJobRepository, PostgresAgentJobR
 from app.profiling import MemoryProfileConfig, RuntimeMemoryProfiler
 from app.providers.base import ModelProvider
 from app.providers.deepseek import DeepSeekProvider
-from app.runtime.executor import AgentRunExecutor
 
 
 def create_app(
@@ -51,12 +50,6 @@ def create_app(
             connect_timeout_seconds=configured.agent_model_connect_timeout_seconds,
             request_timeout_seconds=configured.agent_model_request_timeout_seconds,
             thinking=configured.deepseek_thinking,
-        )
-        app.state.run_executor = AgentRunExecutor(
-            app.state.mcp_client,
-            app.state.model_provider,
-            app.state.run_store,
-            configured,
         )
         app.state.job_repository = job_repository or PostgresAgentJobRepository(
             configured.agent_database_url

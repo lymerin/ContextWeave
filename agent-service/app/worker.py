@@ -18,22 +18,34 @@ from app.clients.delegation_client import (
 )
 from app.clients.mcp_client import McpClientError, OfficialMcpClient, ReviewMcpClient
 from app.config import Settings, get_settings
-from app.graph.document_sync_workflow import DocumentSyncWorkflow, ReviewSubmissionError
-from app.graph.state import AgentState
+from app.document_planner.plan_validator import PlanValidationError
+from app.execution.job_executor import JobExecutor
+from app.model_context_mcp.snapshot_store_registry import SnapshotStoreRegistry
 from app.persistence.job_repository import AgentJobRepository, PostgresAgentJobRepository
 from app.planning.deepseek_unit_planner import DeepSeekUnitPlanner
 from app.planning.unit_plan_validator import UnitPlanValidationError
-from app.planning.validator import PlanValidationError
+from app.platform_mcp.binding_reader import BindingReader
+from app.platform_mcp.document_reader import DocumentReader
+from app.platform_mcp.plan_writer import PlanWriter
+from app.platform_mcp.source_reader import SourceReader
+from app.platform_mcp.workspace_reader import WorkspaceReader
 from app.profiling import MemoryProfileConfig, RuntimeMemoryProfiler
 from app.providers.base import ModelProvider, ModelProviderError
 from app.providers.deepseek import DeepSeekProvider
 from app.runtime.delegated_mcp_client import DelegatedMcpClient
-from app.runtime.job_executor import JobExecutionError
+from app.execution.errors import JobExecutionError
 from app.runtime.project_discovery import ProjectDiscoveryService
-from app.runtime.project_unit_context import ProjectUnitContextBuilder
 from app.runtime.semantic_planner import materialize_deepseek_units, overlapping_file_count
+from app.source_selection.file_filter import SourceFileFilter
 
 LOGGER = logging.getLogger("devcollab.agent.worker")
+
+
+class ReviewSubmissionError(RuntimeError):
+    """提交审查请求失败。"""
+    code = "REVIEW_SUBMISSION_FAILED"
+
+
 RETRYABLE_ERRORS = {
     "MODEL_TIMEOUT",
     "MODEL_UNAVAILABLE",
@@ -71,6 +83,7 @@ class AgentWorker:
         )
         self._stopping = asyncio.Event()
         self._memory_profiler = memory_profiler
+        self._registry = SnapshotStoreRegistry()
 
     def stop(self) -> None:
         self._stopping.set()
@@ -127,6 +140,49 @@ class AgentWorker:
             pass
 
     async def _execute(self, unit: dict[str, Any]) -> None:
+        """Execute a single agent unit of work.
+
+        Three unit kinds exist, each triggered by a different user action:
+
+        ┌─────────────────────┬──────────────────────────────────────────┐
+        │ Unit Kind           │ Trigger                                  │
+        ├─────────────────────┼──────────────────────────────────────────┤
+        │ PROJECT_DISCOVERY   │ User registers a git repository.         │
+        │                     │ Scans all files, uses DeepSeek to plan   │
+        │                     │ SEMANTIC_ANALYSIS units.  No document    │
+        │                     │ is produced here—only planning.          │
+        ├─────────────────────┼──────────────────────────────────────────┤
+        │ SEMANTIC_ANALYSIS   │ Created by PROJECT_DISCOVERY above.      │
+        │                     │ DeepSeek already grouped files into a    │
+        │                     │ "semantic module" and associated a       │
+        │                     │ target document, so the unit context     │
+        │                     │ carries both file_paths and document_ids.│
+        │                     │ The workflow analyses the code AND writes │
+        │                     │ the document + bindings in one pass.     │
+        ├─────────────────────┼──────────────────────────────────────────┤
+        │ CURRENT_FILE_ANALYSIS│ User opens a file in the IDE.  Only     │
+        │ (default)           │ scope.filePath is known—NO pre-determined │
+        │                     │ document.  The workflow must DISCOVER    │
+        │                     │ which documents to bind to by querying   │
+        │                     │ existing bindings and document candidates│
+        │                     │ during context gathering (list_existing_ │
+        │                     │ bindings → resolve_documents).           │
+        └─────────────────────┴──────────────────────────────────────────┘
+
+        Why SEMANTIC_ANALYSIS pre-determines the document:
+          During PROJECT_DISCOVERY, DeepSeek groups related files into
+          semantic modules (e.g. "认证模块" containing auth/*.py).
+          Each module is assigned a document that will describe it.
+          This is a PLANNING decision made by the LLM, not the code—
+          the LLM decides what the document boundary should be before
+          the detailed analysis runs.
+
+        Why CURRENT_FILE_ANALYSIS does NOT pre-determine the document:
+          The user just opened a file.  We don't know yet whether this
+          file belongs to an existing document, should create a new one,
+          or has no document-worthy content.  The context-gathering phase
+          (list_existing_bindings, resolve_documents) answers this.
+        """
         job = unit["job"]
         unit_id = UUID(str(unit["id"]))
         job_id = UUID(str(job["id"]))
@@ -153,84 +209,33 @@ class AgentWorker:
                     raise RuntimeError("Agent unit lease was lost")
 
         async def run_workflow() -> dict[str, Any]:
-            workflow = DocumentSyncWorkflow(
-                delegated,
-                self._provider,
-                self._settings,
-                on_status,
-                memory_profiler=self._memory_profiler,
-                profile_context={
-                    "job_id": str(job_id),
-                    "repository_id": str(job["repository_id"]),
-                    "revision": str(job["revision"]),
-                    "unit_id": str(unit_id),
-                },
-            )
             scope = job["scope_payload"]
-            selected_paths: list[str]
-            preferred_document_ids: list[str] = []
-            user_instruction = job.get("user_instruction")
             if unit.get("unit_kind") == "SEMANTIC_ANALYSIS":
                 context = await self._repository.get_unit_context(unit_id)
                 selected_paths = [
                     str(item.get("file_path") or item.get("filePath"))
                     for item in context.get("files", [])
                 ]
-                preferred_document_ids = [
-                    str(item.get("document_id") or item.get("documentId"))
-                    for item in context.get("documents", [])
-                ]
-                unit_instruction = (
-                    f"项目语义模块：{context.get('display_name')}\n"
-                    f"模块职责：{context.get('summary') or ''}"
-                )
-                user_instruction = (
-                    f"{user_instruction}\n{unit_instruction}"
-                    if user_instruction
-                    else unit_instruction
-                )
             else:
                 selected_paths = [str(scope["filePath"])]
-            run_id = f"job-{job_id}-unit-{unit_id}"
-            initial_state: AgentState = {
-                "run_id": run_id,
-                "workspace_id": str(job["workspace_id"]),
-                "repository_id": str(job["repository_id"]),
-                "revision": str(job["revision"]),
-                "selected_paths": selected_paths,
-                "preferred_document_ids": preferred_document_ids,
-                "user_instruction": user_instruction,
-                "authorization": "delegated",
-                "tool_call_count": 0,
-                "code_chars_used": 0,
-                "trace_events": [],
-                "errors": [],
-            }
-            if unit.get("unit_kind") == "SEMANTIC_ANALYSIS":
-                with self._profile_stage(
-                    "CANDIDATE_BUILD", job, job_id, unit_id
-                ) as candidate_stage:
-                    initial_state = await ProjectUnitContextBuilder(
-                        delegated, self._settings
-                    ).build(
-                        run_id=run_id,
-                        workspace_id=str(job["workspace_id"]),
-                        repository_id=str(job["repository_id"]),
-                        revision=str(job["revision"]),
-                        selected_paths=selected_paths,
-                        preferred_document_ids=preferred_document_ids,
-                        user_instruction=user_instruction,
-                    )
-                    candidate_stage.attribute("fileCount", len(selected_paths))
-                    candidate_stage.attribute(
-                        "documentCount", len(preferred_document_ids)
-                    )
-                with self._profile_stage(
-                    "UNIT_EXECUTION", job, job_id, unit_id
-                ):
-                    return await workflow.execute_context_bundle(initial_state)
+
+            executor = JobExecutor(
+                workspace_reader=WorkspaceReader(delegated),
+                source_reader=SourceReader(delegated),
+                document_reader=DocumentReader(delegated),
+                binding_reader=BindingReader(delegated),
+                plan_writer=PlanWriter(delegated),
+                file_filter=SourceFileFilter(),
+                registry=self._registry,
+                provider=self._provider,
+            )
             with self._profile_stage("UNIT_EXECUTION", job, job_id, unit_id):
-                return await workflow.graph.ainvoke(initial_state)
+                return await executor.execute(
+                    workspace_id=UUID(str(job["workspace_id"])),
+                    repository_id=UUID(str(job["repository_id"])),
+                    revision=str(job["revision"]),
+                    selected_paths=selected_paths,
+                )
 
         async def run_project_discovery() -> None:
             async def on_phase(phase: str) -> None:

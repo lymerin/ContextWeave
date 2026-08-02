@@ -1,4 +1,3 @@
-from app.planning.context_serializer import build_model_context
-from app.planning.validator import AgentPlanValidator, PlanValidationError
-
-__all__ = ["AgentPlanValidator", "PlanValidationError", "build_model_context"]
+# planning/ — 保留 DeepSeek 单元规划（PROJECT_DISCOVERY 阶段）。
+# 旧的绑定管线（binding_candidates / document_block_plans / program_document_plan / validator）
+# 已迁移到 source_analysis/ + document_planner/ + semantic/。

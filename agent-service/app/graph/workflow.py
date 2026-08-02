@@ -4,10 +4,61 @@ from langgraph.graph import END, START, StateGraph
 
 from app.clients.mcp_client import ReadOnlyMcpClient
 from app.config import Settings
-from app.context.budget import reserve_tool_call
-from app.context.builder import build_bundle
 from app.graph.state import AgentState
 from app.tracing.trace_logger import traced
+
+
+# ── 原 context/ 模块的内联（该目录已删除）──────────────────────────
+
+class BudgetExceededError(RuntimeError):
+    pass
+
+
+class ToolCallLimitExceededError(BudgetExceededError):
+    pass
+
+
+def __reserve_tool_call(current: int, maximum: int) -> int:
+    if current >= maximum:
+        raise ToolCallLimitExceededError("MCP tool call limit exceeded")
+    return current + 1
+
+
+def __build_bundle(state: dict[str, Any]) -> dict[str, Any]:
+    workspace_context = state["workspace_context"]
+    repository_id = state["repository_id"]
+    repository: dict[str, Any] = next(
+        (i for i in workspace_context.get("repositories", [])
+         if i.get("repositoryId") == repository_id), {})
+    bound_ids = set(state.get("bound_document_ids", []))
+    documents = [
+        {"source": "BOUND" if s.get("documentId") in bound_ids else "CANDIDATE",
+         "documentId": s["documentId"], "structure": s}
+        for s in state.get("document_structures", [])
+    ]
+    return {
+        "runId": state["run_id"],
+        "workspace": {
+            "workspaceId": state["workspace_id"],
+            "repositoryId": repository_id,
+            "repositoryName": repository.get("name"),
+            "defaultBranch": repository.get("defaultBranch"),
+            "revision": state.get("revision") or repository.get("lastSyncedCommit"),
+        },
+        "task": {
+            "selectedPaths": state["selected_paths"],
+            "userInstruction": state.get("user_instruction"),
+        },
+        "codeFiles": state.get("code_files", []),
+        "existingBindings": state.get("bindings", []),
+        "documents": documents,
+        "budget": {
+            "toolCallsUsed": state.get("tool_call_count", 0),
+            "codeCharsUsed": state.get("code_chars_used", 0),
+            "truncatedFiles": state.get("truncated_files", []),
+            "skippedDocumentIds": state.get("skipped_document_ids", []),
+        },
+    }
 
 WORKSPACE_TOOL = "devcollab.workspace.get_context"
 CODE_TOOL = "devcollab.code.read"
@@ -43,7 +94,7 @@ class ContextWorkflow:
         tool: str,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
-        state["tool_call_count"] = reserve_tool_call(
+        state["tool_call_count"] = _reserve_tool_call(
             state.get("tool_call_count", 0),
             self._settings.agent_max_tool_calls,
         )
@@ -210,4 +261,4 @@ class ContextWorkflow:
         }
 
     async def build_context_bundle(self, state: AgentState) -> dict[str, Any]:
-        return {"context_bundle": build_bundle(cast(dict[str, Any], state))}
+        return {"context_bundle": _build_bundle(cast(dict[str, Any], state))}

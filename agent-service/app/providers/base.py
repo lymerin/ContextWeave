@@ -1,10 +1,7 @@
+"""ModelProvider 协议——所有 DeepSeek 调用的接口。"""
+
 from typing import Any, Protocol
 
-from app.schemas.binding_plans import BindingPlan
-from app.schemas.document_block_content import (
-    DocumentBlockContent,
-    DocumentBlockContentPlan,
-)
 from app.schemas.plans import AgentPlan
 from app.schemas.unit_plans import UnitPlan
 
@@ -25,26 +22,7 @@ class ModelProviderError(RuntimeError):
 
 
 class ModelProvider(Protocol):
-    async def generate_document_blocks(
-        self,
-        context: dict[str, Any],
-    ) -> DocumentBlockContentPlan: ...
-
-    async def repair_document_block(
-        self,
-        context: dict[str, Any],
-        *,
-        previous_block: dict[str, Any],
-        validation_errors: list[dict[str, str]],
-    ) -> DocumentBlockContent: ...
-
-    async def plan_document_sync(
-        self,
-        context_bundle: dict[str, Any],
-        *,
-        previous_plan: dict[str, Any] | None = None,
-        validation_errors: list[dict[str, str]] | None = None,
-    ) -> AgentPlan: ...
+    # ── PROJECT_DISCOVERY（保留）───────────────────────────────────
 
     async def plan_project_units(
         self,
@@ -54,10 +32,10 @@ class ModelProvider(Protocol):
         validation_errors: list[dict[str, str]] | None = None,
     ) -> UnitPlan: ...
 
-    async def plan_block_bindings(
+    # ── 新语义分析（新管线）───────────────────────────────────────
+
+    async def analyze_semantics(
         self,
-        candidates: dict[str, Any],
-        *,
-        previous_plan: dict[str, Any] | None = None,
-        validation_errors: list[dict[str, str]] | None = None,
-    ) -> BindingPlan: ...
+        request: Any,
+        tool_handler: Any,
+    ) -> Any: ...

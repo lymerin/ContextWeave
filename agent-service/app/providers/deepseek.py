@@ -7,16 +7,104 @@ import httpx
 from pydantic import ValidationError
 
 from app.providers.base import ModelProviderError
-from app.schemas.binding_plans import BindingPlan
-from app.schemas.document_block_content import (
-    DocumentBlockContent,
-    DocumentBlockContentPlan,
-)
-from app.schemas.plans import AgentPlan
 from app.schemas.unit_plans import UnitPlan
 
 LOGGER = logging.getLogger("devcollab.agent.deepseek")
+# ── 语义分析 System Prompt ───────────────────────────────────────────
 
+_SEMANTIC_SYSTEM_PROMPT = """\
+你是 DevCollab 的语义分析器。你会收到一个代码上下文快照的引用信息。
+
+你必须通过工具调用按顺序读取:
+1. get_context_overview — 了解代码范围
+2. get_structure_block — 读取全部结构块（主要阅读单位）
+3. get_atom_detail / trace_structure_path / search_context_symbols — 按需深入
+
+读取完全部结构块后，输出 SemanticAnalysisResult JSON。
+
+规则:
+- 所有引用使用 atom_id，不自行填写 file_path 或行号
+- primary_atom_ids 非空且是 informed_by_atom_ids 的子集
+- 将紧密相关的符号（路由+请求模型+业务方法）合并为一个 semantic_group
+- evidence_refs 中的 atom_id / relation_id / source_chunk_id 必须是你实际读取到的
+"""
+
+# ── 上下文 MCP 工具定义 ──────────────────────────────────────────────
+
+_SEMANTIC_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_context_overview",
+            "description": "获取上下文快照的总览：入口、原子数、结构块目录。第一步必须调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {"context_id": {"type": "string"}},
+                "required": ["context_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_structure_block",
+            "description": "读取一个结构块的完整内容：源码、原子列表、跨块关系。主要阅读单位。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "context_id": {"type": "string"},
+                    "block_id": {"type": "string"},
+                },
+                "required": ["context_id", "block_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_atom_detail",
+            "description": "读取一个原子的详细信息：完整源码、入边、出边。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "context_id": {"type": "string"},
+                    "symbol_key": {"type": "string"},
+                },
+                "required": ["context_id", "symbol_key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "trace_structure_path",
+            "description": "追踪从入口到目标原子的结构路径。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "context_id": {"type": "string"},
+                    "entry_label": {"type": "string"},
+                },
+                "required": ["context_id", "entry_label"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_context_symbols",
+            "description": "在当前快照内按名称搜索符号。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "context_id": {"type": "string"},
+                    "query": {"type": "string"},
+                },
+                "required": ["context_id", "query"],
+            },
+        },
+    },
+]
 
 class DeepSeekProvider:
     def __init__(
@@ -43,132 +131,14 @@ class DeepSeekProvider:
             connect=connect_timeout_seconds,
         )
         self._transport = transport
-        self._system_prompt = (
-            files("app.prompts").joinpath("document_sync_v1.md").read_text(encoding="utf-8")
-        )
         self._unit_planning_prompt = (
             files("app.prompts")
             .joinpath("project_unit_planning_v1.md")
             .read_text(encoding="utf-8")
         )
-        self._block_binding_prompt = (
-            files("app.prompts").joinpath("block_binding_v1.md").read_text(encoding="utf-8")
-        )
-        self._document_block_content_prompt = (
-            files("app.prompts")
-            .joinpath("document_block_content_v1.md")
-            .read_text(encoding="utf-8")
-        )
 
-    async def generate_document_blocks(
-        self,
-        context: dict[str, Any],
-    ) -> DocumentBlockContentPlan:
-        self._require_configuration()
-        return cast(
-            DocumentBlockContentPlan,
-            await self._request_structured(
-                system_prompt=self._document_block_content_prompt,
-                user_payload={
-                    "documentBlockContentPlanSchema": (
-                        DocumentBlockContentPlan.model_json_schema()
-                    ),
-                    "context": context,
-                },
-                schema=DocumentBlockContentPlan,
-                response_name="DocumentBlockContentPlan",
-            ),
-        )
 
-    async def repair_document_block(
-        self,
-        context: dict[str, Any],
-        *,
-        previous_block: dict[str, Any],
-        validation_errors: list[dict[str, str]],
-    ) -> DocumentBlockContent:
-        self._require_configuration()
-        return cast(
-            DocumentBlockContent,
-            await self._request_structured(
-                system_prompt=self._document_block_content_prompt,
-                user_payload={
-                    "documentBlockContentSchema": DocumentBlockContent.model_json_schema(),
-                    "context": context,
-                    "repair": {
-                        "previousBlock": previous_block,
-                        "validationErrors": validation_errors,
-                        "instruction": (
-                            "只重写当前 blockKey 的正文和合法 SUPPORTING 选择一次。"
-                            "不得返回其他 Block，不得修改程序拥有的结构或 PRIMARY。"
-                        ),
-                    },
-                },
-                schema=DocumentBlockContent,
-                response_name="DocumentBlockContent",
-            ),
-        )
-
-    async def plan_document_sync(
-        self,
-        context_bundle: dict[str, Any],
-        *,
-        previous_plan: dict[str, Any] | None = None,
-        validation_errors: list[dict[str, str]] | None = None,
-    ) -> AgentPlan:
-        self._require_configuration()
-        user_payload: dict[str, Any] = {
-            "agentPlanSchema": AgentPlan.model_json_schema(),
-            "context": context_bundle,
-        }
-        if previous_plan is not None:
-            block_constraints = [
-                {
-                    "blockKey": item.get("blockKey"),
-                    "targetKind": item.get("targetKind"),
-                    "sortOrder": item.get("sortOrder"),
-                    "allowedPrimaryCandidateIds": item.get("primaryCandidateIds", []),
-                    "allowedSupportingCandidateIds": item.get(
-                        "supportingCandidateIds", []
-                    ),
-                    "requiredCandidateIds": item.get("requiredCandidateIds", []),
-                    "allowedClaims": item.get("allowedClaims", []),
-                    "forbiddenClaims": item.get("forbiddenClaims", []),
-                }
-                for item in context_bundle.get("documentBlockPlans", [])
-            ]
-            user_payload["repair"] = {
-                "previousPlan": previous_plan,
-                "validationErrors": validation_errors or [],
-                "documentBlockConstraints": block_constraints,
-                "invalidFieldPaths": sorted(
-                    {
-                        item.get("path", "$")
-                        for item in validation_errors or []
-                    }
-                ),
-                "instruction": (
-                    "这是受约束修复，不是重新规划。保留未被 validationErrors 指出的有效字段，"
-                    "只修正错误字段及其直接依赖字段。documentBlockConstraints 中每个 blockKey "
-                    "必须原样且恰好出现一次，不得新增、删除、合并、改名或重排 Block；"
-                    "targetKind、候选集合和 requiredCandidateIds 均不可修改。"
-                    "正文只能陈述所选源码能够直接证明的职责；遇到 UNSUPPORTED_EXTERNAL_RELATION 或 "
-                    "UNSUPPORTED_INFERRED_SEMANTICS 时，只重写对应 operation，删除无法由源码"
-                    "直接证明的外部组件、业务含义、约束和保证。严格遵守每个 Block 的 "
-                    "allowedClaims 与 forbiddenClaims。直接返回修正后的完整 AgentPlan JSON；"
-                    "bindingProposals 必须为空。正式标题和正文必须"
-                    "是可发布的简体中文最终内容，不要解释错误原因，不要输出建议、计划或占位文字。"
-                ),
-            }
-        return cast(
-            AgentPlan,
-            await self._request_structured(
-            system_prompt=self._system_prompt,
-            user_payload=user_payload,
-            schema=AgentPlan,
-            response_name="AgentPlan",
-            ),
-        )
+    # ── PROJECT_DISCOVERY（保留）───────────────────────────────────
 
     async def plan_project_units(
         self,
@@ -190,103 +160,31 @@ class DeepSeekProvider:
             }
         return cast(
             UnitPlan,
-            await self._request_structured(
-            system_prompt=self._unit_planning_prompt,
-            user_payload=user_payload,
-            schema=UnitPlan,
-            response_name="UnitPlan",
-            ),
-        )
-
-    async def plan_block_bindings(
-        self,
-        candidates: dict[str, Any],
-        *,
-        previous_plan: dict[str, Any] | None = None,
-        validation_errors: list[dict[str, str]] | None = None,
-    ) -> BindingPlan:
-        self._require_configuration()
-        user_payload: dict[str, Any] = {
-            "bindingPlanSchema": BindingPlan.model_json_schema(),
-            **candidates,
-        }
-        if previous_plan is not None:
-            user_payload["repair"] = {
-                "previousPlan": previous_plan,
-                "validationErrors": validation_errors or [],
-                "instruction": (
-                    "只使用输入中现有候选 ID，返回修正后的完整 BindingPlan JSON。"
-                    "不得新增路径、UUID、symbol 或行号。"
-                ),
-            }
-        attempt = 2 if previous_plan is not None else 1
-        code_count = len(candidates.get("codeCandidates", []))
-        document_count = len(candidates.get("documentAnchorCandidates", []))
-        LOGGER.info(
-            "provider=deepseek model=%s operation=block_binding attempt=%s "
-            "codeCandidates=%s documentCandidates=%s",
-            self._model,
-            attempt,
-            code_count,
-            document_count,
-        )
-        result = cast(
-            BindingPlan,
-            await self._request_structured(
-                system_prompt=self._block_binding_prompt,
+            await self._request_unit_plan(
+                system_prompt=self._unit_planning_prompt,
                 user_payload=user_payload,
-                schema=BindingPlan,
-                response_name="BindingPlan",
             ),
         )
-        LOGGER.info(
-            "provider=deepseek model=%s operation=block_binding attempt=%s "
-            "validation=success selections=%s",
-            self._model,
-            attempt,
-            len(result.selections),
-        )
-        return result
 
-    async def _request_structured(
+    async def _request_unit_plan(
         self,
         *,
         system_prompt: str,
         user_payload: dict[str, Any],
-        schema: (
-            type[AgentPlan]
-            | type[UnitPlan]
-            | type[BindingPlan]
-            | type[DocumentBlockContentPlan]
-            | type[DocumentBlockContent]
-        ),
-        response_name: str,
-    ) -> (
-        AgentPlan
-        | UnitPlan
-        | BindingPlan
-        | DocumentBlockContentPlan
-        | DocumentBlockContent
-    ):
+    ) -> UnitPlan:
         body: dict[str, Any] = {
             "model": self._model,
             "temperature": 0,
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system_prompt},
-                {
-                    "role": "user",
-                    "content": json.dumps(user_payload, ensure_ascii=False, separators=(",", ":")),
-                },
+                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))},
             ],
         }
         if self._thinking:
             body["thinking"] = {"type": "enabled"}
         try:
-            async with httpx.AsyncClient(
-                timeout=self._timeout,
-                transport=self._transport,
-            ) as client:
+            async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
                 response = await client.post(
                     f"{self._base_url}/chat/completions",
                     headers={"Authorization": f"Bearer {self._api_key}"},
@@ -296,7 +194,6 @@ class DeepSeekProvider:
             raise ModelProviderError("MODEL_TIMEOUT", "Model request timed out") from exc
         except httpx.HTTPError as exc:
             raise ModelProviderError("MODEL_UNAVAILABLE", "Model request failed") from exc
-
         if response.status_code == 429:
             raise ModelProviderError("MODEL_RATE_LIMITED", "Model rate limit exceeded")
         if response.status_code >= 500:
@@ -306,56 +203,117 @@ class DeepSeekProvider:
         raw_plan: dict[str, Any] | None = None
         try:
             response_json = response.json()
-            usage = response_json.get("usage")
-            if isinstance(usage, dict):
-                LOGGER.info(
-                    "provider=deepseek model=%s response=%s "
-                    "promptTokens=%s completionTokens=%s totalTokens=%s",
-                    self._model,
-                    response_name,
-                    usage.get("prompt_tokens"),
-                    usage.get("completion_tokens"),
-                    usage.get("total_tokens"),
-                )
             content = response_json["choices"][0]["message"]["content"]
             decoded = json.loads(content)
             if not isinstance(decoded, dict):
-                raise TypeError("AgentPlan must be an object")
+                raise TypeError("UnitPlan must be an object")
             raw_plan = decoded
-            return schema.model_validate(raw_plan)
+            return UnitPlan.model_validate(raw_plan)
         except ValidationError as exc:
             validation_errors = [
-                {
-                    "path": ".".join(str(part) for part in item["loc"]) or "$",
-                    "code": f"MODEL_SCHEMA_{str(item['type']).upper()}",
-                    "message": str(item["msg"])[:300],
-                }
-                for item in exc.errors(include_url=False)
+                {"path": ".".join(str(p) for p in e["loc"]) or "$",
+                 "code": f"MODEL_SCHEMA_{str(e['type']).upper()}",
+                 "message": str(e["msg"])[:300]}
+                for e in exc.errors(include_url=False)
             ]
-            raise ModelProviderError(
-                "MODEL_INVALID_RESPONSE",
-                f"Model returned an invalid {response_name}",
-                raw_plan=raw_plan,
-                validation_errors=validation_errors,
-            ) from exc
+            raise ModelProviderError("MODEL_INVALID_RESPONSE", "Model returned an invalid UnitPlan", raw_plan=raw_plan, validation_errors=validation_errors) from exc
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            error_code = (
-                "MODEL_JSON_DECODE_ERROR"
-                if isinstance(exc, json.JSONDecodeError)
-                else "MODEL_RESPONSE_CONTENT_INVALID"
-            )
-            raise ModelProviderError(
-                "MODEL_INVALID_RESPONSE",
-                f"Model returned an invalid {response_name}",
-                raw_plan=raw_plan,
-                validation_errors=[
-                    {
-                        "path": "$",
-                        "code": error_code,
-                        "message": f"Model response could not be parsed as {response_name}",
-                    }
-                ],
-            ) from exc
+            code = "MODEL_JSON_DECODE_ERROR" if isinstance(exc, json.JSONDecodeError) else "MODEL_RESPONSE_CONTENT_INVALID"
+            raise ModelProviderError("MODEL_INVALID_RESPONSE", "Model response could not be parsed as UnitPlan", raw_plan=raw_plan, validation_errors=[{"path": "$", "code": code, "message": "Model response could not be parsed as UnitPlan"}]) from exc
+
+    async def analyze_semantics(
+        self,
+        request: Any,
+        tool_handler: Any,
+    ) -> Any:
+        """运行语义分析会话: 发送请求 → 处理工具调用 → 返回结果。
+
+        tool_handler 接收 (tool_name, arguments) → 返回工具结果字典。
+        自动处理工具调用循环，直到模型输出最终内容。
+        """
+        from app.schemas.semantic.analysis_result import SemanticAnalysisResult
+
+        self._require_configuration()
+        system_prompt = _SEMANTIC_SYSTEM_PROMPT
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": request.model_dump_json()},
+        ]
+        tools = _SEMANTIC_TOOLS
+
+        max_turns = 20
+        for _turn in range(max_turns):
+            body: dict[str, Any] = {
+                "model": self._model,
+                "temperature": 0,
+                "messages": messages,
+                "tools": tools,
+            }
+            if self._thinking:
+                body["thinking"] = {"type": "enabled"}
+
+            try:
+                async with httpx.AsyncClient(
+                    timeout=self._timeout,
+                    transport=self._transport,
+                ) as client:
+                    response = await client.post(
+                        f"{self._base_url}/chat/completions",
+                        headers={"Authorization": f"Bearer {self._api_key}"},
+                        json=body,
+                    )
+            except httpx.TimeoutException as exc:
+                raise ModelProviderError("MODEL_TIMEOUT", "Semantic analysis timed out") from exc
+            except httpx.HTTPError as exc:
+                raise ModelProviderError("MODEL_UNAVAILABLE", "Semantic analysis request failed") from exc
+
+            if response.status_code >= 400:
+                raise ModelProviderError("MODEL_UNAVAILABLE", f"Model returned {response.status_code}")
+
+            msg = response.json()
+            choice = msg.get("choices", [{}])[0]
+            message = choice.get("message", {})
+
+            # 检查 tool_calls
+            tool_calls = message.get("tool_calls") or []
+            if tool_calls:
+                messages.append(message)
+                for tc in tool_calls:
+                    func = tc.get("function", {})
+                    tool_name = func.get("name", "")
+                    try:
+                        arguments = json.loads(func.get("arguments", "{}"))
+                    except json.JSONDecodeError:
+                        arguments = {}
+                    result = tool_handler(tool_name, arguments)
+                    if hasattr(result, '__await__'):
+                        result = await result
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", ""),
+                        "content": json.dumps(result, ensure_ascii=False),
+                    })
+                continue
+
+            # 最终输出
+            content = message.get("content", "")
+            if not content:
+                raise ModelProviderError(
+                    "MODEL_INVALID_RESPONSE",
+                    "Empty model response",
+                )
+            try:
+                return SemanticAnalysisResult.model_validate_json(content)
+            except Exception as exc:
+                raise ModelProviderError(
+                    "MODEL_INVALID_RESPONSE",
+                    f"Could not parse SemanticAnalysisResult: {exc}",
+                ) from exc
+
+        raise ModelProviderError(
+            "MODEL_INVALID_RESPONSE",
+            f"Exceeded {max_turns} tool-calling turns",
+        )
 
     def _require_configuration(self) -> None:
         if not self._api_key or not self._base_url or not self._model:
