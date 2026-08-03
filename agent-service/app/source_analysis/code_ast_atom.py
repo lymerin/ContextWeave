@@ -16,7 +16,7 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from app.schemas.ast_atom import AtomCatalog, ModuleAtom, SymbolAtom, SymbolKind
-from app.schemas.source_file import SourceFileBatch
+from app.schemas.source_file import SourceFileBatch, SourceFileRef
 
 
 # ── 常量 ────────────────────────────────────────────────────────────────────
@@ -44,7 +44,7 @@ def parse_batch(
         source = source_reader(ref.file_path)
         if source is None:
             continue
-        language = (ref.language or "").lower()
+        language = (_language(ref) or "").lower()
         if language == "python":
             module, file_symbols = _parse_python(
                 str(batch.repository_id),
@@ -77,6 +77,22 @@ def parse_batch(
     )
 
 
+_EXT_LANG: dict[str, str] = {
+    ".py": "Python",
+}
+
+def _language(ref: "SourceFileRef") -> str:
+    """取语言标识——MCP code.read 的 language 字段可能为 null。
+    若缺失则从文件扩展名回退推断。
+    """
+    if ref.language:
+        return ref.language
+    path = ref.file_path.lower()
+    for ext, lang in _EXT_LANG.items():
+        if path.endswith(ext):
+            return lang
+    return ""
+
 # Python helper for extracting file_path from a symbol.
 # (SymbolAtom doesn't carry file_path directly; it's embedded in symbol_key.)
 def _symbol_file(s: SymbolAtom) -> str:
@@ -102,19 +118,31 @@ def _parse_python(
     lines = source.splitlines()
     line_count = max(1, len(lines))
 
+    import logging as _logging
+
+    _logger = _logging.getLogger("devcollab.agent.code_atom")
     try:
         tree = ast.parse(source, filename=normalized)
     except (SyntaxError, ValueError):
-        return (
-            ModuleAtom(
-                atom_id="",
-                file_path=normalized,
-                language="Python",
-                start_line=1,
-                end_line=line_count,
-            ),
-            (),
-        )
+        if len(source) < 500:
+            _logger.warning("Cannot parse %s (%s chars): too short or invalid", normalized, len(source))
+            return (ModuleAtom(atom_id="", file_path=normalized, language="Python", start_line=1, end_line=line_count), ())
+        # MCP code.read 可能截断返回值导致语法不完整。
+        # 逐行削去尾部再尝试解析，直到成功或剩余过少。
+        lines = source.splitlines()
+        for cut in range(1, min(len(lines), 100)):
+            stripped = "\n".join(lines[:-cut]) if cut < len(lines) else ""
+            if not stripped.strip():
+                continue
+            try:
+                tree = ast.parse(stripped, filename=normalized)
+                _logger.info("Best-effort parse succeeded for %s after stripping %s trailing lines", normalized, cut)
+                break
+            except (SyntaxError, ValueError):
+                continue
+        else:
+            _logger.warning("Cannot parse %s (%s chars): truncated or invalid syntax after stripping up to 50 lines", normalized, len(source))
+            return (ModuleAtom(atom_id="", file_path=normalized, language="Python", start_line=1, end_line=line_count), ())
 
     module_doc = ast.get_docstring(tree)
     module = ModuleAtom(

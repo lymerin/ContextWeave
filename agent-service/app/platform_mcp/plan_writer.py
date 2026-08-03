@@ -96,17 +96,21 @@ class PlanWriter:
 
         mcp_payload["bindingProposals"] = proposals
 
-        # evidence
+        # evidence —— 每个 binding 是它所属 block 的一条证据，不排列组合。
+        # binding.created_block_operation_id 已编码归属关系，一对一映射，
+        # 而非 operation × section × binding 笛卡尔积。
         mcp_payload["evidence"] = [
             {
-                "clientOperationId": op.client_operation_id,
+                "clientOperationId": (
+                    binding.created_block_operation_id
+                    or binding.created_document_op_id or ""
+                ),
                 "repositoryId": repository_id,
                 "filePath": binding.file_path,
                 "startLine": binding.start_line,
-                "endLine": binding.end_line,
+                "endLine": binding.start_line,  # 只指起始行，避免截断解析行号越界
                 "description": f"语义分析证据: {plan.summary}",
             }
-            for op in plan.document_operations
             for bs in plan.section_binding_sets
             for binding in bs.bindings
         ]
