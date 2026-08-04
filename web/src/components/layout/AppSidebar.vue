@@ -22,7 +22,7 @@
         :drift-count="driftCount"
         :review-status="reviewStatus"
         :review-status-counts="reviewStatusCounts"
-        @open-workspace="emit('open-workspace')"
+        @open-workspace="navigateToWorkspaceList"
         @open-linked="emit('open-linked')"
         @open-review="emit('open-review')"
         @open-review-status="emit('open-review-status', $event)"
@@ -31,10 +31,6 @@
       <div v-if="!modelValue" class="linked-context-scroller">
         <slot name="workspace-panel" />
       </div>
-      <aside v-if="!modelValue" class="linked-sync-card">
-        <strong>联动同步已开启</strong>
-        <p>点击代码或文档 Block，另一侧会自动定位并高亮对应内容。</p>
-      </aside>
     </template>
 
     <div v-else class="sidebar-content">
@@ -195,7 +191,6 @@ const emit = defineEmits<{
   'move-root': [node: FlatDocumentTreeNode];
   delete: [node: FlatDocumentTreeNode];
   'open-linked': [];
-  'open-workspace': [];
   'open-review': [];
   'open-review-status': [status: 'pending' | 'applied' | 'rejected' | 'stale'];
   'open-drift': [];
@@ -234,6 +229,10 @@ function toggle() {
 }
 
 function openHome() {
+  void router.push('/workspaces');
+}
+
+function navigateToWorkspaceList() {
   void router.push('/workspaces');
 }
 

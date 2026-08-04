@@ -39,7 +39,7 @@ describe('linked workbench interactions', () => {
       props: {
         workspaceId: 'w', repositoryId: 'r',
         mode: 'LINKED', inspectorOpen: false, sourceContent: '', sourcePath: '', anchors, links,
-        issues: [], activeLinkId: null, document: null, activeBlockId: null, readonly: false,
+        issues: [], activeLinkId: null, document: null, activeBlockId: null, unboundBlockId: null, readonly: false,
         activeLink: null, activeAnchor: null, activeBlock: null, activeIssue: null, activeEvidence: [], versions: [],
       },
       global: { stubs: { LinkedWorkbenchCanvas: true, LinkedInspector: true } },

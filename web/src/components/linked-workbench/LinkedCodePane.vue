@@ -27,9 +27,6 @@
         >
           {{ isAgentRunning ? agentStatusLabel : 'Agent 检查' }}
         </el-button>
-        <el-tag v-if="activeAnchor" size="small" effect="plain">
-          {{ activeAnchorLabel }}
-        </el-tag>
         <el-tag v-if="rangeWarning" size="small" type="warning" effect="plain">
           {{ rangeWarning }}
         </el-tag>
@@ -169,23 +166,6 @@ const rangePresentation = computed(() => buildCodeRangePresentation({
   links: props.links,
   activeLinkId: props.activeLinkId,
 }));
-const activeAnchorLabel = computed(() => {
-  const anchor = activeAnchor.value;
-  if (!anchor) return '';
-  if (activeLink.value?.bindingDisplayState === 'weak') {
-    if (anchor.anchorKind === 'SYMBOL') return '符号关联（无行范围）';
-    if (activeLink.value.blockId) return '文件 → 段落';
-    return '文件 → 文档';
-  }
-  if (hasLineRange(anchor)) {
-    const symbol = anchor.anchorKind === 'SYMBOL' && anchor.symbolName
-      ? `${anchor.symbolName} · `
-      : '';
-    return `${symbol}L${anchor.startLine}–${anchor.endLine}`;
-  }
-  if (anchor.anchorKind === 'SYMBOL') return anchor.symbolName || '符号级关联';
-  return anchor.revision === null ? '旧文件级 Binding' : '文件级关联';
-});
 const rangeWarning = computed(() => {
   const anchor = activeAnchor.value;
   if (!anchor || anchor.startLine === null || anchor.endLine === null) return '';
@@ -323,9 +303,18 @@ function lineClass(line: number) {
   };
 }
 
+function readCodeMetrics(): { lineHeight: number; paddingTop: number } {
+  const root = scrollRoot.value;
+  if (!root) return { lineHeight: 25, paddingTop: 8 };
+  const style = getComputedStyle(root);
+  return {
+    lineHeight: parseFloat(style.getPropertyValue('--code-line-height')) || 25,
+    paddingTop: parseFloat(style.getPropertyValue('--code-lines-padding-top')) || 8,
+  };
+}
+
 function rangeStyle(range: CodeRangeOverlay): CSSProperties {
-  const lineHeight = 25;
-  const paddingTop = 8;
+  const { lineHeight, paddingTop } = readCodeMetrics();
   return {
     left: `${horizontalScroll.value}px`,
     width: codeViewportWidth.value > 0 ? `${codeViewportWidth.value}px` : '100%',
@@ -428,10 +417,6 @@ function focusAnchor(anchorId: string) {
   lineElements.get(clampedLine)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-function hasLineRange(anchor: CodeAnchor) {
-  return anchor.startLine !== null && anchor.endLine !== null;
-}
-
 defineExpose({ focusAnchor });
 </script>
 
@@ -445,12 +430,12 @@ defineExpose({ focusAnchor });
 .linked-pane-header span { color: #667085; font-size: 11px; }
 .agent-dialog-content { display: grid; gap: 14px; }
 .agent-dialog-content p { overflow-wrap: anywhere; margin: 0; color: #475467; }
-.code-lines { position: relative; min-width: 0; overflow: auto; padding: 8px 0 24px; background: #fbfcfe; }
+.code-lines { --code-line-height: 25px; --code-lines-padding-top: 8px; position: relative; min-width: 0; overflow: auto; padding: var(--code-lines-padding-top) 0 24px; background: #fbfcfe; }
 .code-range-overlay { position: absolute; z-index: 0; pointer-events: none; border-radius: 5px; }
 .code-range-overlay.is-linked { border-left: 2px solid #c3cff0; background: rgba(231, 236, 247, .58); }
 .code-range-overlay.is-active { z-index: 1; border: 1px solid rgba(21, 94, 239, .2); border-left: 3px solid #155eef; background: rgba(223, 234, 255, .82); box-shadow: 0 1px 2px rgba(21, 94, 239, .08); }
 .code-range-overlay.is-drifted { border-left-color: #d97706; }
-.code-line { position: relative; z-index: 2; display: grid; width: 100%; min-width: max-content; min-height: 25px; grid-template-columns: 50px 24px minmax(0, 1fr); border: 0; padding: 0 16px 0 0; background: transparent; color: #344054; text-align: left; cursor: default; }
+.code-line { position: relative; z-index: 2; display: grid; width: 100%; min-width: max-content; min-height: var(--code-line-height); grid-template-columns: 50px 24px minmax(0, 1fr); border: 0; padding: 0 16px 0 0; background: transparent; color: #344054; text-align: left; cursor: default; }
 .code-line code { min-height: 25px; font: 14px/25px 'Cascadia Code', Consolas, 'JetBrains Mono', monospace; white-space: pre; }
 .line-number { padding-right: 10px; color: #98a2b3; font: 12px/25px 'Cascadia Code', Consolas, monospace; text-align: right; user-select: none; }
 .line-marker { color: #528bff; font: 700 12px/25px sans-serif; text-align: center; }

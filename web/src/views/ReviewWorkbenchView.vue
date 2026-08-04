@@ -10,30 +10,11 @@
       :review-status="routeStatus"
       :review-status-counts="statusCounts"
       :drift-count="0"
-      @open-workspace="openLinkedWorkbench"
       @open-linked="openLinkedWorkbench"
       @open-review="openStatus('pending')"
       @open-review-status="openStatus"
       @open-drift="openLinkedWorkbench"
     >
-      <template #workspace-panel>
-        <LinkedRepositoryContext
-          :repositories="repositories"
-          :repository-id="selectedRepositoryId"
-          :file-tree="fileTree"
-          :files-count="files.length"
-          :selected-file-path="selectedFilePath"
-          :documents="[]"
-          selected-document-id=""
-          :active-anchor="null"
-          :loading="repositoryLoading"
-          :show-documents="false"
-          :show-summary="false"
-          @select-repository="selectRepository"
-          @select-file="selectRepositoryFile"
-          @select-document="() => undefined"
-        />
-      </template>
     </AppSidebar>
 
     <section class="review-page-main">
@@ -332,7 +313,6 @@ import {
 } from '@/api/git';
 import { getWorkspace, type Workspace } from '@/api/workspace';
 import AppSidebar from '@/components/layout/AppSidebar.vue';
-import LinkedRepositoryContext from '@/components/linked-workbench/LinkedRepositoryContext.vue';
 import ReviewCodeEvidencePane from '@/components/review/ReviewCodeEvidencePane.vue';
 import ReviewDocumentPane from '@/components/review/ReviewDocumentPane.vue';
 import ReviewInspector from '@/components/review/ReviewInspector.vue';
@@ -349,7 +329,6 @@ import {
   resolveAppliedReviewNavigationTargets,
   type AppliedReviewNavigationTarget,
 } from '@/utils/linkedReviewNavigation';
-import { buildRepositoryTree } from '@/utils/repositoryTree';
 import { useBackgroundActivityStore } from '@/stores/backgroundActivity';
 
 type ReviewRouteStatus = 'pending' | 'applied' | 'rejected' | 'stale';
@@ -378,7 +357,6 @@ const selectedRepositoryId = ref('');
 const files = ref<GitRepositoryFile[]>([]);
 const selectedFilePath = ref('');
 const manualSource = ref<GitRepositorySource | null>(null);
-const repositoryLoading = ref(false);
 const loading = ref(false);
 const detailLoading = ref(Boolean(requestId.value));
 const detailNotFound = ref(false);
@@ -420,7 +398,6 @@ const globalReviewRefreshVersion = computed(() => (
   backgroundActivity.reviewRefreshVersion(workspaceId.value)
 ));
 
-const fileTree = computed(() => buildRepositoryTree(files.value));
 const activeRepository = computed(() =>
   repositories.value.find(item => item.id === selectedRepositoryId.value) ?? null);
 const activeOperation = computed<DocumentChangeOperation | null>(() => {
@@ -550,11 +527,10 @@ async function loadRepositoryFiles() {
     files.value = [];
     return;
   }
-  repositoryLoading.value = true;
   try {
     files.value = await listGitRepositoryFiles(workspaceId.value, selectedRepositoryId.value);
-  } finally {
-    repositoryLoading.value = false;
+  } catch {
+    files.value = [];
   }
 }
 

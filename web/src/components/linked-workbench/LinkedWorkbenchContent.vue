@@ -10,6 +10,7 @@
       @editing-start="emit('editing-start', $event)"
       @editing-stop="emit('editing-stop', $event)"
       @open-agent-review="emit('open-agent-review', $event)"
+      @request-agent-check="emit('request-agent-check')"
     />
     <LinkedInspector
       v-show="inspectorOpen"
@@ -51,6 +52,7 @@ const props = defineProps<{
   activeLinkId: string | null;
   document: DocumentSummary | null;
   activeBlockId: string | null;
+  unboundBlockId: string | null;
   readonly: boolean;
   documentLoading?: boolean;
   remoteBlock?: DocumentBlock | null;
@@ -68,6 +70,7 @@ const emit = defineEmits<{
   'select-block': [blockId: string]; 'blocks-loaded': [blocks: DocumentBlock[]];
   'editing-start': [blockId: string]; 'editing-stop': [blockId: string]; 'close-inspector': [];
   'open-agent-review': [changeRequestId: string | null];
+  'request-agent-check': [];
 }>();
 const canvasRef = ref<InstanceType<typeof LinkedWorkbenchCanvas> | null>(null);
 const canvasProps = computed(() => ({
@@ -77,7 +80,7 @@ const canvasProps = computed(() => ({
   sourceLoaded: props.sourceLoaded,
   anchors: props.anchors, links: props.links, issues: props.issues,
   activeLinkId: props.activeLinkId, document: props.document,
-  activeBlockId: props.activeBlockId, readonly: props.readonly,
+  activeBlockId: props.activeBlockId, unboundBlockId: props.unboundBlockId, readonly: props.readonly,
   documentLoading: props.documentLoading, remoteBlock: props.remoteBlock,
   editingStates: props.editingStates, saveViaCollaboration: props.saveViaCollaboration,
 }));

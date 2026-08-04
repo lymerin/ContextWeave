@@ -1,8 +1,8 @@
 <template>
   <nav class="linked-workspace-navigation" aria-label="工程上下文导航">
-    <button class="nav-item" type="button" title="工作台" @click="emit('open-workspace')">
+    <button class="nav-item" type="button" title="切换空间" @click="emit('open-workspace')">
       <House class="nav-icon" />
-      <span v-if="!collapsed" class="sidebar-label">工作台</span>
+      <span v-if="!collapsed" class="sidebar-label">切换空间</span>
     </button>
     <button
       class="nav-item"

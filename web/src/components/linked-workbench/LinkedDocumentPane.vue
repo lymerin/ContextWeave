@@ -9,6 +9,15 @@
         {{ readonly ? '只读' : '可编辑' }}
       </el-tag>
     </header>
+    <div
+      v-if="unboundBlockId && unboundBlockId === activeBlockId"
+      class="unbound-block-hint"
+    >
+      <span>此段落未关联代码</span>
+      <button type="button" class="unbound-agent-link" @click="emit('request-agent-check')">
+        Agent 分析
+      </button>
+    </div>
     <div class="document-editor-scroll">
       <el-skeleton v-if="loading" :rows="8" animated />
       <el-empty v-else-if="!document" description="从左侧选择关联文档" />
@@ -41,6 +50,7 @@ import type { EditingState } from '@/composables/useDocumentCollaboration';
 defineProps<{
   document: DocumentSummary | null;
   activeBlockId: string | null;
+  unboundBlockId: string | null;
   readonly: boolean;
   loading?: boolean;
   remoteBlock?: DocumentBlock | null;
@@ -56,6 +66,7 @@ const emit = defineEmits<{
   'blocks-loaded': [blocks: DocumentBlock[]];
   'editing-start': [blockId: string];
   'editing-stop': [blockId: string];
+  'request-agent-check': [];
 }>();
 
 const blockEditorRef = ref<InstanceType<typeof BlockEditor> | null>(null);
@@ -77,6 +88,9 @@ defineExpose({ focusBlock, clearBlockFocus, confirmLeave });
 .document-pane-header > div { display: grid; min-width: 0; gap: 3px; }
 .document-pane-header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .document-pane-header span { color: #667085; font-size: 11px; }
+.unbound-block-hint { display: flex; align-items: center; justify-content: space-between; padding: 7px 14px; border-bottom: 1px solid #f0e6c0; background: #fffdf5; color: #92600a; font-size: 12px; }
+.unbound-agent-link { border: 0; padding: 3px 10px; border-radius: 5px; background: #fff7e0; color: #b45309; font-size: 12px; cursor: pointer; }
+.unbound-agent-link:hover { background: #fde68a; color: #92400e; }
 .document-editor-scroll { min-width: 0; min-height: 0; overflow: auto; padding: 20px 22px 32px; }
 .document-editor-scroll :deep(.block-editor-header) { align-items: flex-start; }
 .document-editor-scroll :deep(.section-hint) { display: none; }

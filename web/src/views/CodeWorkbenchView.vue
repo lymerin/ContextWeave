@@ -8,7 +8,6 @@
       :linked-count="links.length"
       :review-count="pendingReviewCount"
       :drift-count="driftedLinkIds.length"
-      @open-workspace="handleWorkspaceNavigation"
       @open-linked="handleLinkedNavigation"
       @open-review="handleReviewNavigation"
       @open-drift="handleModeChange('DRIFT_REVIEW')"
@@ -66,6 +65,7 @@
         :active-link-id="activeLinkId"
         :document="document"
         :active-block-id="activeDocumentBlock?.id || null"
+        :unbound-block-id="unboundBlockId"
         :readonly="documentReadonly"
         :document-loading="documentLoading"
         :remote-block="collaborationRemoteBlock"
@@ -89,15 +89,9 @@
         @editing-start="startEditing"
         @editing-stop="stopEditing"
         @open-agent-review="handleAgentReviewNavigation"
+        @request-agent-check="handleDocumentPaneAgentCheck"
       >
         <template #header-actions>
-          <el-tag
-            v-if="activeLink"
-            data-test="active-binding-role"
-            size="small"
-            :type="activeLink.bindingRole === 'SUPPORTING' ? 'info' : 'primary'"
-            effect="plain"
-          >{{ activeLink.bindingRole === 'SUPPORTING' ? '辅助代码' : '主要代码' }}</el-tag>
           <el-button
             data-test="linked-history-back"
             size="small"
@@ -139,7 +133,6 @@
             @click="confirmProjectScan"
           >检查整个项目</el-button>
           <NotificationCenter />
-          <el-button size="small" @click="handleReturnToWorkspaces">返回列表</el-button>
           <el-button
             v-if="workspace.currentUserRole === 'ADMIN' && activeRepository"
             size="small"
@@ -333,6 +326,7 @@ const {
   activeIssue, activeEvidence, driftedLinkIds, activeLinkIndex, linkCount,
   canSelectPreviousLink, canSelectNextLink,
   toggleInspector,
+  unboundBlockId, clearUnboundBlock,
 } = state;
 
 const activeRepository = computed(() => repositories.value.find(item => item.id === selectedRepositoryId.value) ?? null);
@@ -927,6 +921,7 @@ async function handleActivate(linkId: string, source: LinkActivationSource) {
 }
 
 async function handleBlockSelection(blockId: string) {
+  clearUnboundBlock();
   state.selectDocumentBlock(blockId);
   const requestSequence = ++reverseBindingRequestSequence;
   const documentId = selectedDocumentId.value;
@@ -944,7 +939,6 @@ async function handleBlockSelection(blockId: string) {
     if (!ctx) {
       state.selectUnboundDocumentBlock(blockId);
       persistReadingTarget('restore');
-      ElMessage.info('该 Block 暂无正式代码 Binding');
       return;
     }
 
@@ -1032,23 +1026,6 @@ async function handleLinkedNavigation() {
   await handleModeChange('LINKED');
 }
 
-async function handleWorkspaceNavigation() {
-  sidebarNavigationActive.value = 'linked';
-  state.setMode('LINKED');
-  toggleInspector(false);
-  await router.replace({
-    name: 'workspace-code',
-    params: { workspaceId: workspaceId.value },
-    query: route.query,
-  });
-  await nextTick();
-  focusActiveLink('system');
-}
-
-async function handleReturnToWorkspaces() {
-  if (await confirmDocumentLeave()) await router.push('/workspaces');
-}
-
 function confirmDocumentLeave() {
   return workbenchShellRef.value?.confirmDocumentLeave?.() ?? Promise.resolve(true);
 }
@@ -1087,6 +1064,33 @@ async function handleAgentReviewNavigation(changeRequestId: string | null) {
       repositoryId: selectedRepositoryId.value || undefined,
     },
   });
+}
+
+async function handleDocumentPaneAgentCheck() {
+  if (!selectedRepositoryId.value || !selectedFilePath.value) return;
+  try {
+    const queued = await createAgentJob({
+      workspaceId: workspaceId.value,
+      repositoryId: selectedRepositoryId.value,
+      scope: { type: 'CURRENT_FILE', filePath: selectedFilePath.value },
+      userInstruction: unboundBlockId.value
+        ? `请检查当前文件是否与文档 Block (ID: ${unboundBlockId.value.slice(0, 12)}) 有关联`
+        : null,
+    });
+    backgroundActivity.registerJob({
+      jobId: queued.jobId,
+      workspaceId: workspaceId.value,
+      repositoryId: selectedRepositoryId.value,
+      label: selectedFilePath.value,
+      filePath: selectedFilePath.value,
+      createdAt: queued.createdAt,
+      lastKnownStatus: queued.status,
+    });
+    clearUnboundBlock();
+    ElMessage.success('Agent 已在后台开始处理，分析完成后将检查 Block 关联。');
+  } catch (error) {
+    ElMessage.error(readableAgentError(error, 'Agent 检查启动失败'));
+  }
 }
 
 function focusActiveLink(source: LinkActivationSource) {

@@ -21,6 +21,7 @@
       @editing-start="emit('editing-start', $event)"
       @editing-stop="emit('editing-stop', $event)"
       @open-agent-review="emit('open-agent-review', $event)"
+      @request-agent-check="emit('request-agent-check')"
       @close-inspector="emit('toggle-inspector')"
     />
     <LinkedWorkbenchStatusBar v-bind="statusProps" />
@@ -43,7 +44,7 @@ const props = defineProps<{
   mode: WorkbenchMode; inspectorOpen: boolean; sourceContent: string; sourcePath: string; sourceLoaded?: boolean;
   sourceLanguage?: string | null; sourceLoading?: boolean; anchors: CodeAnchor[]; links: CodeDocumentLink[];
   issues: EngineeringIssue[]; activeLinkId: string | null; document: DocumentSummary | null;
-  activeBlockId: string | null; readonly: boolean; documentLoading?: boolean;
+  activeBlockId: string | null; unboundBlockId: string | null; readonly: boolean; documentLoading?: boolean;
   remoteBlock?: DocumentBlock | null; editingStates?: EditingState[];
   saveViaCollaboration?: (block: DocumentBlock, content: DocumentBlockContent) => Promise<DocumentBlock>;
   activeLink: CodeDocumentLink | null; activeAnchor: CodeAnchor | null; activeBlock: DocumentBlock | null;
@@ -55,6 +56,7 @@ const emit = defineEmits<{
   'activate-rail': [linkId: string]; 'activate-inspector': [linkId: string]; 'select-block': [blockId: string];
   'blocks-loaded': [blocks: DocumentBlock[]]; 'editing-start': [blockId: string]; 'editing-stop': [blockId: string];
   'open-agent-review': [changeRequestId: string | null];
+  'request-agent-check': [];
 }>();
 const contentRef = ref<InstanceType<typeof LinkedWorkbenchContent> | null>(null);
 const contentProps = computed(() => ({ ...props }));

@@ -38,7 +38,9 @@
       @select-block="emit('select-block', $event)"
       @blocks-loaded="emit('blocks-loaded', $event)"
       @editing-start="emit('editing-start', $event)"
+      :unbound-block-id="unboundBlockId"
       @editing-stop="emit('editing-stop', $event)"
+      @request-agent-check="emit('request-agent-check')"
     />
   </div>
 </template>
@@ -68,6 +70,7 @@ defineProps<{
   activeLinkId: string | null;
   document: DocumentSummary | null;
   activeBlockId: string | null;
+  unboundBlockId: string | null;
   readonly: boolean;
   documentLoading?: boolean;
   remoteBlock?: DocumentBlock | null;
@@ -82,6 +85,7 @@ const emit = defineEmits<{
   'editing-start': [blockId: string];
   'editing-stop': [blockId: string];
   'open-agent-review': [changeRequestId: string | null];
+  'request-agent-check': [];
 }>();
 const codePaneRef = ref<InstanceType<typeof LinkedCodePane> | null>(null);
 const documentPaneRef = ref<InstanceType<typeof LinkedDocumentPane> | null>(null);

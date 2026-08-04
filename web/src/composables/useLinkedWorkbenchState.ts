@@ -59,10 +59,17 @@ export function useLinkedWorkbenchState() {
     selectedBlockId.value = blockId;
   }
 
+  const unboundBlockId = ref<string | null>(null);
+
   function selectUnboundDocumentBlock(blockId: string) {
     selectedBlockId.value = blockId;
     activeLinkId.value = null;
     lastActivationSource.value = 'document';
+    unboundBlockId.value = blockId;
+  }
+
+  function clearUnboundBlock() {
+    unboundBlockId.value = null;
   }
 
   function selectPreviousLink(source: LinkActivationSource = 'rail') {
@@ -144,6 +151,8 @@ export function useLinkedWorkbenchState() {
     activateLink,
     selectDocumentBlock,
     selectUnboundDocumentBlock,
+    clearUnboundBlock,
+    unboundBlockId,
     selectPreviousLink,
     selectNextLink,
     setMode,
