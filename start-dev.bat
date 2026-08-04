@@ -18,7 +18,7 @@ echo [launcher] Starting DevCollab. The first run may take several minutes.
 echo [launcher] Keep this window open until startup finishes.
 echo.
 
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CD%\tools\local-demo.ps1" start
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%CD%\tools\local-demo.ps1" start -WithObservability -VerifyAfterStart
 if errorlevel 1 goto :failed
 
 echo.

@@ -13,7 +13,6 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Net.Http
-Add-Type -AssemblyName System.Net.Http
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $RuntimeDir = Join-Path $RepoRoot "logs\local-demo"
@@ -418,6 +417,7 @@ function Stop-ManagedProcesses {
 }
 
 function Ensure-NginxAgentDns {
+    $agentContainer = "devcollab-agent-service"
     # Docker 重建 agent-service 容器后其 IP 会变化，而 nginx 的 upstream
     # 域名只在启动/重载时解析一次。若 nginx 指向了过期 IP，agent-api 会
     # 502。这里比对 nginx 实际解析到的 IP 与 agent-service 当前 IP，
@@ -427,6 +427,7 @@ function Ensure-NginxAgentDns {
         return
     }
     $resolved = (& docker exec $agentContainer sh -c "getent hosts $(hostname) 2>/dev/null; exit 0" 2>$null)
+    $nginxResolved = (& docker exec devcollab-nginx sh -c "getent hosts agent-service 2>/dev/null; exit 0" 2>$null)
     # nginx 端解析
     $nginxResolved = (& docker exec devcollab-nginx sh -c "getent hosts agent-service 2>/dev/null; exit 0" 2>$null)
     if (-not $nginxResolved) {
@@ -508,6 +509,7 @@ function Set-SharedServiceEnvironment {
 
 function Start-LocalDemo {
     Assert-Command "docker"
+    Assert-Command "java"
     Assert-Command "node"
     Assert-Command "npm.cmd"
     if (-not (Test-Path -LiteralPath $MavenWrapper)) {
@@ -545,19 +547,22 @@ function Start-LocalDemo {
         throw "-SkipFrontendBuild was used but web\dist\index.html does not exist"
     }
 
-    Write-Step "starting PostgreSQL, Redis, Kafka and Elasticsearch"
+    Write-Step "starting PostgreSQL, Redis, Kafka, Elasticsearch and MinIO"
     Push-Location $RepoRoot
     try {
-        Invoke-Checked -FilePath "docker" -Arguments @("compose", "up", "-d", "postgres", "redis", "kafka", "elasticsearch")
+        Invoke-Checked -FilePath "docker" -Arguments @(
+            "compose", "up", "-d", "postgres", "redis", "kafka", "elasticsearch", "minio"
+        )
     }
     finally {
         Pop-Location
     }
 
-    Wait-TcpPort -Name "PostgreSQL" -Port ([int](Get-EnvOrDefault "POSTGRES_HOST_PORT" "5432"))
-    Wait-TcpPort -Name "Redis" -Port ([int](Get-EnvOrDefault "REDIS_HOST_PORT" "16379"))
-    Wait-TcpPort -Name "Kafka" -Port 9092
-    Wait-TcpPort -Name "Elasticsearch" -Port 9200
+    Wait-ContainerHealthy -Name "PostgreSQL" -ContainerName "devcollab-postgres"
+    Wait-ContainerHealthy -Name "Redis" -ContainerName "devcollab-redis"
+    Wait-ContainerHealthy -Name "Kafka" -ContainerName "devcollab-kafka"
+    Wait-ContainerHealthy -Name "Elasticsearch" -ContainerName "devcollab-elasticsearch"
+    Wait-ContainerHealthy -Name "MinIO" -ContainerName "devcollab-minio"
     Ensure-KafkaTopics
 
     if ($WithObservability) {
@@ -672,7 +677,9 @@ function Stop-LocalDemo {
             "compose", "stop", "nginx", "agent-worker", "agent-service"
         )
         if (-not $KeepInfrastructure) {
-            Invoke-Checked -FilePath "docker" -Arguments @("compose", "stop", "postgres", "redis", "kafka", "elasticsearch")
+            Invoke-Checked -FilePath "docker" -Arguments @(
+                "compose", "stop", "postgres", "redis", "kafka", "elasticsearch", "minio"
+            )
             Invoke-Checked -FilePath "docker" -Arguments @(
                 "compose", "--profile", "observability", "stop",
                 "prometheus", "loki", "tempo", "otel-collector", "alloy", "grafana"
@@ -695,6 +702,10 @@ function Show-LocalDemoStatus {
         @{ name = "MCP Server"; port = 8091 },
         @{ name = "Nginx"; port = [int](Get-EnvOrDefault "NGINX_HOST_PORT" "8088") },
         @{ name = "Redis"; port = [int](Get-EnvOrDefault "REDIS_HOST_PORT" "16379") },
+        @{ name = "PostgreSQL"; port = [int](Get-EnvOrDefault "POSTGRES_HOST_PORT" "5432") },
+        @{ name = "Kafka"; port = 9092 },
+        @{ name = "Elasticsearch"; port = [int](Get-EnvOrDefault "ELASTICSEARCH_HOST_PORT" "9200") },
+        @{ name = "MinIO"; port = [int](Get-EnvOrDefault "MINIO_API_HOST_PORT" "9000") },
         @{ name = "Prometheus"; port = [int](Get-EnvOrDefault "PROMETHEUS_HOST_PORT" "9091") },
         @{ name = "Loki"; port = [int](Get-EnvOrDefault "LOKI_HOST_PORT" "3100") },
         @{ name = "Tempo"; port = [int](Get-EnvOrDefault "TEMPO_HOST_PORT" "3200") },
