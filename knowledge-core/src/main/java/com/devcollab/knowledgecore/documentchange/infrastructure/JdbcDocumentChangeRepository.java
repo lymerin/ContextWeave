@@ -90,7 +90,8 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
                     nullableDouble(rs, "confidence"),
                     BindingRole.valueOf(rs.getString("binding_role")),
                     rs.getInt("binding_ordinal"),
-                    rs.getTimestamp("created_at").toInstant()
+                    rs.getTimestamp("created_at").toInstant(),
+                    rs.getString("bound_signature")
             );
 
     private static final RowMapper<Evidence> EVIDENCE_MAPPER =
@@ -178,8 +179,8 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
                     revision, anchor_kind, symbol_key, start_line, end_line,
                     block_id, created_block_operation_id, candidate_id,
                     document_anchor_candidate_id, confidence, binding_role,
-                    binding_ordinal
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    binding_ordinal, bound_signature
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 value.id(), value.changeRequestId(), value.clientBindingProposalId(),
                 value.sequenceNumber(), value.action().name(), value.repositoryId(),
@@ -189,7 +190,8 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
                 value.startLine(), value.endLine(), value.blockId(),
                 value.createdBlockOperationId(), value.candidateId(),
                 value.documentAnchorCandidateId(), value.confidence(),
-                value.bindingRole().name(), value.bindingOrdinal());
+                value.bindingRole().name(), value.bindingOrdinal(),
+                value.boundSignature());
         return value;
     }
 
@@ -349,6 +351,19 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
                 request.rationale(), request.sourceType(), request.submittedBy(),
                 request.createdAt(), reviewedBy, reviewedAt, rejectionReason
         );
+    }
+
+    @Override
+    public List<ChangeRequest> findRequestsAffectingDocument(UUID documentId, int limit) {
+        return jdbcTemplate.query("""
+                SELECT DISTINCT r.*
+                  FROM document_change_requests r
+                  JOIN document_change_operations o
+                    ON o.change_request_id = r.id
+                 WHERE o.document_id = ?
+                 ORDER BY r.created_at DESC
+                 LIMIT ?
+                """, REQUEST_MAPPER, documentId, limit);
     }
 
     private static Instant instant(Timestamp value) {

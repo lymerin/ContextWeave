@@ -23,7 +23,8 @@ public record CodeDocumentBindingResponse(
         BindingRole bindingRole,
         int bindingOrdinal,
         UUID createdBy,
-        Instant createdAt
+        Instant createdAt,
+        String boundSignature
 ) {
     public static CodeDocumentBindingResponse from(CodeDocumentBinding binding) {
         return new CodeDocumentBindingResponse(
@@ -33,7 +34,8 @@ public record CodeDocumentBindingResponse(
                 binding.symbolKey(), binding.startLine(), binding.endLine(),
                 binding.bindingRole(), binding.bindingOrdinal(),
                 binding.createdBy(),
-                binding.createdAt()
+                binding.createdAt(),
+                binding.boundSignature()
         );
     }
 }

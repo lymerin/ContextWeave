@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
-
 # ── 符号种类 ────────────────────────────────────────────────────────────────
 
 
@@ -130,3 +129,29 @@ class AtomCatalog:
     @property
     def error_count(self) -> int:
         return sum(1 for m in self.modules if not m.atom_id)
+
+
+# ── symbol_key 解析工具 ─────────────────────────────────────────────────────
+
+
+def symbol_key_file_path(symbol_key: str) -> str:
+    """从 symbol_key 提取 file_path。
+
+    symbol_key 格式: LANGUAGE:file_path:qualified_name:KIND
+    示例: PYTHON:a/b/c.py:MyClass.method:METHOD → "a/b/c.py"
+    """
+    parts = symbol_key.split(":", 2)
+    return parts[1] if len(parts) > 1 else ""
+
+
+def symbol_key_qualified_name(symbol_key: str) -> str:
+    """从 symbol_key 提取 qualified_name。
+
+    symbol_key 格式: LANGUAGE:file_path:qualified_name:KIND
+    示例: PYTHON:a/b/c.py:MyClass.method:METHOD → "MyClass.method"
+    """
+    parts = symbol_key.split(":", 2)
+    if len(parts) <= 2:
+        return ""
+    qk = parts[2]
+    return qk.rsplit(":", 1)[0]

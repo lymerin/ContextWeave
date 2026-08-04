@@ -27,6 +27,8 @@ import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationSer
 import com.devcollab.knowledgecore.workspace.application.WorkspacePermissionPolicy;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -47,6 +49,8 @@ import java.util.UUID;
 @Service
 public class GitKnowledgeApplicationService {
 
+    private static final Logger LOG = LoggerFactory.getLogger(
+            GitKnowledgeApplicationService.class);
     private static final int DEFAULT_MAX_BINDINGS_PER_FILE = 1000;
 
     private final GitKnowledgeRepository gitRepository;
@@ -56,6 +60,7 @@ public class GitKnowledgeApplicationService {
     private final DocumentBlockRepository blockRepository;
     private final OutboxEventPublisher outboxPublisher;
     private final CodeMetadataInspector metadataInspector;
+    private final DriftDetectionService driftDetectionService;
 
     public GitKnowledgeApplicationService(
             GitKnowledgeRepository gitRepository,
@@ -64,7 +69,8 @@ public class GitKnowledgeApplicationService {
             DocumentRepository documentRepository,
             DocumentBlockRepository blockRepository,
             OutboxEventPublisher outboxPublisher,
-            CodeMetadataInspector metadataInspector
+            CodeMetadataInspector metadataInspector,
+            DriftDetectionService driftDetectionService
     ) {
         this.gitRepository = gitRepository;
         this.workspaceService = workspaceService;
@@ -73,6 +79,7 @@ public class GitKnowledgeApplicationService {
         this.blockRepository = blockRepository;
         this.outboxPublisher = outboxPublisher;
         this.metadataInspector = metadataInspector;
+        this.driftDetectionService = driftDetectionService;
     }
 
     @Transactional
@@ -443,6 +450,17 @@ public class GitKnowledgeApplicationService {
                         "commitSha", change.commitSha()
                 )
         );
+
+        // 静默漂移检测: 新 revision 入库后自动检查绑定是否漂移
+        try {
+            driftDetectionService.detectAndSubmit(
+                    workspaceId, repositoryId, change.commitSha(), currentUserId);
+        } catch (Exception e) {
+            // 漂移检测失败不应阻断 change ingest
+            LOG.warn("Drift detection failed for repository {}: {}",
+                    repositoryId, e.getMessage());
+        }
+
         return new GitChangeDetails(change, diffs, false);
     }
 
@@ -520,7 +538,8 @@ public class GitKnowledgeApplicationService {
                     anchor.anchorKind(), anchor.symbolKey(),
                     anchor.startLine(), anchor.endLine(),
                     command.bindingRole(), command.bindingOrdinal(),
-                    currentUserId, Instant.now()
+                    currentUserId, Instant.now(),
+                    command.boundSignature()
             ));
         } catch (DataIntegrityViolationException exception) {
             // The database identity is the final guard for concurrent requests

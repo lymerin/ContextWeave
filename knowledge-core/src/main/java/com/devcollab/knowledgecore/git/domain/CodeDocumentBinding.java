@@ -19,7 +19,8 @@ public record CodeDocumentBinding(
         BindingRole bindingRole,
         int bindingOrdinal,
         UUID createdBy,
-        Instant createdAt
+        Instant createdAt,
+        String boundSignature
 ) {
     public CodeDocumentBinding(
             UUID id, UUID workspaceId, UUID repositoryId, UUID documentId,
@@ -29,7 +30,7 @@ public record CodeDocumentBinding(
     ) {
         this(id, workspaceId, repositoryId, documentId, blockId, targetKey,
                 pathPattern, revision, anchorKind, symbolKey, startLine, endLine,
-                BindingRole.PRIMARY, 1, createdBy, createdAt);
+                BindingRole.PRIMARY, 1, createdBy, createdAt, null);
     }
 
     public CodeDocumentBinding(
@@ -58,7 +59,8 @@ public record CodeDocumentBinding(
                 BindingRole.PRIMARY,
                 1,
                 createdBy,
-                createdAt
+                createdAt,
+                null
         );
     }
 }

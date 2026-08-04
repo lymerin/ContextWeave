@@ -138,7 +138,8 @@ public class DocumentChangeApplicationService {
             String reason,
             Double confidence,
             BindingRole bindingRole,
-            int bindingOrdinal
+            int bindingOrdinal,
+            String boundSignature
     ) {
         public CreateBindingProposalCommand(
                 String clientBindingProposalId, int sequenceNumber,
@@ -155,7 +156,7 @@ public class DocumentChangeApplicationService {
                     documentId, createdDocumentClientOperationId, blockId,
                     createdBlockClientOperationId, bindingId, candidateId,
                     documentAnchorCandidateId, reason, confidence,
-                    BindingRole.PRIMARY, 1);
+                    BindingRole.PRIMARY, 1, null);
         }
 
         public CreateBindingProposalCommand(
@@ -174,7 +175,7 @@ public class DocumentChangeApplicationService {
                     repositoryId, null, filePath, CodeAnchorKind.FILE,
                     null, null, null, documentId,
                     createdDocumentClientOperationId, null, null, bindingId,
-                    null, null, reason, null, BindingRole.PRIMARY, 1
+                    null, null, reason, null, BindingRole.PRIMARY, 1, null
             );
         }
     }
@@ -606,6 +607,28 @@ public class DocumentChangeApplicationService {
     @Transactional(readOnly = true)
     public DetailView detail(ChangeRequest request) {
         return detail(request, null);
+    }
+
+    /**
+     * Return drift fixes that affected the given document.
+     *
+     * <p>Filters to change requests whose {@code clientRequestId}
+     * starts with {@code "drift-"}.  Used by the frontend inspector
+     * panel for post-review of automatic drift corrections.
+     */
+    @Transactional(readOnly = true)
+    public List<DetailView> driftHistory(
+            UUID workspaceId,
+            UUID documentId,
+            UUID currentUserId
+    ) {
+        workspaceService.requireMembership(workspaceId, currentUserId);
+        var requests = repository.findRequestsAffectingDocument(documentId, 50);
+        return requests.stream()
+                .filter(r -> r.clientRequestId().startsWith("drift-"))
+                .filter(r -> r.status() == Status.APPLIED)
+                .map(this::detail)
+                .toList();
     }
 
     private DetailView detail(
@@ -1133,7 +1156,8 @@ public class DocumentChangeApplicationService {
                     proposal.startLine(),
                     proposal.endLine(),
                     proposal.bindingRole(),
-                    proposal.bindingOrdinal()
+                    proposal.bindingOrdinal(),
+                    proposal.boundSignature()
             );
             var existing = gitKnowledgeService.findExactBinding(
                     documentId,
@@ -1542,7 +1566,8 @@ public class DocumentChangeApplicationService {
                 input.confidence(),
                 input.bindingRole(),
                 input.bindingOrdinal(),
-                Instant.now()
+                Instant.now(),
+                trim(input.boundSignature())
         );
     }
 
@@ -1729,7 +1754,8 @@ public class DocumentChangeApplicationService {
                                 proposal.reason(),
                                 proposal.confidence(),
                                 proposal.bindingRole(),
-                                proposal.bindingOrdinal()
+                                proposal.bindingOrdinal(),
+                                trim(proposal.boundSignature())
                         ))
                         .toList();
         List<CreateEvidenceCommand> evidence = safeList(command.evidence()).stream()

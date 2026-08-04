@@ -226,7 +226,8 @@ public class DocumentChangeController {
             @NotBlank @Size(max = 1000) String reason,
             Double confidence,
             BindingRole bindingRole,
-            Integer bindingOrdinal
+            Integer bindingOrdinal,
+            @Size(max = 1500) String boundSignature
     ) {
         CreateBindingProposalCommand toCommand() {
             return new CreateBindingProposalCommand(
@@ -250,7 +251,8 @@ public class DocumentChangeController {
                     reason,
                     confidence,
                     bindingRole == null ? BindingRole.PRIMARY : bindingRole,
-                    bindingOrdinal == null ? 1 : bindingOrdinal
+                    bindingOrdinal == null ? 1 : bindingOrdinal,
+                    boundSignature
             );
         }
     }
@@ -286,5 +288,20 @@ public class DocumentChangeController {
     public record RejectDocumentChangeRequest(
             @NotBlank @Size(max = 2_000) String reason
     ) {
+    }
+
+    /**
+     * Return drift fixes that affected the given document, newest first.
+     *
+     * <p>Used by the frontend inspector panel to show a before/after
+     * history of automatic drift corrections for a document.
+     */
+    @GetMapping("/api/v1/workspaces/{workspaceId}/documents/{documentId}/drift-history")
+    public List<DetailView> driftHistory(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return service.driftHistory(workspaceId, documentId, currentUser.userId());
     }
 }

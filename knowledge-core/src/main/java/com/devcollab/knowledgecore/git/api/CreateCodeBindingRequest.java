@@ -18,6 +18,7 @@ public record CreateCodeBindingRequest(
         Integer startLine,
         Integer endLine,
         BindingRole bindingRole,
-        Integer bindingOrdinal
+        Integer bindingOrdinal,
+        @Size(max = 1500) String boundSignature
 ) {
 }

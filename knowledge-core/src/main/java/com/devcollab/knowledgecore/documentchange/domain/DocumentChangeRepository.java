@@ -60,4 +60,7 @@ public interface DocumentChangeRepository {
             Instant reviewedAt,
             String rejectionReason
     );
+
+    /** Find all change requests whose operations target the given document. */
+    List<ChangeRequest> findRequestsAffectingDocument(UUID documentId, int limit);
 }

@@ -143,7 +143,8 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                     BindingRole.valueOf(rs.getString("binding_role")),
                     rs.getInt("binding_ordinal"),
                     rs.getObject("created_by", UUID.class),
-                    rs.getTimestamp("created_at").toInstant()
+                    rs.getTimestamp("created_at").toInstant(),
+                    rs.getString("bound_signature")
             );
 
     private final JdbcTemplate jdbcTemplate;
@@ -383,8 +384,9 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                              block_id, target_key, path_pattern, revision,
                              anchor_kind, symbol_key, start_line, end_line,
                              revision_key, symbol_key_identity, start_line_key,
-                             end_line_key, binding_role, binding_ordinal, created_by, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             end_line_key, binding_role, binding_ordinal,
+                             created_by, created_at, bound_signature)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                 binding.id(), binding.workspaceId(), binding.repositoryId(),
                 binding.documentId(), binding.blockId(), binding.targetKey(),
@@ -395,7 +397,8 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
                 binding.startLine() == null ? 0 : binding.startLine(),
                 binding.endLine() == null ? 0 : binding.endLine(),
                 binding.bindingRole().name(), binding.bindingOrdinal(),
-                binding.createdBy(), Timestamp.from(binding.createdAt()));
+                binding.createdBy(), Timestamp.from(binding.createdAt()),
+                binding.boundSignature());
         return binding;
     }
 

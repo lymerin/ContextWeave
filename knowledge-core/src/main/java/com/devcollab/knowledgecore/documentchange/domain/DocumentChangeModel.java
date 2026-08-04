@@ -93,7 +93,8 @@ public final class DocumentChangeModel {
             Double confidence,
             BindingRole bindingRole,
             int bindingOrdinal,
-            Instant createdAt
+            Instant createdAt,
+            String boundSignature
     ) {
         public BindingProposal(
                 UUID id, UUID changeRequestId, String clientBindingProposalId,
@@ -110,7 +111,7 @@ public final class DocumentChangeModel {
                     startLine, endLine, documentId, createdDocumentOperationId,
                     blockId, createdBlockOperationId, bindingId, candidateId,
                     documentAnchorCandidateId, reason, confidence,
-                    BindingRole.PRIMARY, 1, createdAt);
+                    BindingRole.PRIMARY, 1, createdAt, null);
         }
 
         public BindingProposal(
@@ -132,7 +133,7 @@ public final class DocumentChangeModel {
                     action, repositoryId, null, filePath, CodeAnchorKind.FILE,
                     null, null, null, documentId, createdDocumentOperationId,
                     null, null, bindingId, null, null, reason, null,
-                    BindingRole.PRIMARY, 1, createdAt
+                    BindingRole.PRIMARY, 1, createdAt, null
             );
         }
     }

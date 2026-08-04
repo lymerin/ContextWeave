@@ -15,7 +15,8 @@ public record CreateCodeBindingCommand(
         Integer startLine,
         Integer endLine,
         BindingRole bindingRole,
-        int bindingOrdinal
+        int bindingOrdinal,
+        String boundSignature
 ) {
     public CreateCodeBindingCommand(
             UUID repositoryId,
@@ -32,7 +33,8 @@ public record CreateCodeBindingCommand(
                 null,
                 null,
                 BindingRole.PRIMARY,
-                1
+                1,
+                null
         );
     }
 
@@ -41,6 +43,15 @@ public record CreateCodeBindingCommand(
             CodeAnchorKind anchorKind, String symbolKey, Integer startLine, Integer endLine
     ) {
         this(repositoryId, blockId, pathPattern, revision, anchorKind, symbolKey,
-                startLine, endLine, BindingRole.PRIMARY, 1);
+                startLine, endLine, BindingRole.PRIMARY, 1, null);
+    }
+
+    public CreateCodeBindingCommand(
+            UUID repositoryId, UUID blockId, String pathPattern, String revision,
+            CodeAnchorKind anchorKind, String symbolKey, Integer startLine, Integer endLine,
+            BindingRole bindingRole, int bindingOrdinal
+    ) {
+        this(repositoryId, blockId, pathPattern, revision, anchorKind, symbolKey,
+                startLine, endLine, bindingRole, bindingOrdinal, null);
     }
 }

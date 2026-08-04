@@ -277,7 +277,8 @@ public class GitKnowledgeController {
                         request.bindingRole() == null
                                 ? com.devcollab.knowledgecore.git.domain.BindingRole.PRIMARY
                                 : request.bindingRole(),
-                        request.bindingOrdinal() == null ? 1 : request.bindingOrdinal()
+                        request.bindingOrdinal() == null ? 1 : request.bindingOrdinal(),
+                        request.boundSignature()
                 )
         ));
     }
