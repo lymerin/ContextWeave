@@ -452,16 +452,29 @@ public class GitKnowledgeApplicationService {
         );
 
         // 静默漂移检测: 新 revision 入库后自动检查绑定是否漂移
+        runDriftDetection(workspaceId, repositoryId, change.commitSha(), currentUserId);
+
+        return new GitChangeDetails(change, diffs, false);
+    }
+
+    /**
+     * Debug endpoint: manually trigger drift detection for a repository.
+     * Uses the current {@code lastSyncedCommit} as the "new" revision.
+     */
+    @Transactional
+    public void runDriftDetection(
+            UUID workspaceId,
+            UUID repositoryId,
+            String revision,
+            UUID currentUserId
+    ) {
         try {
             driftDetectionService.detectAndSubmit(
-                    workspaceId, repositoryId, change.commitSha(), currentUserId);
+                    workspaceId, repositoryId, revision, currentUserId);
         } catch (Exception e) {
-            // 漂移检测失败不应阻断 change ingest
             LOG.warn("Drift detection failed for repository {}: {}",
                     repositoryId, e.getMessage());
         }
-
-        return new GitChangeDetails(change, diffs, false);
     }
 
     public List<GitChangeDetails> listChanges(
@@ -1194,26 +1207,55 @@ public class GitKnowledgeApplicationService {
         );
     }
 
+    /**
+     * Sort rank for a binding's revision relative to the requested revision.
+     *
+     * <p>Exact match ranks first (0); other explicit revisions rank next (1);
+     * legacy (no revision) ranks last (2).  This keeps the exact-match
+     * binding on top while still surfacing all other bindings.
+     */
+    private static int revisionRank(String bindingRevision, String requestedRevision) {
+        if (requestedRevision != null && requestedRevision.equals(bindingRevision)) {
+            return 0;
+        }
+        return bindingRevision == null ? 2 : 1;
+    }
+
+    /**
+     * Filter a binding by the requested revision.
+     *
+     * <p>Semantics:
+     * <ul>
+     *   <li>{@code revision != null && !includeLegacy} — strict: only
+     *       bindings created against exactly that revision match.</li>
+     *   <li>{@code includeLegacy == true} (regardless of revision) —
+     *       keep every binding; the revision is used only for sorting and
+     *       dedup priority, never for filtering.  Without this, syncing a
+     *       repository updates {@code lastSyncedCommit} and every binding
+     *       whose stored revision is the older commit would disappear
+     *       from the UI even though it is still valid.</li>
+     *   <li>{@code revision == null && !includeLegacy} — keep only
+     *       bindings that carry a revision.</li>
+     * </ul>
+     */
     private boolean matchesRevision(
             CodeDocumentBinding binding,
             String revision,
             boolean includeLegacy
     ) {
-        if (revision != null) {
-            return revision.equals(binding.revision())
-                    || (includeLegacy && binding.revision() == null);
+        if (revision != null && !includeLegacy) {
+            return revision.equals(binding.revision());
         }
-        return includeLegacy || binding.revision() != null;
+        if (revision == null && !includeLegacy) {
+            return binding.revision() != null;
+        }
+        return true;
     }
 
     private Comparator<CodeDocumentBinding> bindingComparator(String revision) {
         return Comparator
-                .comparingInt((CodeDocumentBinding binding) -> {
-                    if (revision != null && revision.equals(binding.revision())) {
-                        return 0;
-                    }
-                    return binding.revision() == null ? 1 : 0;
-                })
+                .comparingInt((CodeDocumentBinding binding) ->
+                        revisionRank(binding.revision(), revision))
                 .thenComparingInt(binding -> binding.blockId() == null ? 1 : 0)
                 .thenComparingInt(binding -> switch (binding.anchorKind()) {
                     case SYMBOL -> 0;
@@ -1229,12 +1271,8 @@ public class GitKnowledgeApplicationService {
                 .comparingInt((CodeBindingQueryItem item) ->
                         item.bindingRole() == com.devcollab.knowledgecore.git.domain.BindingRole.PRIMARY ? 0 : 1)
                 .thenComparingInt(CodeBindingQueryItem::bindingOrdinal)
-                .thenComparingInt((CodeBindingQueryItem item) -> {
-                    if (revision != null && revision.equals(item.revision())) {
-                        return 0;
-                    }
-                    return item.revision() == null ? 1 : 0;
-                })
+                .thenComparingInt((CodeBindingQueryItem item) ->
+                        revisionRank(item.revision(), revision))
                 .thenComparingInt(item -> item.blockId() == null ? 1 : 0)
                 .thenComparingInt(item -> switch (item.anchorKind()) {
                     case SYMBOL -> 0;

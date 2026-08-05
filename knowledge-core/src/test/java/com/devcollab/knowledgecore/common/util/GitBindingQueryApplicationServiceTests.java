@@ -172,10 +172,13 @@ class GitBindingQueryApplicationServiceTests {
                 "A", false, 10
         );
 
+        // includeLegacy=true: 保留所有绑定（含其他 revision 的），revision 只用于排序。
+        // 修复行为: 同步后 lastSyncedCommit 变化不能让旧 revision 的绑定从 UI 消失。
         assertThat(withLegacy.bindings()).extracting(CodeBindingQueryItem::bindingId)
-                .containsExactly(revisionA.id(), legacy.id());
-        assertThat(withLegacy.bindings()).extracting(CodeBindingQueryItem::revision)
-                .containsExactly("A", null);
+                .containsExactlyInAnyOrder(revisionA.id(), legacy.id(), revisionB.id());
+        // revision 匹配的排在最前
+        assertThat(withLegacy.bindings().getFirst().revision()).isEqualTo("A");
+        // includeLegacy=false + revision 指定: 严格匹配该 revision
         assertThat(withoutLegacy.bindings()).extracting(CodeBindingQueryItem::bindingId)
                 .containsExactly(revisionA.id());
     }
@@ -207,10 +210,11 @@ class GitBindingQueryApplicationServiceTests {
 
         var file = result.files().getFirst();
         assertThat(file.fileHasBindings()).isTrue();
+        // includeLegacy=true 保留全部 3 条，revision=A 精确匹配的排最前，maxBindings=1 截断
         assertThat(file.bindings()).extracting(CodeBindingQueryItem::bindingId)
                 .containsExactly(exact.id());
         assertThat(file.isTruncated()).isTrue();
-        assertThat(file.omittedBindingCount()).isOne();
+        assertThat(file.omittedBindingCount()).isEqualTo(2);
     }
 
     private CodeDocumentBinding binding(UUID bindingId, UUID documentId, UUID blockId) {

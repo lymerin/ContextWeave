@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -77,6 +79,30 @@ public class RedisCacheService {
             redis.delete(key);
         } catch (Exception e) {
             log.warn("Redis evict failed for key={}: {}", key, e.getMessage());
+        }
+    }
+
+    /**
+     * Evicts every key matching a glob pattern (e.g. {@code published-document:ws:doc:*}).
+     *
+     * <p>Redis has no atomic delete-by-prefix; SCAN + DEL is best-effort and
+     * keys missed here are covered by TTL expiry. Cache is a performance
+     * optimisation, never the authoritative data source.
+     */
+    public void evictByPattern(String pattern) {
+        if (!properties.enabled()) {
+            return;
+        }
+        try {
+            ScanOptions options = ScanOptions.scanOptions()
+                    .match(pattern)
+                    .count(100)
+                    .build();
+            try (Cursor<String> cursor = redis.scan(options)) {
+                cursor.forEachRemaining(redis::delete);
+            }
+        } catch (Exception e) {
+            log.warn("Redis evict-by-pattern failed for pattern={}: {}", pattern, e.getMessage());
         }
     }
 }

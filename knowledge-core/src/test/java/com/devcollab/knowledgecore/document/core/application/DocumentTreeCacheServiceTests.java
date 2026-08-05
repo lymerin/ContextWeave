@@ -61,6 +61,8 @@ class DocumentTreeCacheServiceTests {
                 true,
                 Duration.ofMinutes(10),
                 Duration.ofMinutes(5),
+                Duration.ofMinutes(30),
+                Duration.ofHours(1),
                 new CacheProperties.Local(
                         true,
                         Duration.ofMinutes(2),
@@ -152,6 +154,8 @@ class DocumentTreeCacheServiceTests {
                 false,
                 Duration.ofMinutes(10),
                 Duration.ofMinutes(5),
+                Duration.ofMinutes(30),
+                Duration.ofHours(1),
                 new CacheProperties.Local(
                         true,
                         Duration.ofMinutes(2),

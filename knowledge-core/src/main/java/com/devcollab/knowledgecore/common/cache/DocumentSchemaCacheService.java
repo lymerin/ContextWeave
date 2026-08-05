@@ -8,6 +8,16 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
+/**
+ * Document schema cache, intentionally L1-only (no Redis L2).
+ *
+ * <p>The source of truth here is a static enum projection
+ * ({@code List.of(DocumentBlockType.values())}), not a database read: all
+ * instances produce identical content, there is no cross-instance staleness
+ * and no DB fall-through, so a Redis layer would only add serialization and
+ * network cost. Keep this L1-only; see the Redis L2 access decision in
+ * {@code 99-local-redis-caffeine-architecture-learning-v0.3.md} §3.
+ */
 @Component
 public class DocumentSchemaCacheService {
 

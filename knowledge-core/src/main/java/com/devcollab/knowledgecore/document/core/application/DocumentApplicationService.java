@@ -622,10 +622,11 @@ public class DocumentApplicationService {
                 versionRepository.findById(versionId)
                         .filter(version -> version.documentId().equals(documentId))
                         .orElseThrow(DocumentVersionNotFoundException::new);
+        UUID workspaceId = document.workspaceId();
         if (document.documentType() == DocumentType.ADR) {
-            return approvedAdrCache.get(documentId, versionId, source);
+            return approvedAdrCache.get(workspaceId, documentId, versionId, source);
         }
-        return publishedDocumentCache.get(documentId, versionId, source);
+        return publishedDocumentCache.get(workspaceId, documentId, versionId, source);
     }
 
     public List<DocumentOperationLog> listTimeline(
@@ -902,20 +903,22 @@ public class DocumentApplicationService {
             Document document,
             UUID currentUserId
     ) {
-        String keyPattern = document.id() + ":*";
-        publishedDocumentCache.invalidate(keyPattern);
+        UUID workspaceId = document.workspaceId();
+        String publishedPattern = CacheKey.publishedDocumentPrefix(workspaceId, document.id());
+        publishedDocumentCache.invalidate(publishedPattern);
         publishCacheInvalidated(
                 document,
                 "published-document",
-                keyPattern,
+                publishedPattern,
                 currentUserId
         );
         if (document.documentType() == DocumentType.ADR) {
-            approvedAdrCache.invalidate(keyPattern);
+            String adrPattern = CacheKey.approvedAdrPrefix(workspaceId, document.id());
+            approvedAdrCache.invalidate(adrPattern);
             publishCacheInvalidated(
                     document,
                     "approved-adr",
-                    keyPattern,
+                    adrPattern,
                     currentUserId
             );
         }

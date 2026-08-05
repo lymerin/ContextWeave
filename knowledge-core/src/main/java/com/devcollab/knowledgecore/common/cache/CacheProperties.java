@@ -9,6 +9,8 @@ public record CacheProperties(
         boolean enabled,
         Duration workspaceMemberTtl,
         Duration documentTreeTtl,
+        Duration publishedDocumentTtl,
+        Duration approvedAdrTtl,
         Local local
 ) {
 
@@ -18,6 +20,12 @@ public record CacheProperties(
         }
         if (documentTreeTtl == null) {
             documentTreeTtl = Duration.ofMinutes(5);
+        }
+        if (publishedDocumentTtl == null) {
+            publishedDocumentTtl = Duration.ofMinutes(30);
+        }
+        if (approvedAdrTtl == null) {
+            approvedAdrTtl = Duration.ofHours(1);
         }
         if (local == null) {
             local = new Local(true, Duration.ofMinutes(2), Duration.ofMinutes(1), 10_000, 1_000);

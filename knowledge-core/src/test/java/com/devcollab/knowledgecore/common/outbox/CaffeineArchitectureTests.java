@@ -12,6 +12,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -23,6 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 class CaffeineArchitectureTests {
 
@@ -109,9 +111,9 @@ class CaffeineArchitectureTests {
         Cache<String, DocumentVersion> publishedCache = Caffeine.newBuilder().build();
         Cache<String, DocumentVersion> adrCache = Caffeine.newBuilder().build();
         PublishedDocumentCacheService published =
-                new PublishedDocumentCacheService(publishedCache, loader);
+                new PublishedDocumentCacheService(publishedCache, loader, redisCache(properties), properties);
         ApprovedAdrCacheService approvedAdr =
-                new ApprovedAdrCacheService(adrCache, loader);
+                new ApprovedAdrCacheService(adrCache, loader, redisCache(properties), properties);
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
         CacheInvalidationKafkaConsumer consumer = new CacheInvalidationKafkaConsumer(
                 mapper,
@@ -121,13 +123,16 @@ class CaffeineArchitectureTests {
                 published,
                 approvedAdr
         );
+        UUID workspaceId = UUID.randomUUID();
         UUID documentId = UUID.randomUUID();
-        publishedCache.put(documentId + ":v1", version("one"));
-        publishedCache.put(documentId + ":v2", version("two"));
-        publishedCache.put(UUID.randomUUID() + ":v1", version("other"));
+        UUID otherDocumentId = UUID.randomUUID();
+        publishedCache.put(CacheKey.publishedDocument(workspaceId, documentId, UUID.randomUUID()), version("one"));
+        publishedCache.put(CacheKey.publishedDocument(workspaceId, documentId, UUID.randomUUID()), version("two"));
+        publishedCache.put(CacheKey.publishedDocument(workspaceId, otherDocumentId, UUID.randomUUID()), version("other"));
+        String prefix = "published-document:" + workspaceId + ":" + documentId + ":";
         String payload = mapper.writeValueAsString(java.util.Map.of(
                 "cacheName", "published-document",
-                "cacheKey", documentId + ":*"
+                "cacheKey", CacheKey.publishedDocumentPrefix(workspaceId, documentId)
         ));
         String message = mapper.writeValueAsString(new OutboxKafkaMessage(
                 UUID.randomUUID(),
@@ -140,7 +145,7 @@ class CaffeineArchitectureTests {
         try {
             consumer.consume(message);
             assertThat(publishedCache.asMap().keySet())
-                    .noneMatch(key -> key.startsWith(documentId + ":"));
+                    .noneMatch(key -> key.startsWith(prefix));
             assertThat(publishedCache.estimatedSize()).isEqualTo(1);
         } finally {
             loader.shutdown();
@@ -158,10 +163,10 @@ class CaffeineArchitectureTests {
                     Caffeine.newBuilder().build(),
                     Caffeine.newBuilder().build(),
                     new PublishedDocumentCacheService(
-                            Caffeine.newBuilder().build(), loader
+                            Caffeine.newBuilder().build(), loader, redisCache(properties), properties
                     ),
                     new ApprovedAdrCacheService(
-                            Caffeine.newBuilder().build(), loader
+                            Caffeine.newBuilder().build(), loader, redisCache(properties), properties
                     )
             );
 
@@ -171,11 +176,21 @@ class CaffeineArchitectureTests {
         }
     }
 
+    private RedisCacheService redisCache(CacheProperties properties) {
+        return new RedisCacheService(
+                mock(StringRedisTemplate.class),
+                new ObjectMapper(),
+                properties
+        );
+    }
+
     private CacheProperties properties(Duration loadTimeout) {
         return new CacheProperties(
                 true,
                 Duration.ofMinutes(10),
                 Duration.ofMinutes(5),
+                Duration.ofMinutes(30),
+                Duration.ofHours(1),
                 new CacheProperties.Local(
                         true,
                         Duration.ofMinutes(2),

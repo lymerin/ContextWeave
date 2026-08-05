@@ -289,19 +289,4 @@ public class DocumentChangeController {
             @NotBlank @Size(max = 2_000) String reason
     ) {
     }
-
-    /**
-     * Return drift fixes that affected the given document, newest first.
-     *
-     * <p>Used by the frontend inspector panel to show a before/after
-     * history of automatic drift corrections for a document.
-     */
-    @GetMapping("/api/v1/workspaces/{workspaceId}/documents/{documentId}/drift-history")
-    public List<DetailView> driftHistory(
-            @PathVariable UUID workspaceId,
-            @PathVariable UUID documentId,
-            @AuthenticationPrincipal CurrentUser currentUser
-    ) {
-        return service.driftHistory(workspaceId, documentId, currentUser.userId());
-    }
 }

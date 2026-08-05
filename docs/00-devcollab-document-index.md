@@ -42,7 +42,7 @@
 | 96 | `96-local-frontend-backend-integration-guide-v0.2.md` | 前后端联调、Refresh 自动续期、CSRF Header、Origin 与代理 | V0.2 | 已由 `.gitignore` 忽略 |
 | 97 | `97-local-project-explanation-v0.2.md` | 项目总览、MVP 总结、亮点速查、下一步计划 | V0.2 | 已由 `.gitignore` 忽略 |
 | 98 | `98-local-document-lifecycle-review-learning-v0.1.md` | 文档状态机、版本快照、操作时间线、Review Issue | V0.1 | 已由 `.gitignore` 忽略 |
-| 99 | `99-local-redis-caffeine-architecture-learning-v0.2.md` | Redis 限流与去重、Caffeine 多级缓存、Kafka 跨节点失效及真实验收记录 | V0.2 | 已由 `.gitignore` 精确忽略 |
+| 99 | `99-local-redis-caffeine-architecture-learning-v0.3.md` | Redis 限流与去重、Caffeine 多级缓存、Kafka 跨节点失效、Redis L2 接入补齐设计与验收口径 | V0.3 | 已由 `.gitignore` 精确忽略 |
 | 99 | `99-local-git-knowledge-learning-v0.10.md` | Git 身份、源码投影、Monaco Tabs 高度链与首次渲染排错 | V0.10 | 已由 `.gitignore` 精确忽略 |
 
 每份本地学习文档覆盖一个独立技术主题，按面试 4 维度（技术栈是什么 → 解决了什么问题/带来什么提升 → 业务闭环流程 → 架构设计原因）组织。91 为总索引，收录全部技术栈速查表。

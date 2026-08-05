@@ -52,6 +52,8 @@ devcollab:
     enabled: ${DEVCOLLAB_CACHE_ENABLED:true}
     workspace-member-ttl: ${DEVCOLLAB_CACHE_WORKSPACE_MEMBER_TTL:PT10M}
     document-tree-ttl: ${DEVCOLLAB_CACHE_DOCUMENT_TREE_TTL:PT5M}
+    published-document-ttl: ${DEVCOLLAB_CACHE_PUBLISHED_DOCUMENT_TTL:PT30M}
+    approved-adr-ttl: ${DEVCOLLAB_CACHE_APPROVED_ADR_TTL:PT1H}
     local:
       enabled: ${DEVCOLLAB_LOCAL_CACHE_ENABLED:true}
       workspace-member-ttl: ${DEVCOLLAB_LOCAL_CACHE_WORKSPACE_MEMBER_TTL:PT2M}
