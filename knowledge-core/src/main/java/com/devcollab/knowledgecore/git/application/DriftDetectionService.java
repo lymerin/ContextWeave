@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -90,6 +91,31 @@ public class DriftDetectionService {
         if (symbols.isEmpty()) {
             LOG.info("Drift detection skipped: no symbols extracted for repository {}",
                     repositoryId);
+            return;
+        }
+
+        // 格式兼容性防护: 符号表可能由另一套分析器生成（如 worker 的 JavaParser
+        // 生成 "java:..." 格式），而 binding 的 symbol_key 来自 agent 的 AST
+        // 分析（"PYTHON:path:qualified:kind"）。两种格式互不匹配时绝不能把
+        // 所有 binding 误判为 SYMBOL_REMOVED 并删除——那会丢失全部文档绑定。
+        // 检测到语言前缀不相容时整体跳过，等待格式统一后再启用严格检测。
+        Set<String> symbolTablePrefixes = new HashSet<>();
+        for (CodeSymbol sym : symbols) {
+            String prefix = languagePrefix(sym.symbolKey());
+            if (prefix != null) {
+                symbolTablePrefixes.add(prefix);
+            }
+        }
+        if (!symbolTablePrefixes.isEmpty() && !languageOverlaps(bindings, symbolTablePrefixes)) {
+            LOG.warn("Drift detection skipped: binding symbol_key format "
+                            + "({}) incompatible with symbol table format ({}). "
+                            + "Refusing to delete bindings.",
+                    bindings.stream()
+                            .map(b -> languagePrefix(b.symbolKey()))
+                            .filter(java.util.Objects::nonNull)
+                            .distinct()
+                            .toList(),
+                    symbolTablePrefixes);
             return;
         }
 
@@ -284,6 +310,18 @@ public class DriftDetectionService {
             }
         }
 
+        // 关键安全阀: 只有当前符号表确实含有与 binding 相同语言前缀的符号时，
+        // 才允许判定 SYMBOL_REMOVED。若符号表整体由另一套分析器生成（语言前缀
+        // 不匹配），说明 binding 的 symbol_key 格式与符号表不相容——此时无法
+        // 证明符号真的被删除，绝不能 REMOVE_BINDING 误删文档绑定。
+        if (!hasMatchingLanguageSymbol(binding.symbolKey(), bySymbolKey.keySet())) {
+            return new DriftResult(DriftLevel.NONE,
+                    "Symbol table format incompatible with binding symbol_key ("
+                            + languagePrefix(binding.symbolKey())
+                            + " vs " + observedPrefixes(bySymbolKey.keySet())
+                            + "). Skipped conservatively.");
+        }
+
         if (!fileExists && filePath != null) {
             return new DriftResult(DriftLevel.FILE_REMOVED,
                     "Bound file was deleted: " + filePath);
@@ -291,6 +329,36 @@ public class DriftDetectionService {
         return new DriftResult(DriftLevel.SYMBOL_REMOVED,
                 "Symbol '" + (qname != null ? qname : binding.symbolKey())
                         + "' was removed or renamed in " + filePath + ".");
+    }
+
+    /**
+     * Whether the symbol table contains at least one symbol sharing the
+     * binding's symbol_key language prefix.
+     */
+    private static boolean hasMatchingLanguageSymbol(
+            String bindingSymbolKey,
+            Set<String> symbolTableKeys
+    ) {
+        String bindingPrefix = languagePrefix(bindingSymbolKey);
+        if (bindingPrefix == null) {
+            return false;
+        }
+        for (String key : symbolTableKeys) {
+            if (bindingPrefix.equals(languagePrefix(key))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String observedPrefixes(Set<String> symbolTableKeys) {
+        return symbolTableKeys.stream()
+                .map(DriftDetectionService::languagePrefix)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .sorted()
+                .toList()
+                .toString();
     }
 
     private DriftResult compareBindingToSymbol(
@@ -501,6 +569,44 @@ public class DriftDetectionService {
                     .append(" 个文档 Block 正文中的签名引用已自动替换\n");
         }
         return sb.toString();
+    }
+
+    // ── symbol_key 格式兼容性 ──────────────────────────────────────────────
+
+    /**
+     * Extract the language prefix from a symbol_key.
+     *
+     * <p>Formats in the wild:
+     * <ul>
+     *   <li>agent AST: {@code PYTHON:path:qualified:kind} → {@code "PYTHON"}</li>
+     *   <li>worker JavaParser: {@code java:qualified@pathDigest} → {@code "java"}</li>
+     * </ul>
+     */
+    static String languagePrefix(String symbolKey) {
+        if (symbolKey == null || symbolKey.isBlank()) {
+            return null;
+        }
+        int colon = symbolKey.indexOf(':');
+        return colon < 0 ? null : symbolKey.substring(0, colon);
+    }
+
+    /**
+     * Whether any binding shares a language prefix with the symbol table.
+     *
+     * <p>When no binding's prefix appears in the symbol table, the two sides
+     * were produced by different analyzers and drift comparison is meaningless.
+     */
+    private static boolean languageOverlaps(
+            List<CodeDocumentBinding> bindings,
+            Set<String> symbolTablePrefixes
+    ) {
+        for (CodeDocumentBinding binding : bindings) {
+            String prefix = languagePrefix(binding.symbolKey());
+            if (prefix != null && symbolTablePrefixes.contains(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ── Internal result type ───────────────────────────────────────────────

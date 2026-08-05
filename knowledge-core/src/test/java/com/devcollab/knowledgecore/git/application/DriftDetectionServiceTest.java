@@ -273,6 +273,35 @@ class DriftDetectionServiceTest {
                 .create(any(), any(), any());
     }
 
+    // ── symbol_key 格式不兼容防护（回归测试） ───────────────────────────────
+
+    @Test
+    void incompatibleSymbolFormat_neverDeletesBindings() {
+        // 回归测试: 同步后 code_symbols 表可能由 JavaParser 重建为 "java:..." 格式，
+        // 而 binding 是 agent 生成的 "PYTHON:..." 格式。此时绝不能把绑定
+        // 判为 SYMBOL_REMOVED 并删除——那会丢失全部文档绑定。
+        var binding = makeBinding("PYTHON:src/a.py:Foo.bar:METHOD");
+        var javaSymbol = makeSymbol(
+                "java:com.devcollab.Foo@a1b2c3d4e5f60718", "com.devcollab.Foo",
+                "class Foo", 10, 30);
+
+        when(gitRepository.findBindingsByRepositoryId(REPO_ID))
+                .thenReturn(List.of(binding));
+        when(gitRepository.findSymbolsByRepositoryId(REPO_ID, null))
+                .thenReturn(List.of(javaSymbol));
+        when(gitRepository.findFilesByRepositoryId(REPO_ID))
+                .thenReturn(List.of(makeFile("src/a.py")));
+
+        service.detectAndSubmit(WORKSPACE_ID, REPO_ID, "abc1234", USER_ID);
+
+        // 格式不兼容 → 整体跳过，不提交任何 change request，绑定保持不动
+        verify(documentChangeService, org.mockito.Mockito.never())
+                .create(any(), any(), any());
+        // 任何情况下都不应该执行 deleteBinding / REMOVE
+        verify(gitRepository, org.mockito.Mockito.never())
+                .deleteBinding(any());
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────
 
     private CodeSymbol makeSymbol(
