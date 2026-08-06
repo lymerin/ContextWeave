@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   registerGitRepository: vi.fn(),
   routerPush: vi.fn(),
   logout: vi.fn(),
+  routeQuery: {},
 }));
 
 vi.mock('@/api/workspace', () => ({
@@ -27,6 +28,9 @@ vi.mock('@/api/git', () => ({
 }));
 
 vi.mock('vue-router', () => ({
+  useRoute: () => ({
+    query: mocks.routeQuery,
+  }),
   useRouter: () => ({
     push: mocks.routerPush,
   }),
@@ -109,6 +113,7 @@ function confirmButton() {
 describe('HomeView workspace deletion', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.routeQuery = {};
     mocks.deleteWorkspace.mockResolvedValue(undefined);
     mocks.renameWorkspace.mockResolvedValue({
       ...workspace,

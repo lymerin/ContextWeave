@@ -7,7 +7,8 @@ import { useAuthStore } from '@/stores/auth';
 export const appRoutes: RouteRecordRaw[] = [
     {
       path: '/',
-      redirect: '/workspaces',
+      name: 'landing',
+      component: () => import('@/views/LandingView.vue'),
     },
     {
       path: '/workspaces',

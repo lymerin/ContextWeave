@@ -22,6 +22,14 @@ function waitForNavigation(router: ReturnType<typeof createTestRouter>) {
 }
 
 describe('workspace routes', () => {
+  it('keeps the root route public and renders the landing page before authentication', async () => {
+    const router = createTestRouter();
+    await router.push('/');
+    expect(router.currentRoute.value.name).toBe('landing');
+    expect(router.currentRoute.value.meta.requiresAuth).not.toBe(true);
+    expect(router.currentRoute.value.fullPath).toBe('/');
+  });
+
   it('redirects the workspace root to the linked workbench and preserves query context', async () => {
     const router = createTestRouter();
     await router.push('/workspaces/w1?repositoryId=r1&documentId=d1');

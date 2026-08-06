@@ -50,11 +50,11 @@
           class="nav-item"
           :class="{ 'is-active': active === 'documents' }"
           type="button"
-          title="工程文档"
+          title="工作区"
           @click="openDocuments"
         >
           <Document class="nav-icon" />
-          <span v-if="!modelValue" class="sidebar-label">文档</span>
+          <span v-if="!modelValue" class="sidebar-label">工作区</span>
         </button>
         <button
           v-if="workspaceId"

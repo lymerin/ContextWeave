@@ -79,7 +79,7 @@
         </div>
 
         <el-empty
-          v-else-if="workspaces.length === 0"
+          v-if="workspaces.length === 0"
           description="还没有工作区"
         >
           <el-button
@@ -104,6 +104,21 @@
               <el-tag size="small" effect="light">
                 {{ roleText(workspaceItem.currentUserRole) }}
               </el-tag>
+            </div>
+
+            <div class="workspace-card-stats">
+              <template v-if="statsLoading">
+                <span class="workspace-stat-muted">统计中…</span>
+              </template>
+              <template v-else>
+                <span>{{ documentCounts[workspaceItem.id] ?? 0 }} 篇文档</span>
+                <span
+                  class="workspace-pending-stat"
+                  :class="{ 'has-pending': (pendingCounts[workspaceItem.id] ?? 0) > 0 }"
+                >
+                  {{ pendingCounts[workspaceItem.id] ?? 0 }} 项待审批
+                </span>
+              </template>
             </div>
 
             <p>
@@ -182,8 +197,10 @@
 import { Plus, SwitchButton } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
+import { listDocumentTree, type DocumentTreeNode } from '@/api/document';
+import { getPendingDocumentChangeCount } from '@/api/documentChange';
 import { registerGitRepository } from '@/api/git';
 import {
   createWorkspace,
@@ -193,6 +210,7 @@ import {
   type Workspace,
   type WorkspaceRole,
 } from '@/api/workspace';
+import { orderWorkspacesByRecent, recordWorkspaceVisit } from '@/utils/workspaceRecent';
 import AppSidebar from '@/components/layout/AppSidebar.vue';
 import NotificationCenter from '@/components/notification/NotificationCenter.vue';
 import WorkspaceCreateDialog from '@/components/workspace/WorkspaceCreateDialog.vue';
@@ -208,9 +226,13 @@ interface WorkspaceCreatePayload {
 }
 
 const authStore = useAuthStore();
+const route = useRoute();
 const router = useRouter();
 
 const workspaces = ref<Workspace[]>([]);
+const documentCounts = ref<Record<string, number>>({});
+const pendingCounts = ref<Record<string, number>>({});
+const statsLoading = ref(false);
 const loading = ref(false);
 const loggingOut = ref(false);
 const dialogVisible = ref(false);
@@ -227,6 +249,9 @@ const sidebarCollapsed = ref(
 );
 
 onMounted(() => {
+  if (route.query.action === 'create') {
+    dialogVisible.value = true;
+  }
   void loadWorkspaces();
 });
 
@@ -235,7 +260,12 @@ async function loadWorkspaces() {
   errorMessage.value = '';
 
   try {
-    workspaces.value = await listWorkspaces();
+    const loaded = await listWorkspaces();
+    // Recently visited workspaces first, then the rest in API order.
+    workspaces.value = orderWorkspacesByRecent(loaded.map(item => item.id))
+      .map(id => loaded.find(item => item.id === id))
+      .filter((item): item is Workspace => item !== undefined);
+    void loadWorkspaceStats(loaded);
   } catch (error) {
     errorMessage.value = readableError(
       error,
@@ -244,6 +274,37 @@ async function loadWorkspaces() {
   } finally {
     loading.value = false;
   }
+}
+
+async function loadWorkspaceStats(workspacesList: Workspace[]) {
+  statsLoading.value = true;
+  try {
+    const [treeResults, pendingResults] = await Promise.all([
+      Promise.allSettled(workspacesList.map(item => listDocumentTree(item.id))),
+      Promise.allSettled(workspacesList.map(item => getPendingDocumentChangeCount(item.id))),
+    ]);
+    const nextDocumentCounts: Record<string, number> = {};
+    const nextPendingCounts: Record<string, number> = {};
+    workspacesList.forEach((item, index) => {
+      const tree = treeResults[index];
+      nextDocumentCounts[item.id] = tree.status === 'fulfilled'
+        ? countDocumentNodes(tree.value)
+        : 0;
+      const pending = pendingResults[index];
+      nextPendingCounts[item.id] = pending.status === 'fulfilled' ? pending.value : 0;
+    });
+    documentCounts.value = nextDocumentCounts;
+    pendingCounts.value = nextPendingCounts;
+  } finally {
+    statsLoading.value = false;
+  }
+}
+
+function countDocumentNodes(nodes: DocumentTreeNode[]): number {
+  return nodes.reduce(
+    (total, node) => total + 1 + countDocumentNodes(node.children),
+    0,
+  );
 }
 
 async function handleCreateWorkspace(
@@ -299,6 +360,7 @@ async function handleCreateWorkspace(
 }
 
 async function openWorkspace(workspaceId: string) {
+  recordWorkspaceVisit(workspaceId);
   await router.push({
     name: 'workspace-code',
     params: {
