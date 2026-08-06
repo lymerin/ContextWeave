@@ -32,6 +32,10 @@ class UnitPlanItem(BaseModel):
     supportingFiles: list[str] = Field(default_factory=list)
     relatedDocumentIds: list[UUID] = Field(default_factory=list)
     groupingEvidence: Annotated[list[str], Field(min_length=1)]
+    # 业务视角：一句话业务定位 + 主要入口链路（模块规划 prompt 要求输出，
+    # 语义分析阶段继承为业务上下文）
+    businessRole: str = Field(default="", max_length=500)
+    primaryFlow: str = Field(default="", max_length=1_000)
 
     @field_validator("name", "summary")
     @classmethod

@@ -20,7 +20,7 @@ from app.clients.mcp_client import McpClientError, OfficialMcpClient, ReviewMcpC
 from app.config import Settings, get_settings
 from app.document_planner.plan_validator import PlanValidationError
 from app.execution.errors import JobExecutionError
-from app.execution.job_executor import JobExecutor
+from app.execution.job_executor import JobExecutor, SlotCoverageError
 from app.model_context_mcp.snapshot_store_registry import SnapshotStoreRegistry
 from app.persistence.job_repository import AgentJobRepository, PostgresAgentJobRepository
 from app.planning.deepseek_unit_planner import DeepSeekUnitPlanner
@@ -36,6 +36,7 @@ from app.providers.deepseek import DeepSeekProvider
 from app.runtime.delegated_mcp_client import DelegatedMcpClient
 from app.runtime.project_discovery import ProjectDiscoveryService
 from app.runtime.semantic_planner import materialize_deepseek_units, overlapping_file_count
+from app.schemas.document_planner.skeleton import SkeletonSlot
 from app.source_selection.file_filter import SourceFileFilter
 
 LOGGER = logging.getLogger("devcollab.agent.worker")
@@ -46,12 +47,66 @@ class ReviewSubmissionError(RuntimeError):
     code = "REVIEW_SUBMISSION_FAILED"
 
 
+class SkeletonReviewPendingError(RuntimeError):
+    """批次所属的骨架 review 尚未 APPLIED——自动重试等待。"""
+    code = "SKELETON_REVIEW_PENDING"
+
+
 RETRYABLE_ERRORS = {
     "MODEL_TIMEOUT",
     "MODEL_UNAVAILABLE",
     "MCP_UNAVAILABLE",
     "DATABASE_UNAVAILABLE",
+    # 批次槽位覆盖不足：会话内 repair 耗尽后由 worker 自动重试（退避）
+    "SLOT_COVERAGE_INSUFFICIENT",
+    # 骨架 review 未 APPLIED：批次等待人工审批后自动继续
+    "SKELETON_REVIEW_PENDING",
 }
+
+
+def _batch_payloads(
+    skeleton: object, review_id: str | None = None
+) -> list[dict[str, Any]]:
+    """DocumentSkeleton → create_batch_units 的批次载荷（槽位序列化）。
+
+    skeletonReviewId 记录本模块骨架 review——批次执行前等待其 APPLIED，
+    否则 candidates 查不到绑定会重复创建文档。
+    """
+    from app.schemas.document_planner.skeleton import DocumentSkeleton
+
+    skeleton = cast(DocumentSkeleton, skeleton)
+    by_id = skeleton.slots_by_id()
+    batches: list[dict[str, Any]] = []
+    for batch in skeleton.batches:
+        label = f"批 {batch.batch_index}：{batch.scope_label}"
+        slot_plan = {
+            "batchLabel": label,
+            "batchType": "FLOW" if batch.batch_index == 1 else "SYMBOL",
+            "slots": [
+                {
+                    "slot_id": slot.slot_id,
+                    "slot_type": slot.slot_type,
+                    "title": slot.title,
+                    "primary_symbol_key": slot.primary_symbol_key,
+                    "placeholder": slot.placeholder,
+                    "file_path": slot.file_path,
+                    "sort_order": slot.sort_order,
+                }
+                for slot_id in batch.slot_ids
+                for slot in [by_id[slot_id]]
+            ],
+        }
+        if review_id:
+            slot_plan["skeletonReviewId"] = review_id
+        batches.append({
+            "batch_index": batch.batch_index,
+            "batch_label": label,
+            "display_name": label,
+            "summary": "",
+            "slot_plan": slot_plan,
+            "file_paths": list(batch.file_paths),
+        })
+    return batches
 PHASES = {
     "PLANNING": "MODEL_RUNNING",
     "VALIDATING": "VALIDATING",
@@ -216,8 +271,33 @@ class AgentWorker:
                     str(item.get("file_path") or item.get("filePath"))
                     for item in context.get("files", [])
                 ]
+                # 批次单元：槽位清单随单元持久化（slot_plan），注入会话作用域
+                slot_plan = context.get("slot_plan") or {}
+                slot_scope = tuple(
+                    SkeletonSlot(**slot)
+                    for slot in slot_plan.get("slots", [])
+                )
+                batch_label = str(slot_plan.get("batchLabel") or "")
+                # 骨架 review 未 APPLIED 前批次不执行：否则 candidates 查不到
+                # 绑定会重复创建文档。PENDING → 自动重试等待；REJECTED → 优雅完成。
+                skeleton_review_id = slot_plan.get("skeletonReviewId")
+                if skeleton_review_id:
+                    review_status = await self._review_status(
+                        UUID(str(job["workspace_id"])),
+                        UUID(str(skeleton_review_id)),
+                        delegation_id=UUID(str(job["delegation_id"])),
+                        job_id=job_id,
+                    )
+                    if review_status == "PENDING":
+                        raise SkeletonReviewPendingError(
+                            f"skeleton review {skeleton_review_id} is PENDING"
+                        )
+                    if review_status in ("REJECTED", "STALE"):
+                        return {"status": "NO_CHANGE", "change_request_id": None}
             else:
                 selected_paths = [str(scope["filePath"])]
+                slot_scope = ()
+                batch_label = ""
 
             executor = JobExecutor(
                 workspace_reader=WorkspaceReader(delegated),
@@ -236,8 +316,50 @@ class AgentWorker:
                     repository_id=UUID(str(job["repository_id"])),
                     revision=str(job["revision"]),
                     selected_paths=selected_paths,
-                    run_id=str(unit_id),  # 每次执行唯一，保证幂等 clientRequestId
+                    # 执行级幂等键：同一次执行内稳定，重跑随 attempt 变化
+                    run_id=f"{unit_id}-{int(unit.get('attempt') or 0)}",
+                    slot_scope=slot_scope,
+                    batch_label=batch_label,
                 )
+
+        async def run_skeleton_flow() -> dict[str, Any]:
+            """SKELETON_PLAN：模块快照 → 骨架 → 骨架 Review → 创建批次单元。"""
+            context = await self._repository.get_unit_context(unit_id)
+            selected_paths = [
+                str(item.get("file_path") or item.get("filePath"))
+                for item in context.get("files", [])
+            ]
+            executor = JobExecutor(
+                workspace_reader=WorkspaceReader(delegated),
+                source_reader=SourceReader(delegated),
+                document_reader=DocumentReader(delegated),
+                binding_reader=BindingReader(delegated),
+                plan_writer=PlanWriter(delegated),
+                file_filter=SourceFileFilter(),
+                registry=self._registry,
+                provider=self._provider,
+                budget_chars=self._settings.agent_max_code_chars,
+            )
+            with self._profile_stage("UNIT_EXECUTION", job, job_id, unit_id):
+                result = await executor.execute_skeleton_flow(
+                    workspace_id=UUID(str(job["workspace_id"])),
+                    repository_id=UUID(str(job["repository_id"])),
+                    revision=str(job["revision"]),
+                    selected_paths=selected_paths,
+                    run_id=f"{unit_id}-{int(unit.get('attempt') or 0)}",
+                    document_title=str(unit.get("display_name") or "代码模块"),
+                )
+            if result.get("status") == "EMPTY_SCOPE":
+                # 模块无可解析符号（如纯模板/非代码模块）→ 无文档可建，优雅完成
+                return {"status": "NO_CHANGE", "change_request_id": None}
+            skeleton = result.get("skeleton")
+            if skeleton is None:
+                raise RuntimeError("SKELETON_PLAN did not produce a skeleton")
+            review_id = result.get("change_request_id")
+            await self._repository.create_batch_units(
+                job_id, _batch_payloads(skeleton, review_id=review_id)
+            )
+            return result
 
         async def run_project_discovery() -> None:
             async def on_phase(phase: str) -> None:
@@ -341,9 +463,14 @@ class AgentWorker:
                         raise RuntimeError("Agent unit heartbeat stopped unexpectedly")
                     discovery_task.result()
                 return
-            workflow_task = asyncio.create_task(
-                run_workflow(), name=f"workflow-{unit_id}"
-            )
+            if unit.get("unit_kind") == "SKELETON_PLAN":
+                workflow_task = asyncio.create_task(
+                    run_skeleton_flow(), name=f"skeleton-{unit_id}"
+                )
+            else:
+                workflow_task = asyncio.create_task(
+                    run_workflow(), name=f"workflow-{unit_id}"
+                )
             async with asyncio.timeout(self._settings.agent_unit_timeout_seconds):
                 done, _pending = await asyncio.wait(
                     {workflow_task, heartbeat},
@@ -422,6 +549,46 @@ class AgentWorker:
             heartbeat.cancel()
             await asyncio.gather(heartbeat, return_exceptions=True)
 
+    async def _review_status(
+        self,
+        workspace_id: UUID,
+        review_id: UUID,
+        *,
+        delegation_id: UUID,
+        job_id: UUID,
+    ) -> str:
+        """查询变更请求状态（PENDING/APPLIED/REJECTED/STALE）。
+
+        使用与 MCP 服务器同源的 delegation exchange 令牌直接查询知识库。
+        """
+        import httpx
+
+        authorization = await self._delegation_client.exchange(
+            delegation_id=delegation_id,
+            job_id=job_id,
+        )
+        try:
+            async with httpx.AsyncClient(
+                timeout=30,
+                headers={"Authorization": authorization},
+            ) as client:
+                response = await client.get(
+                    f"{self._settings.knowledge_core_base_url}/api/v1/workspaces/"
+                    f"{workspace_id}/document-change-requests/{review_id}"
+                )
+        except httpx.HTTPError as exc:
+            raise McpClientError(
+                "MCP_UNAVAILABLE", "Review status query failed"
+            ) from exc
+        if response.status_code == 404:
+            return "MISSING"
+        if response.status_code >= 400:
+            raise McpClientError(
+                "MCP_UNAVAILABLE",
+                f"Review status query rejected: {response.status_code}",
+            )
+        return str((response.json() or {}).get("status") or "")
+
     def _profile_stage(
         self,
         name: str,
@@ -457,6 +624,10 @@ class AgentWorker:
             return exc.code, str(exc)[:300]
         if isinstance(exc, PlanValidationError):
             return "PLAN_VALIDATION_FAILED", "Agent plan failed validation after one repair"
+        if isinstance(exc, SlotCoverageError):
+            return exc.code, str(exc)[:300]
+        if isinstance(exc, SkeletonReviewPendingError):
+            return exc.code, str(exc)[:300]
         if isinstance(exc, UnitPlanValidationError):
             return (
                 "UNIT_PLAN_VALIDATION_FAILED",
@@ -521,7 +692,11 @@ async def main() -> None:
     loop = asyncio.get_running_loop()
     for name in ("SIGINT", "SIGTERM"):
         if hasattr(signal, name):
-            loop.add_signal_handler(getattr(signal, name), worker.stop)
+            try:
+                loop.add_signal_handler(getattr(signal, name), worker.stop)
+            except NotImplementedError:
+                # Windows 不支持信号处理器；依赖任务取消与进程终止
+                pass
     try:
         await worker.run()
     finally:

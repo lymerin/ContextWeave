@@ -38,7 +38,12 @@ class DocumentReader:
                     block_id=UUID(b["blockId"]),
                     block_type=str(b.get("blockType", "PARAGRAPH")),
                     sort_order=int(b.get("sortOrder") or 0),
-                    version=int(b.get("version") or 1),
+                    # version=0 是合法初始值：`or 1` 会把 0 替换成 1，
+                    # 导致 UPDATE_BLOCK 的 baseBlockVersion 与真实版本不符 → apply 409
+                    version=(
+                        int(b["version"])
+                        if b.get("version") is not None else 1
+                    ),
                     plain_text=b.get("plainText"),
                     content=b.get("content"),
                 )

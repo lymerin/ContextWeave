@@ -10,6 +10,10 @@ from app.schemas.model_context.snapshot import ContextSnapshot
 __all__ = ["build", "PlanningEvidenceCatalog"]
 
 
-def build(snapshot: ContextSnapshot, catalog: AtomCatalog) -> PlanningEvidenceCatalog:
+def build(
+    snapshot: ContextSnapshot,
+    catalog: AtomCatalog,
+    extra_symbols: tuple = (),
+) -> PlanningEvidenceCatalog:
     """ContextSnapshot + AtomCatalog → PlanningEvidenceCatalog。"""
-    return build_evidence_catalog(snapshot, catalog)
+    return build_evidence_catalog(snapshot, catalog, extra_symbols=extra_symbols)

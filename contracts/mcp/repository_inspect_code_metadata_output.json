@@ -1,0 +1,51 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workspaceId",
+    "repositoryId",
+    "revision",
+    "files"
+  ],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "repositoryId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "string"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "filePath",
+          "language"
+        ],
+        "properties": {
+          "filePath": { "type": "string" },
+          "language": { "type": "string" },
+          "packageName": { "type": ["string", "null"] },
+          "moduleKey": { "type": ["string", "null"] },
+          "moduleName": { "type": ["string", "null"] },
+          "layerHint": { "type": ["string", "null"] },
+          "imports": { "type": "array", "items": { "type": "string" } },
+          "resolvedRepositoryImports": { "type": "array", "items": { "type": "string" } },
+          "exportedSymbols": { "type": "array", "items": { "type": "string" } },
+          "topLevelSymbols": { "type": "array", "items": { "type": "string" } },
+          "annotations": { "type": "array", "items": { "type": "string" } },
+          "routeHints": { "type": "array", "items": { "type": "string" } },
+          "roleHints": { "type": "array", "items": { "type": "string" } },
+          "parseStatus": { "type": ["string", "null"] },
+          "errorCode": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

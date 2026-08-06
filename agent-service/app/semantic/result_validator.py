@@ -1,14 +1,25 @@
 """语义结果校验——semantic_groups + member_interpretations 的完整性校验。"""
 
+from app.schemas.document_planner.skeleton import SkeletonSlot, SlotType
 from app.schemas.model_context.snapshot import ContextSnapshot
 from app.schemas.semantic.analysis_result import SemanticAnalysisResult
 
 
 class ResultValidator:
-    """校验 SemanticAnalysisResult 的正确性。"""
+    """校验 SemanticAnalysisResult 的正确性。
 
-    def __init__(self, snapshot: ContextSnapshot) -> None:
+    required_slots 提供时，额外核对批次槽位覆盖：SYMBOL 槽位要求
+    member_interpretations 命中目标原子，FLOW/OVERVIEW 槽位要求
+    semantic_groups 命中入口原子。缺失的槽位逐个点名（触发 repair/重试）。
+    """
+
+    def __init__(
+        self,
+        snapshot: ContextSnapshot,
+        required_slots: tuple[SkeletonSlot, ...] = (),
+    ) -> None:
         self._snap = snapshot
+        self._required_slots = required_slots
         self._errors: list[str] = []
         # 模型只返回 symbol_key，入口 _bind_result_atoms 已绑定回 atom_id。
         # 校验时两种 ID 都接受（存在即视为有效），避免符号缺失时误判格式错误。
@@ -37,7 +48,43 @@ class ResultValidator:
             for j, ref in enumerate(step.evidence_refs):
                 self._check_evidence(f"execution_flow[{i}].evidence_refs[{j}]", ref)
 
+        # ── 批次槽位覆盖 ────────────────────────────────────────────
+        self._check_slot_coverage(result)
+
         return self._errors
+
+    # ── 槽位覆盖 ─────────────────────────────────────────────────────
+
+    def _check_slot_coverage(self, result: SemanticAnalysisResult) -> None:
+        if not self._required_slots:
+            return
+        group_atoms = {
+            a
+            for g in result.semantic_groups
+            for a in (*g.primary_atom_ids, *g.informed_by_atom_ids)
+        }
+        interp_atoms = {m.atom_id for m in result.member_interpretations}
+        for slot in self._required_slots:
+            if slot.slot_type == SlotType.OVERVIEW:
+                if not result.overall_responsibility:
+                    self._errors.append(f"slot 未覆盖: {slot.slot_id}（{slot.title}）")
+                continue
+            key = slot.primary_symbol_key or ""
+            target = self._snap.atom_by_symbol.get(key)
+            if target is None:
+                # 槽位目标不在快照 = 快照覆盖缺陷（预算裁剪/scope 构建问题）
+                self._errors.append(
+                    f"slot 目标不在快照: {slot.slot_id}（{slot.title}）"
+                )
+                continue
+            if slot.slot_type == SlotType.SYMBOL:
+                # 会话内校验时解释的 atom_id 仍是 symbol_key（绑定在会话后），
+                # 两种形式都接受
+                if target not in interp_atoms and key not in interp_atoms:
+                    self._errors.append(f"slot 未覆盖: {slot.slot_id}（{slot.title}）")
+            else:  # FLOW：semantic_group 必须命中入口原子
+                if target not in group_atoms and key not in group_atoms:
+                    self._errors.append(f"slot 未覆盖: {slot.slot_id}（{slot.title}）")
 
     # ── semantic_groups ─────────────────────────────────────────────
 

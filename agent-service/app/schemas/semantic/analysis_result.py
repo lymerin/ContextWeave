@@ -30,6 +30,7 @@ class MemberInterpretation(BaseModel):
     atom_id: str = ""
     responsibility: str = ""
     role: str = ""
+    content_markdown: str = ""  # 完整正文（遵守基座排版规则）；responsibility 保留为摘要
     evidence_refs: list[EvidenceRef] = Field(default_factory=list)
 
 
@@ -42,6 +43,7 @@ class SemanticGroup(BaseModel):
     title: str = ""                              # Section 标题（如 "接口职责：POST /orders"）
     target_kind: str = ""                         # HTTP_ENDPOINT / DATA_MODEL / BUSINESS_RULE / ...
     summary: str = ""                             # 这段正文的一句摘要
+    content_markdown: str = ""                    # 完整正文（遵守基座排版规则）；summary 保留为摘要
     primary_atom_ids: list[str] = Field(default_factory=list)      # PRIMARY 绑定
     informed_by_atom_ids: list[str] = Field(default_factory=list)  # 全部涉及的 atom_id
     evidence_refs: list[EvidenceRef] = Field(default_factory=list)

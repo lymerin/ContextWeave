@@ -68,9 +68,16 @@ public class ContextBudgetPolicy {
         );
         String requestedContent = join(allLines, startLine, requestedFinalLine);
         String lineBudgetedContent = join(allLines, startLine, budgetedEndLine);
-        String selected = lineBudgetedContent.length() <= properties.maxOutputCharacters()
-                ? lineBudgetedContent
-                : lineBudgetedContent.substring(0, properties.maxOutputCharacters());
+        // 字符预算超限时必须在完整行边界切断：substring 会从字符中间切开，
+        // 导致返回的最后一行为半个语句，客户端分段续读拼接后语法损坏。
+        String selected;
+        if (lineBudgetedContent.length() <= properties.maxOutputCharacters()) {
+            selected = lineBudgetedContent;
+        } else {
+            String head = lineBudgetedContent.substring(0, properties.maxOutputCharacters());
+            int lastNewline = head.lastIndexOf('\n');
+            selected = lastNewline >= 0 ? head.substring(0, lastNewline + 1) : head;
+        }
 
         int selectedLineBreaks = Math.toIntExact(selected.chars().filter(character -> character == '\n').count());
         int representedLineOffset = selected.endsWith("\n")
@@ -96,12 +103,11 @@ public class ContextBudgetPolicy {
     }
 
     private String join(String[] lines, int startLine, int endLine) {
+        // 每行后都带换行：客户端按 endLine 分段续读时逐行拼接，
+        // 末行无换行会把下一 chunk 的首行拼到同一行，产生语法损坏。
         StringBuilder joined = new StringBuilder();
         for (int line = startLine; line <= endLine; line++) {
-            if (!joined.isEmpty()) {
-                joined.append('\n');
-            }
-            joined.append(lines[line - 1]);
+            joined.append(lines[line - 1]).append('\n');
         }
         return joined.toString();
     }

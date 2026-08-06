@@ -113,7 +113,9 @@ def _apply_budget(
     for member in ordered:
         sym = by_key[member.symbol_key]
         estimate = _estimate_chars(sym)
-        if member.distance <= 1 or used + estimate <= budget_chars:
+        # 公开符号（骨架槽位的覆盖基准）强制保留；预算只裁剪私有辅助符号
+        public = not _is_private(sym.name)
+        if member.distance <= 1 or public or used + estimate <= budget_chars:
             kept.append(sym)
             used += estimate
         else:
@@ -124,6 +126,10 @@ def _apply_budget(
 def _estimate_chars(sym: SymbolAtom) -> int:
     body_lines = max(0, sym.body_end_line - sym.body_start_line + 1)
     return body_lines * _EST_CHARS_PER_LINE + len(sym.signature)
+
+
+def _is_private(name: str) -> bool:
+    return name.startswith("_") and not name.startswith("__")
 
 
 # ── 源码去重 ────────────────────────────────────────────────────────────────

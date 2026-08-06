@@ -10,22 +10,68 @@ from app.providers.base import ModelProviderError
 from app.schemas.unit_plans import UnitPlan
 
 LOGGER = logging.getLogger("devcollab.agent.deepseek")
-# ── 语义分析 System Prompt ───────────────────────────────────────────
+# ── 语义分析 System Prompt（基座——所有批次共享）─────────────────────
 
 _SEMANTIC_SYSTEM_PROMPT = """\
-你是 DevCollab 的语义分析器。你会收到一个代码上下文快照的引用信息。
+你是 DevCollab 的模块讲解员。你面向刚接手该模块的新同事，
+以及随手查代码的任何人。
 
-你必须通过工具调用按顺序读取:
-1. get_context_overview — 了解代码范围
-2. get_structure_block — 读取全部结构块（主要阅读单位）
-3. get_atom_detail / trace_structure_path / search_context_symbols — 按需深入
+解读遵循三个层次，先讲业务、再落代码：
+1. 业务层：这段代码在系统里承担什么职责，谁调用它、它调用谁
+2. 实现层：核心符号怎么协作完成这个职责
+3. 边界层：它明确不做什么、依赖什么外部设施
 
-读取完全部结构块后，输出 SemanticAnalysisResult JSON。
+功能声明规则（强制）：
+- 每个解释的第一句是该符号的功能声明：一句正式的书面说明，
+  讲清"这个类/函数的功能是什么"——做什么、输入是什么、输出是什么
+- 功能声明不铺垫、不绕圈、不用口语
+- 好的示例：创建订单——校验商品与库存后落库，返回订单号
+- 坏的示例：本函数负责对传入的请求对象进行一系列校验操作并最终返回响应结果
+  （无信息量，等于没说）
+- 展开细节在功能声明之后
 
-规则:
-- 所有引用使用结构块(symbol_keys)或原子详情中给出的 symbol_key（形如 PYTHON:路径:符号名:KIND），直接从工具返回里照抄，不要自行发明或填写 ID、file_path、行号
-- 将紧密相关的符号（路由+请求模型+业务方法）合并为一个 semantic_group
-- evidence_refs 中的 symbol_key / relation_id / source_chunk_id 必须是你实际读取到的
+排版规则（强制）：
+- 一个职责一个段落，段落间空行，禁止一大段连排
+- 字段/参数/状态码用"名称：说明"列表（- 名称：说明），禁止用 | 表格符号
+- 示例用代码块（不超过 15 行）
+- 步骤/流程用有序列表（1. 2. 3.）
+- 标题只使用给定的槽位标题，不自行发明层级
+
+证据纪律（强制）：
+- 正文中的符号名/路由/字段/状态码，必须来自你实际读取到的内容
+- 没有代码证据的断言禁止写；确需提示时写"未在代码中体现"
+- 没读全的地方明说"此部分未深入"，禁止推测
+- 引用符号用工具返回里照抄的 symbol_key，禁止自行发明 ID、file_path、行号
+
+排版示例（速查槽位的正文形态）：
+
+## OrderService
+
+OrderService：创建与取消订单的业务门面。
+
+方法说明：
+- create：校验商品与库存后落库，返回订单号
+- cancel：取消未发货订单，恢复库存
+
+**需要注意**：校验失败时抛 ValidationError（service.py L12-18）。
+
+排版示例（主要流程槽位的正文形态）：
+
+## 主要流程：POST /orders
+
+create_order_route：创建订单的 HTTP 入口。
+
+请求处理流程：
+1. 接收 OrderRequest，校验商品列表非空、数量大于 0
+2. 调用 create_order() 校验库存并落库
+3. 返回订单号与金额
+
+**需要注意**：库存校验失败返回 400 且不落库（service.py L12-18）。
+
+输出契约（强制）：
+- 最终输出必须是符合输出契约的 JSON 对象；所有 markdown 正文写入
+  content_markdown 字段
+- 禁止输出 JSON 以外的任何文本、markdown 文档或解释
 """
 
 # ── 上下文 MCP 工具定义 ──────────────────────────────────────────────
@@ -35,7 +81,10 @@ _SEMANTIC_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_context_overview",
-            "description": "获取上下文快照的总览：入口、原子数、结构块目录。第一步必须调用。",
+            "description": (
+                "模块全景：入口、原子数、结构块目录、裁剪报告。"
+                "先回答：这个模块是干什么的？入口列表就是业务能力列表。第一步必须调用。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {"context_id": {"type": "string"}},
@@ -47,7 +96,10 @@ _SEMANTIC_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_structure_block",
-            "description": "读取一个结构块的完整内容：源码、原子列表、跨块关系。主要阅读单位。",
+            "description": (
+                "读取一个结构块：一个入口的跨文件故事（源码、原子列表）。"
+                "沿调用链看它做了什么。主要阅读单位。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -62,7 +114,10 @@ _SEMANTIC_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_atom_detail",
-            "description": "读取一个原子的详细信息：完整源码、入边、出边。",
+            "description": (
+                "读取一个符号的详细信息：完整源码、入边、出边。"
+                "深入关键链路或填写符号解释前必须调用。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -77,7 +132,7 @@ _SEMANTIC_TOOLS = [
         "type": "function",
         "function": {
             "name": "trace_structure_path",
-            "description": "追踪从入口到目标原子的结构路径。",
+            "description": "追踪从入口到目标原子的结构路径。理清数据流用。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -92,7 +147,7 @@ _SEMANTIC_TOOLS = [
         "type": "function",
         "function": {
             "name": "search_context_symbols",
-            "description": "在当前快照内按名称搜索符号。",
+            "description": "按名称在模块内搜索符号。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -220,6 +275,76 @@ class DeepSeekProvider:
             code = "MODEL_JSON_DECODE_ERROR" if isinstance(exc, json.JSONDecodeError) else "MODEL_RESPONSE_CONTENT_INVALID"
             raise ModelProviderError("MODEL_INVALID_RESPONSE", "Model response could not be parsed as UnitPlan", raw_plan=raw_plan, validation_errors=[{"path": "$", "code": code, "message": "Model response could not be parsed as UnitPlan"}]) from exc
 
+    async def analyze_batch(
+        self,
+        request: Any,
+        inline_sources: list[dict[str, Any]],
+    ) -> Any:
+        """批次静态生成：槽位源码内联进请求，一次调用直接输出 JSON。
+
+        不启动工具循环——批次的目标符号是程序确定的（槽位清单），
+        源码已在快照中；工具循环在快速模型下会陷入重复 get_atom_detail
+        死循环（实测 20+ 次调用不收敛），内联后从机制上消除。
+        """
+        from app.schemas.semantic.analysis_result import SemanticAnalysisResult
+
+        self._require_configuration()
+        user_payload = {
+            "instruction": request.instruction,
+            "output_contract": request.output_contract,
+            "inline_sources": inline_sources,
+        }
+        messages = [
+            {"role": "system", "content": _SEMANTIC_SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+        ]
+        body: dict[str, Any] = {
+            "model": self._model,
+            "temperature": 0,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+        }
+        if self._thinking:
+            body["thinking"] = {"type": "enabled"}
+        try:
+            async with httpx.AsyncClient(
+                timeout=self._timeout, transport=self._transport
+            ) as client:
+                response = await client.post(
+                    f"{self._base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                    json=body,
+                )
+        except httpx.TimeoutException as exc:
+            raise ModelProviderError("MODEL_TIMEOUT", "Batch analysis timed out") from exc
+        except httpx.HTTPError as exc:
+            raise ModelProviderError("MODEL_UNAVAILABLE", "Batch analysis request failed") from exc
+        if response.status_code == 429:
+            raise ModelProviderError("MODEL_RATE_LIMITED", "Model rate limit exceeded")
+        if response.status_code >= 500:
+            raise ModelProviderError("MODEL_UNAVAILABLE", "Model service is unavailable")
+        if response.status_code >= 400:
+            raise ModelProviderError("MODEL_CONFIGURATION_ERROR", "Model request was rejected")
+        try:
+            response_json = response.json()
+            content = response_json["choices"][0]["message"]["content"]
+            payload = _normalize_payload(_extract_json_object(content))
+            if not isinstance(payload, dict):
+                raise ValueError("batch response must be a JSON object")
+            payload["analysis_id"] = request.analysis_id
+            payload["context_id"] = request.context_id
+            payload["revision"] = request.revision
+            payload["snapshot_hash"] = request.snapshot_hash
+            return SemanticAnalysisResult.model_validate(payload)
+        except Exception as exc:
+            LOGGER.error(
+                "BATCH PARSE FAILED: len=%s err=%s", len(content), exc,
+            )
+            raise ModelProviderError(
+                "MODEL_INVALID_RESPONSE",
+                f"Could not parse batch SemanticAnalysisResult: {exc}",
+            ) from exc
+
     async def analyze_semantics(
         self,
         request: Any,
@@ -247,6 +372,9 @@ class DeepSeekProvider:
                 "temperature": 0,
                 "messages": messages,
                 "tools": tools,
+                # 强制 JSON 输出：模型常把"填写正文"理解为直接输出 markdown 文档，
+                # json_object 模式保证最终输出是 JSON（正文放进 content_markdown 字段）
+                "response_format": {"type": "json_object"},
             }
             if self._thinking:
                 body["thinking"] = {"type": "enabled"}

@@ -4,7 +4,7 @@ import json
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Protocol
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import asyncpg  # type: ignore[import-untyped]
 
@@ -40,6 +40,10 @@ class AgentJobRepository(Protocol):
         stats: Mapping[str, Any],
         max_attempts: int,
         execution_limit: int,
+    ) -> None: ...
+
+    async def create_batch_units(
+        self, job_id: UUID, batches: list[dict[str, Any]]
     ) -> None: ...
 
     async def list_semantic_units(
@@ -231,7 +235,8 @@ class PostgresAgentJobRepository:
                     WHERE j.status <> 'CANCELLED'
                       AND u.attempt < u.max_attempts
                       AND u.unit_kind IN (
-                        'CURRENT_FILE_ANALYSIS', 'PROJECT_DISCOVERY', 'SEMANTIC_ANALYSIS'
+                        'CURRENT_FILE_ANALYSIS', 'PROJECT_DISCOVERY',
+                        'SEMANTIC_ANALYSIS', 'SKELETON_PLAN'
                       )
                       AND (
                         (u.status IN ('PENDING', 'RETRY_WAITING')
@@ -329,8 +334,11 @@ class PostgresAgentJobRepository:
             """,
             unit_id,
         )
+        unit_dict = dict(unit)
+        if isinstance(unit_dict.get("slot_plan"), str):
+            unit_dict["slot_plan"] = json.loads(unit_dict["slot_plan"])
         return {
-            **dict(unit),
+            **unit_dict,
             "files": [dict(row) for row in files],
             "documents": [dict(row) for row in documents],
         }
@@ -485,7 +493,7 @@ class PostgresAgentJobRepository:
                         grouping_reasons, unit_fingerprint, summary, created_at, updated_at
                     ) VALUES (
                         $1, $2, $3, $14::varchar, 'EXECUTING_UNITS',
-                        0, $12, 'SEMANTIC_ANALYSIS', $4, $5, $6, $7,
+                        0, $12, 'SKELETON_PLAN', $4, $5, $6, $7,
                         $8::jsonb, $9, $10::jsonb, $11, $13, now(), now()
                     )
                     """,
@@ -577,6 +585,87 @@ class PostgresAgentJobRepository:
                 stats["overlapping_file_count"],
             )
 
+    async def create_batch_units(
+        self, job_id: UUID, batches: list[dict[str, Any]]
+    ) -> None:
+        """骨架施工后创建批次单元（SEMANTIC_ANALYSIS + slot_plan）。
+
+        批次单元 ID 由 (job_id, batch_index) 确定性生成——骨架单元重试时
+        重新创建批次不产生重复单元。ordinal 接续任务现有最大序号。
+        """
+        if not batches:
+            return
+        pool = await self._database()
+        async with pool.acquire() as connection, connection.transaction():
+            max_ordinal = await connection.fetchval(
+                """
+                SELECT COALESCE(max(ordinal), 0)
+                FROM agent_service.agent_units WHERE job_id = $1
+                """,
+                job_id,
+            )
+            # max_attempts 在 agent_units 上（每单元独立）；取任务任一单元的值
+            max_attempts_row = await connection.fetchrow(
+                """
+                SELECT max_attempts
+                FROM agent_service.agent_units WHERE job_id = $1 LIMIT 1
+                """,
+                job_id,
+            )
+            if max_attempts_row is None:
+                raise KeyError("Agent job not found")
+            max_attempts = int(max_attempts_row["max_attempts"])
+            for batch in batches:
+                batch_index = int(batch.get("batch_index", 0))
+                max_ordinal += 1
+                unit_id = uuid5(
+                    NAMESPACE_URL, f"devcollab:{job_id}:batch:{batch_index}"
+                )
+                await connection.execute(
+                    """
+                    INSERT INTO agent_service.agent_units (
+                        id, job_id, ordinal, status, phase, attempt, max_attempts,
+                        unit_kind, display_name, summary, slot_plan, created_at, updated_at
+                    ) VALUES (
+                        $1, $2, $3, 'PENDING', 'LOADING_CONTEXT',
+                        0, $4, 'SEMANTIC_ANALYSIS', $5, $6, $7::jsonb, now(), now()
+                    )
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    unit_id,
+                    job_id,
+                    max_ordinal,
+                    max_attempts,
+                    batch.get("display_name", batch.get("batch_label", "批次")),
+                    batch.get("summary", ""),
+                    json.dumps(batch.get("slot_plan", {})),
+                )
+                file_paths = batch.get("file_paths", [])
+                if file_paths:
+                    rows = await connection.fetch(
+                        """
+                        SELECT id, file_path FROM agent_service.agent_job_files
+                        WHERE job_id = $1 AND file_path = ANY($2::text[])
+                        """,
+                        job_id,
+                        file_paths,
+                    )
+                    by_path = {row["file_path"]: row["id"] for row in rows}
+                    await connection.executemany(
+                        """
+                        INSERT INTO agent_service.agent_unit_files (
+                            unit_id, job_file_id, file_path, role,
+                            relevance_reason, ordinal
+                        ) VALUES ($1, $2, $3, 'PRIMARY', 'BATCH_SLOT', $4)
+                        ON CONFLICT (unit_id, job_file_id, role) DO NOTHING
+                        """,
+                        [
+                            (unit_id, by_path[path], path, index + 1)
+                            for index, path in enumerate(file_paths)
+                            if path in by_path
+                        ],
+                    )
+
     async def list_semantic_units(
         self, job_id: UUID, offset: int, limit: int
     ) -> tuple[int, list[dict[str, Any]]]:
@@ -655,7 +744,7 @@ class PostgresAgentJobRepository:
             )
             if row is None:
                 raise RuntimeError("Agent unit lease was lost")
-            if row["unit_kind"] == "SEMANTIC_ANALYSIS":
+            if row["unit_kind"] in ("SEMANTIC_ANALYSIS", "SKELETON_PLAN"):
                 await self._refresh_project_job(connection, row["job_id"])
                 return
             review_ids = [] if review_request_id is None else [str(review_request_id)]
@@ -704,7 +793,7 @@ class PostgresAgentJobRepository:
             )
             if row is None:
                 return
-            if row["unit_kind"] == "SEMANTIC_ANALYSIS":
+            if row["unit_kind"] in ("SEMANTIC_ANALYSIS", "SKELETON_PLAN"):
                 await self._refresh_project_job(connection, row["job_id"])
                 return
             if retry_at is None:
@@ -766,7 +855,8 @@ class PostgresAgentJobRepository:
                     '[]'::jsonb
                 ) AS review_ids
             FROM agent_service.agent_units
-            WHERE job_id = $1 AND unit_kind = 'SEMANTIC_ANALYSIS'
+            WHERE job_id = $1
+              AND unit_kind IN ('SEMANTIC_ANALYSIS', 'SKELETON_PLAN')
             """,
             job_id,
         )

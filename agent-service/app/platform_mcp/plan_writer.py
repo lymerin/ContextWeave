@@ -6,6 +6,8 @@ MCP 后端仍接受 BindingProposal[]（增量操作）。
 转换在此完成，不在核心领域层。
 """
 
+import hashlib
+import json
 
 from app.clients.mcp_client import ReviewMcpClient
 from app.schemas.document_planner.plan import AgentPlan
@@ -33,8 +35,12 @@ class PlanWriter:
           - section_binding_sets 中的每条 SectionBinding → 一条 BindingProposal
           - evidence 从 planned_sections 派生
         """
+        # clientRequestId 带计划内容指纹：同内容重试 → knowledge-core 幂等重放；
+        # 内容变化（如骨架 Apply 后 CREATE→UPDATE）→ 新 ID → 新变更请求。
+        # 固定 run_id 会导致内容变化时 IDEMPOTENCY_CONFLICT（409）。
+        fingerprint = _plan_fingerprint(plan)
         mcp_payload = {
-            "clientRequestId": f"agent-{run_id}",
+            "clientRequestId": f"agent-{run_id}-{fingerprint}",
             "workspaceId": workspace_id,
             "summary": plan.summary,
             "rationale": plan.rationale,
@@ -118,6 +124,8 @@ class PlanWriter:
         # evidence —— 每个 binding 是它所属 block 的一条证据，不排列组合。
         # binding.created_block_operation_id 已编码归属关系，一对一映射，
         # 而非 operation × section × binding 笛卡尔积。
+        # evidence 只针对本次创建的块（UPDATE_BLOCK 的绑定是既有块，
+        # clientOperationId 为空会触发 knowledge-core 引用校验失败）
         mcp_payload["evidence"] = [
             {
                 "clientOperationId": (
@@ -132,6 +140,7 @@ class PlanWriter:
             }
             for bs in plan.section_binding_sets
             for binding in bs.bindings
+            if binding.created_block_operation_id or binding.created_document_op_id
         ]
 
         # 复用现有 MCP 客户端提交逻辑
@@ -142,3 +151,40 @@ class PlanWriter:
             run_id=run_id,
             authorization=authorization,
         )
+
+
+def _plan_fingerprint(plan: AgentPlan) -> str:
+    """计划内容指纹——operations + 绑定集合的确定性哈希。"""
+    operations = [
+        {
+            "type": op.operation_type,
+            "doc": str(op.document_id) if op.document_id else None,
+            "block": str(op.block_id) if op.block_id else None,
+            "create_doc": op.created_document_op_id,
+            "version": op.base_block_version,
+            "text": op.proposed_plain_text,
+        }
+        for op in plan.document_operations
+    ]
+    bindings = [
+        [
+            {
+                "atom": b.atom_id,
+                "file": b.file_path,
+                "symbol": b.symbol_key,
+                "lines": [b.start_line, b.end_line],
+                "role": b.role,
+                "ordinal": b.ordinal,
+            }
+            for b in bs.bindings
+        ]
+        for bs in plan.section_binding_sets
+    ]
+    stale = [
+        [s.binding_id for s in bs.stale_bindings]
+        for bs in plan.section_binding_sets
+    ]
+    raw = json.dumps(
+        [operations, bindings, stale], ensure_ascii=False, sort_keys=True
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]

@@ -15,6 +15,27 @@ from app.runtime.semantic_planner import ProjectFile
 PhaseCallback = Callable[[str], Awaitable[None]]
 
 
+def _build_file_dependencies(project_files: list[ProjectFile]) -> list[dict]:
+    """metadata import 模块名 → 仓库内文件边（轻量，不读源码）。
+
+    复用 import_resolver.module_to_file 的唯一候选判定：
+    import 模块名解析到恰好 1 个仓库内文件才收边，多候选/外部不解析。
+    ProjectIndex.fileDependencies 供模块规划按依赖簇分组。
+    """
+    from app.source_analysis.import_resolver import module_to_file
+
+    file_set = frozenset(item.file_path for item in project_files)
+    edges: list[dict] = []
+    for item in sorted(project_files, key=lambda f: f.file_path):
+        for module in item.import_keys:
+            target = module_to_file(module, file_set)
+            if target is not None:
+                edges.append(
+                    {"from": item.file_path, "to": target, "kind": "IMPORT"}
+                )
+    return edges
+
+
 class ProjectDiscoveryService:
     def __init__(
         self,
@@ -129,6 +150,7 @@ class ProjectDiscoveryService:
                 }
                 for item in project_files
             ],
+            "fileDependencies": _build_file_dependencies(project_files),
             "bindings": binding_rows,
             "documents": [documents[key] for key in sorted(documents)],
         }

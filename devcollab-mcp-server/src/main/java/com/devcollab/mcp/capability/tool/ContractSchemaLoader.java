@@ -42,7 +42,7 @@ public class ContractSchemaLoader {
             Map.entry("devcollab.repository.list_changes",
                     new String[]{"repository_list_changes_input.json", "repository_list_changes_input.json"}),
             Map.entry("devcollab.repository.inspect_code_metadata",
-                    new String[]{"repository_inspect_code_metadata_input.json", "repository_inspect_code_metadata_input.json"}),
+                    new String[]{"repository_inspect_code_metadata_input.json", "repository_inspect_code_metadata_output.json"}),
             Map.entry("devcollab.review.submit_document_change",
                     new String[]{"submit_document_change_input.json", "submit_document_change_output.json"})
     );

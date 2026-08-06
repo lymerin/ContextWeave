@@ -41,33 +41,46 @@ class PlanningEvidenceCatalog:
 def build_evidence_catalog(
     snapshot: ContextSnapshot,
     catalog: AtomCatalog,
+    extra_symbols: tuple[SymbolAtom, ...] = (),
 ) -> PlanningEvidenceCatalog:
     """从快照和原始 AtomCatalog 构建 PlanningEvidenceCatalog。
 
     需要 catalog 是因为快照中的 AtomRef 不含 file_path / start_line / end_line。
+    extra_symbols：骨架施工时传入模块文件内快照未覆盖的符号（BFS 闭包外），
+    保证骨架占位块的绑定覆盖模块全量公开符号。
     """
     by_key: dict[str, SymbolAtom] = {s.symbol_key: s for s in catalog.symbols}
     atoms: list[EvidenceAtom] = []
+    seen: set[str] = set()
 
     for ref in snapshot.atoms:
         sym = by_key.get(ref.symbol_key)
         if sym is None:
             continue
-        file = _file_from_key(sym.symbol_key)
-        atoms.append(EvidenceAtom(
-            atom_id=sym.atom_id,
-            symbol_key=sym.symbol_key,
-            file_path=file,
-            qualified_name=sym.qualified_name,
-            kind=sym.kind,
-            start_line=sym.start_line,
-            end_line=sym.end_line,
-        ))
+        atoms.append(_to_evidence(sym))
+        seen.add(sym.atom_id)
+
+    for sym in extra_symbols:
+        if sym.atom_id in seen:
+            continue
+        atoms.append(_to_evidence(sym))
 
     return PlanningEvidenceCatalog(
         context_id=snapshot.context_id,
         revision=snapshot.revision,
         atoms=tuple(atoms),
+    )
+
+
+def _to_evidence(sym: SymbolAtom) -> EvidenceAtom:
+    return EvidenceAtom(
+        atom_id=sym.atom_id,
+        symbol_key=sym.symbol_key,
+        file_path=_file_from_key(sym.symbol_key),
+        qualified_name=sym.qualified_name,
+        kind=sym.kind,
+        start_line=sym.start_line,
+        end_line=sym.end_line,
     )
 
 

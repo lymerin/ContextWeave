@@ -54,11 +54,12 @@ class AnalysisOrchestrator:
         mcp_tools: McpContextTools,
         *,
         max_repairs: int = 2,
+        required_slots: tuple = (),
     ) -> None:
         self._snap = snapshot
         self._tools = mcp_tools
         self._tracker = CoverageTracker(snapshot)
-        self._validator = ResultValidator(snapshot)
+        self._validator = ResultValidator(snapshot, required_slots=required_slots)
         self._session = AnalysisSession(
             analysis_id=str(uuid.uuid4()),
             context_id=snapshot.context_id,

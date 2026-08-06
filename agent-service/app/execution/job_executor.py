@@ -21,9 +21,14 @@ from typing import Any
 from uuid import UUID
 
 from app.document_planner.binding_resolver import resolve_bindings
-from app.document_planner.document_composer import compose_document
+from app.document_planner.document_composer import compose_document, compose_slot_sections
 from app.document_planner.evidence_catalog_builder import build
 from app.document_planner.plan_validator import PlanValidationError, assemble_and_validate
+from app.document_planner.skeleton_planner import (
+    build_skeleton_plan,
+    build_slot_instruction,
+    plan_skeleton,
+)
 from app.document_planner.target_resolver import resolve_targets
 from app.model_context_mcp.context_freeze_snapshot import freeze_context
 from app.model_context_mcp.service_mcp_tool import McpContextTools
@@ -33,11 +38,13 @@ from app.platform_mcp.document_reader import DocumentReader
 from app.platform_mcp.plan_writer import PlanWriter
 from app.platform_mcp.source_reader import SourceReader
 from app.platform_mcp.workspace_reader import WorkspaceReader
-from app.schemas.ast_atom import AtomCatalog
+from app.schemas.ast_atom import AtomCatalog, symbol_key_file_path
+from app.schemas.document_planner.skeleton import SkeletonSlot
 from app.schemas.model_context.snapshot import ContextSnapshot
 from app.schemas.platform_mcp.source_file import SelectedSourceFileBatch
 from app.schemas.repository_graph import RepositoryCodeGraph
 from app.schemas.scope import ScopeMember, SemanticScope
+from app.schemas.semantic.analysis_request import SemanticAnalysisRequest
 from app.schemas.semantic.analysis_result import SemanticAnalysisResult
 from app.semantic.analysis_orchestrator import AnalysisOrchestrator
 from app.source_analysis.atom_relation_graph import build_graph
@@ -47,6 +54,12 @@ from app.source_analysis.scope_shape_context import shape_context
 from app.source_selection.file_filter import SourceFileFilter
 
 LOGGER = logging.getLogger("devcollab.agent.executor")
+
+
+class SlotCoverageError(ValueError):
+    """批次槽位覆盖不足——会话内 repair 耗尽后仍未补齐，交由 worker 自动重试。"""
+
+    code = "SLOT_COVERAGE_INSUFFICIENT"
 
 
 class JobExecutor:
@@ -82,11 +95,18 @@ class JobExecutor:
         revision: str,
         selected_paths: list[str],
         run_id: str,
+        slot_scope: tuple[SkeletonSlot, ...] = (),
+        batch_label: str = "",
     ) -> dict:
         """执行完整的源码分析 → 语义补充 → 文档规划 → 提交管线。
 
         run_id 由调用方提供且每次执行唯一，用于生成幂等 clientRequestId，
         避免对同一仓库+revision 重复提交被 knowledge-core 幂等校验拒绝。
+
+        slot_scope 提供时本执行是"槽位批次"：会话指令注入批次作用域与槽位清单，
+        校验器核对清单覆盖（缺失槽位逐个点名 → 会话内 repair → 仍缺则抛
+        SlotCoverageError 由 worker 自动重试）；正文组装走 compose_slot_sections。
+        slot_scope 为空时维持现有语义会话（批 1 / 单文件分析）。
         """
 
 
@@ -147,9 +167,32 @@ class JobExecutor:
 
             try:
                 tools = McpContextTools(self._registry)
-                orch = AnalysisOrchestrator(snap, tools)
+                orch = AnalysisOrchestrator(
+                    snap, tools, required_slots=slot_scope,
+                )
 
-                result = await self._run_semantic_session(orch)
+                request = orch.build_request()
+                if slot_scope:
+                    # 批次作用域：指令注入槽位清单 + 源码内联（静态生成，
+                    # 无工具循环——快速模型在工具循环下会死循环）
+                    batch_type = (
+                        "FLOW"
+                        if any(
+                            s.slot_type in ("OVERVIEW", "FLOW") for s in slot_scope
+                        )
+                        else "SYMBOL"
+                    )
+                    request = request.model_copy(update={
+                        "instruction": build_slot_instruction(
+                            slot_scope, batch_label, batch_type=batch_type,
+                        ),
+                    })
+                    inline_sources = _build_inline_sources(snap, slot_scope)
+                    result = await self._run_batch_session(
+                        orch, request, inline_sources,
+                    )
+                else:
+                    result = await self._run_semantic_session(orch, request)
 
                 # 模型只返回可读的 symbol_key；在此一次性绑定回 atom_id，
                 # 使下游校验/evidence/binding 全链路使用一致主键。
@@ -157,10 +200,18 @@ class JobExecutor:
 
                 errors = orch.validate_result(result)
                 if errors:
-                    LOGGER.warning("Semantic result validation failed: %s", errors)
+                    coverage_missing = any(
+                        "slot 未覆盖" in e for e in errors
+                    )
+                    LOGGER.warning(
+                        "Semantic result validation failed: %s", errors
+                    )
                     failed_count += 1
                     scope_results.append({
-                        "error": "VALIDATION_FAILED",
+                        "error": (
+                            "SLOT_COVERAGE_INSUFFICIENT"
+                            if coverage_missing else "VALIDATION_FAILED"
+                        ),
                         "details": errors,
                     })
                     continue
@@ -207,13 +258,18 @@ class JobExecutor:
                 )
 
                 evidence = build(snap, catalog)
-                sections = compose_document(
-                    result,
-                    title=result.overall_responsibility[:80] or "代码职责说明",
-                )
                 atom_symbol_keys = {
                     a.atom_id: a.symbol_key for a in snap.atoms
                 }
+                if slot_scope:
+                    sections = compose_slot_sections(
+                        slot_scope, result, snap.atom_by_symbol,
+                    )
+                else:
+                    sections = compose_document(
+                        result,
+                        title=result.overall_responsibility[:80] or "代码职责说明",
+                    )
                 targets = resolve_targets(
                     sections, candidates, structures, bindings_list,
                     atom_symbol_keys=atom_symbol_keys,
@@ -266,6 +322,19 @@ class JobExecutor:
             finally:
                 self._registry.release(snap.context_id, snap.context_id)
 
+        # 槽位覆盖不足：会话内 repair 已穷尽 → 抛给 worker 自动重试（退避）
+        if any(
+            r.get("error") == "SLOT_COVERAGE_INSUFFICIENT"
+            for r in scope_results
+        ):
+            details = [
+                d
+                for r in scope_results
+                if r.get("error") == "SLOT_COVERAGE_INSUFFICIENT"
+                for d in r.get("details", [])
+            ]
+            raise SlotCoverageError("; ".join(details))
+
         # 状态决策: 有提交 → SUBMITTED, 全失败 → FAILED, 否则 NO_CHANGE
         if submitted_count > 0:
             outcome = "SUBMITTED"
@@ -283,19 +352,198 @@ class JobExecutor:
             "results": scope_results,
         }
 
+    # ── 骨架施工（纯程序，零模型调用）────────────────────────────────
+
+    async def execute_skeleton_flow(
+        self,
+        *,
+        workspace_id: UUID,
+        repository_id: UUID,
+        revision: str,
+        selected_paths: list[str],
+        run_id: str,
+        document_title: str = "",
+    ) -> dict:
+        """骨架施工全流程：模块快照 → plan_skeleton → 骨架 Review 提交。
+
+        返回结果携带 skeleton（供 worker 创建批次单元）；
+        占位块带着目标符号的绑定创建，后续批次按绑定重叠匹配 → UPDATE_BLOCK 替换。
+        """
+        prepared = await self._prepare(
+            workspace_id=workspace_id,
+            repository_id=repository_id,
+            revision=revision,
+            selected_paths=selected_paths,
+        )
+        if prepared is None:
+            return {
+                "status": "EMPTY_SCOPE",
+                "change_request_id": None,
+                "summary": "无法从文件中检测到可分析的语义入口",
+            }
+        catalog, snap, scope = prepared
+        skeleton = plan_skeleton(scope, catalog, document_title=document_title)
+
+        files = list(scope.related_files)
+        candidates = await self._doc.locate_documents(
+            workspace_id, repository_id, files,
+        )
+        doc_ids: list[UUID] = []
+        for c in candidates:
+            if c.document_id not in doc_ids:
+                doc_ids.append(c.document_id)
+        structures: list = []
+        if doc_ids:
+            structures = await self._doc.read_structures(workspace_id, doc_ids)
+        bindings_list = await self._bind.read_batch(
+            workspace_id, repository_id, files,
+        )
+
+        plan = build_skeleton_plan(
+            skeleton, snap, catalog, candidates, structures, bindings_list,
+        )
+        submit_result = await self._write.submit(
+            plan,
+            workspace_id=str(workspace_id),
+            repository_id=str(repository_id),
+            run_id=run_id,
+        )
+        review_id = (
+            submit_result.get("changeRequestId")
+            or submit_result.get("change_request_id")
+        )
+        return {
+            "status": "SUBMITTED",
+            "change_request_id": review_id,
+            "slot_count": len(skeleton.slots),
+            "batch_count": len(skeleton.batches),
+            "skeleton": skeleton,
+        }
+
+    async def _prepare(
+        self,
+        *,
+        workspace_id: UUID,
+        repository_id: UUID,
+        revision: str,
+        selected_paths: list[str],
+    ) -> tuple[AtomCatalog, ContextSnapshot, SemanticScope] | None:
+        """读取源码 → 解析 → 范围 → 快照。返回 (catalog, snap, scope)。"""
+        ctx = await self._ws.read_context(workspace_id, repository_id)
+        repo = ctx.repository(repository_id)
+        if repo is None:
+            return None
+        batch = self._filter.filter(
+            repository_id, revision,
+            [{"filePath": p, "readable": True, "sizeBytes": 0} for p in selected_paths],
+        )
+        selection = SelectedSourceFileBatch(
+            repository_id=str(repository_id),
+            revision=revision,
+            paths=tuple(f.file_path for f in batch.files),
+            total_count=batch.total_count,
+        )
+        sources = await self._src.read_batch(workspace_id, repository_id, selection)
+
+        def read_source(path: str) -> str | None:
+            for f in sources.files:
+                if f.file_path == path:
+                    return f.content
+            return None
+
+        catalog = parse_batch(sources, read_source)
+        scopes, graph = build_execution_scopes(catalog, read_source, selected_paths)
+        if not scopes:
+            return None
+        scope = scopes[0]
+        shaped = shape_context(
+            scope, catalog, read_source, graph,
+            budget_chars=self._budget_chars,
+        )
+        snap = freeze_context(shaped)
+        return catalog, snap, scope
+
+    # ── 批次静态生成（Bounded Repair Loop，无工具循环）─────────────
+
+    async def _run_batch_session(
+        self,
+        orch: AnalysisOrchestrator,
+        request: SemanticAnalysisRequest,
+        inline_sources: list[dict[str, Any]],
+    ) -> SemanticAnalysisResult:
+        """批次会话：源码内联一次调用输出 JSON；校验失败带名单 repair 反馈。"""
+        if self._provider is None:
+            raise RuntimeError("Provider not configured")
+
+        last_error_result: SemanticAnalysisResult | None = None
+        for attempt in range(orch.session.max_repairs + 1):
+            try:
+                result = await self._provider.analyze_batch(
+                    request, inline_sources,
+                )
+            except Exception as exc:
+                LOGGER.error(
+                    "Batch analysis failed (attempt %s/%s): %s",
+                    attempt + 1, orch.session.max_repairs + 1, exc,
+                )
+                if attempt == orch.session.max_repairs:
+                    orch.mark_failed(str(exc))
+                    return SemanticAnalysisResult(
+                        analysis_id=orch.session.analysis_id,
+                        context_id=orch.session.context_id,
+                        revision=orch._snap.revision,
+                        snapshot_hash=orch._snap.snapshot_hash,
+                        overall_responsibility="SEMANTIC_ANALYSIS_FAILED",
+                    )
+                continue
+
+            errors = orch.validate_result(result)
+            if not errors:
+                orch.mark_succeeded()
+                return result
+
+            LOGGER.warning(
+                "Batch validation failed (attempt %s/%s): %s",
+                attempt + 1, orch.session.max_repairs + 1, errors,
+            )
+            last_error_result = result
+            if attempt >= orch.session.max_repairs:
+                orch.mark_failed("; ".join(errors))
+                return result
+            orch.repair_policy(errors)
+            request = request.model_copy(update={
+                "instruction": (
+                    request.instruction
+                    + "\n\n【修复要求】\n"
+                    + "\n".join(f"- {e}" for e in errors)
+                    + "\n请按修复要求重新输出完整 JSON，不要解释。"
+                ),
+            })
+
+        orch.mark_failed("exhausted all repair attempts")
+        return last_error_result or SemanticAnalysisResult(
+            analysis_id=orch.session.analysis_id,
+            context_id=orch.session.context_id,
+            revision=orch._snap.revision,
+            snapshot_hash=orch._snap.snapshot_hash,
+            overall_responsibility="SEMANTIC_ANALYSIS_EXHAUSTED",
+        )
+
     # ── Bounded Repair Loop ──────────────────────────────────────
 
     async def _run_semantic_session(
-        self, orch: AnalysisOrchestrator
+        self,
+        orch: AnalysisOrchestrator,
+        request: SemanticAnalysisRequest,
     ) -> SemanticAnalysisResult:
         """运行一次语义分析会话, 含 Bounded Repair Loop。
 
         接入真实 DeepSeek provider，处理工具调用循环。
+        每次 repair 会把校验错误（含缺失槽位名单）追加到 instruction 反馈给模型，
+        而不是重跑同一请求。
         """
         if self._provider is None:
             raise RuntimeError("Provider not configured")
-
-        request = orch.build_request()
 
         async def tool_handler(name: str, args: dict) -> dict:
             return orch.handle_tool_call(name, args)
@@ -339,6 +587,15 @@ class JobExecutor:
                 orch.mark_failed("; ".join(errors))
                 return result
             orch.repair_policy(errors)
+            # 把缺失/错误名单反馈给模型（此前 repair 只是重跑同一请求，等于没修）
+            request = request.model_copy(update={
+                "instruction": (
+                    request.instruction
+                    + "\n\n【修复要求】\n"
+                    + "\n".join(f"- {e}" for e in errors)
+                    + "\n请按修复要求重新输出完整 JSON，不要解释。"
+                ),
+            })
 
         orch.mark_failed("exhausted all repair attempts")
         return last_error_result or SemanticAnalysisResult(
@@ -389,6 +646,40 @@ def _bind_result_atoms(
             ref.atom_id = resolve(ref.atom_id, ref.atom_id)
 
 
+# ── 批次内联源码 ─────────────────────────────────────────────────────────
+
+
+def _build_inline_sources(
+    snap: ContextSnapshot,
+    slots: tuple[SkeletonSlot, ...],
+) -> list[dict[str, Any]]:
+    """槽位目标符号的源码片段（来自快照 chunks）→ 内联进批次请求。
+
+    静态生成的输入：模型不需要工具探索，源码直接给出；
+    覆盖不到目标（快照缺陷）的槽位由覆盖校验器在会话后拦截。
+    """
+    sources: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for slot in slots:
+        atom_id = snap.atom_by_symbol.get(slot.primary_symbol_key or "")
+        atom = snap.atom_by_id.get(atom_id) if atom_id else None
+        if atom is None:
+            continue
+        for cid in atom.chunk_ids:
+            chunk = snap.chunk_by_id.get(cid)
+            if chunk is None or chunk.chunk_id in seen:
+                continue
+            seen.add(chunk.chunk_id)
+            sources.append({
+                "symbol_key": slot.primary_symbol_key,
+                "file_path": chunk.file_path,
+                "start_line": chunk.start_line,
+                "end_line": chunk.end_line,
+                "source": chunk.source,
+            })
+    return sources
+
+
 # ── 范围构建（按单元类型分支）─────────────────────────────────────────────
 
 
@@ -412,7 +703,41 @@ def build_execution_scopes(
         scopes = discover_scopes(graph)
         if not scopes:
             scopes = build_file_scopes(catalog)
-        return (_merge_module_scopes(scopes),), graph
+        merged = _merge_module_scopes(scopes)
+        if not merged.members:
+            # 模块文件全部无法解析（无任何符号）→ 空 scope，返回 EMPTY_SCOPE
+            return (), graph
+        # 补全模块文件内的全部符号：discover_scopes 只从 HTTP 路由入口
+        # BFS（无路由文件如 blueprints/cli 会被整体排除），骨架/批次需要
+        # 覆盖模块全部公开符号，快照必须包含完整上下文。
+        # BFS 闭包继续提供角色/距离，补充符号按共享依赖处理。
+        module_files = frozenset(m.file_path for m in catalog.modules)
+        existing = merged.member_keys()
+        extras = [
+            s for s in catalog.symbols
+            if symbol_key_file_path(s.symbol_key) in module_files
+            and s.symbol_key not in existing
+        ]
+        if extras:
+            extra_members = tuple(
+                ScopeMember(s.symbol_key, "SHARED_DEPENDENCY", 2, ())
+                for s in extras
+            )
+            merged = SemanticScope(
+                scope_id=merged.scope_id,
+                entries=merged.entries,
+                members=tuple(sorted(
+                    (*merged.members, *extra_members),
+                    key=lambda m: (m.distance, m.symbol_key),
+                )),
+                boundary=merged.boundary,
+                unresolved=merged.unresolved,
+                related_files=tuple(sorted(
+                    set(merged.related_files)
+                    | {symbol_key_file_path(s.symbol_key) for s in extras}
+                )),
+            )
+        return (merged,), graph
     return build_file_scopes(catalog), graph
 
 

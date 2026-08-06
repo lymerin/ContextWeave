@@ -150,7 +150,8 @@ def budget_files() -> dict[str, str]:
     }
 
 
-def test_budget_trims_indirect_callees_keeps_entry_chain() -> None:
+def test_budget_trims_private_only_keeps_public() -> None:
+    # 公开符号（骨架槽位覆盖基准）强制保留，预算只裁剪私有辅助符号
     files = budget_files()
     catalog, sources = build(files)
     graph = build_graph(catalog, lambda p: sources.get(p))
@@ -158,22 +159,19 @@ def test_budget_trims_indirect_callees_keeps_entry_chain() -> None:
     shaped = shape_context(
         scopes[0], catalog, lambda p: sources.get(p), graph, budget_chars=1
     )
-    # d≤1 强制保留：route + f1；d≥2 全部裁剪：f2、f3
     kept_keys = {a.symbol_key for a in shaped.atoms}
+    # 公开符号全部保留（即使超出预算）
     assert "PYTHON:main.py:route:FUNCTION" in kept_keys
     assert "PYTHON:b.py:f1:FUNCTION" in kept_keys
-    assert "PYTHON:b.py:f2:FUNCTION" not in kept_keys
-    assert "PYTHON:b.py:f3:FUNCTION" not in kept_keys
-    assert shaped.trimmed_atom_ids == (
-        "PYTHON:b.py:f2:FUNCTION",
-        "PYTHON:b.py:f3:FUNCTION",
-    )
-    # 块只含保留原子
+    assert "PYTHON:b.py:f2:FUNCTION" in kept_keys
+    assert "PYTHON:b.py:f3:FUNCTION" in kept_keys
+    assert not shaped.trimmed_atom_ids
+    # 公开符号全部进块
     block_atoms = {a for b in shaped.structure_blocks for a in b.atoms}
-    assert "PYTHON:b.py:f2:FUNCTION" not in block_atoms
-    # freeze 后 manifest 携带裁剪计数
+    assert "PYTHON:b.py:f2:FUNCTION" in block_atoms
+    # freeze 后 manifest 裁剪计数为 0
     snap = freeze_context(shaped)
-    assert snap.manifest.trimmed_atom_count == 2
+    assert snap.manifest.trimmed_atom_count == 0
 
 
 def test_budget_no_trim_when_sufficient() -> None:

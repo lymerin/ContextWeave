@@ -56,6 +56,7 @@ class SemanticAnalysisRequest(BaseModel):
                 "title": "string",
                 "target_kind": "HTTP_ENDPOINT|DATA_MODEL|BUSINESS_RULE|SYMBOL|OTHER",
                 "summary": "string",
+                "content_markdown": "string（完整正文，遵守基座排版规则；summary 是摘要）",
                 "primary_atom_ids": ["symbol_key"],
                 "informed_by_atom_ids": ["symbol_key"],
                 "evidence_refs": [
@@ -69,6 +70,7 @@ class SemanticAnalysisRequest(BaseModel):
         ],
         "member_interpretations": [
             {"atom_id": "symbol_key", "responsibility": "string", "role": "string",
+             "content_markdown": "string（完整正文，遵守基座排版规则）",
              "evidence_refs": [{"atom_id": "symbol_key", "relation_id": "string|null",
                                 "source_chunk_id": "string|null"}]}
         ],

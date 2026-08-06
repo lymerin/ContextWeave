@@ -85,7 +85,8 @@ def test_module_mode_falls_back_when_no_entries() -> None:
     scopes, _ = build_execution_scopes(
         catalog, lambda p: sources.get(p), ["a.py", "b.py"]
     )
-    assert len(scopes) == 1
+    # 无任何符号 → 空 scope（EMPTY_SCOPE 由上层处理）
+    assert len(scopes) == 0
 
 
 def test_merge_is_deterministic() -> None:
