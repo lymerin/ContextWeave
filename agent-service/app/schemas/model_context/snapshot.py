@@ -7,19 +7,19 @@ SnapshotManifest  快照中必须交付的内容清单。
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import Mapping
 from uuid import UUID
 
+from app.schemas.repository_graph import Relation
 from app.schemas.shaped_context import (
     AtomRef,
     ShapedCodeContext,
     SourceChunk,
     StructureBlock,
 )
-from app.schemas.repository_graph import Relation
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,7 @@ class SnapshotManifest:
     relation_count: int = 0
     source_chunk_count: int = 0
     block_count: int = 0
+    trimmed_atom_count: int = 0
     snapshot_hash: str = ""
     structural_fingerprint: str = ""
 
@@ -83,7 +84,7 @@ class ContextSnapshot:
 
 def freeze(shaped: ShapedCodeContext, context_id: str) -> ContextSnapshot:
     """冻结 ShapedCodeContext 为不可变 ContextSnapshot。"""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # 构建索引
     atom_by_id = MappingProxyType({a.atom_id: a for a in shaped.atoms})
@@ -93,7 +94,7 @@ def freeze(shaped: ShapedCodeContext, context_id: str) -> ContextSnapshot:
 
     # 关系索引
     rel_source: dict[str, list[Relation]] = {}
-    for r in shaped.relations if hasattr(shaped, 'relations') else ():
+    for r in shaped.relations:
         rel_source.setdefault(r.source_atom_id, []).append(r)
     relation_by_source = MappingProxyType({
         k: tuple(v) for k, v in rel_source.items()
@@ -115,14 +116,15 @@ def freeze(shaped: ShapedCodeContext, context_id: str) -> ContextSnapshot:
         required_atom_ids=frozenset(a.atom_id for a in shaped.atoms),
         required_relation_ids=frozenset(
             f"{r.source_atom_id}:{r.kind}:{r.target_atom_id or r.target_external or ''}"
-            for r in (shaped.relations if hasattr(shaped, 'relations') else ())
+            for r in shaped.relations
         ),
         required_source_chunk_ids=frozenset(c.chunk_id for c in shaped.chunks),
         required_block_ids=frozenset(b.block_id for b in shaped.structure_blocks),
         atom_count=len(shaped.atoms),
-        relation_count=len(shaped.relations) if hasattr(shaped, 'relations') else 0,
+        relation_count=len(shaped.relations),
         source_chunk_count=len(shaped.chunks),
         block_count=len(shaped.structure_blocks),
+        trimmed_atom_count=len(shaped.trimmed_atom_ids),
         structural_fingerprint=fingerprint,
     )
 
@@ -136,7 +138,7 @@ def freeze(shaped: ShapedCodeContext, context_id: str) -> ContextSnapshot:
         atoms=shaped.atoms,
         chunks=shaped.chunks,
         structure_blocks=shaped.structure_blocks,
-        relations=shaped.relations if hasattr(shaped, 'relations') else (),
+        relations=shaped.relations,
         entry_paths=shaped.entry_paths,
         atom_by_id=atom_by_id,
         atom_by_symbol=atom_by_symbol,

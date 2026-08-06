@@ -2,8 +2,8 @@
 
 import hashlib
 
-from app.schemas.shaped_context import ShapedCodeContext
 from app.schemas.model_context.snapshot import ContextSnapshot, freeze
+from app.schemas.shaped_context import ShapedCodeContext
 
 
 def freeze_context(shaped: ShapedCodeContext) -> ContextSnapshot:

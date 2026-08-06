@@ -37,6 +37,7 @@ class McpContextTools:
             "atom_count": ov.atom_count,
             "chunk_count": ov.chunk_count,
             "block_count": ov.block_count,
+            "trimmed_atom_count": ov.trimmed_atom_count,
             "entry_paths": list(ov.entry_paths),
             "block_summaries": list(ov.block_summaries),
         }
@@ -98,6 +99,8 @@ class McpContextTools:
                 }
                 for s in result.sources
             ],
+            "out_edges": list(result.out_edges),
+            "in_edges": list(result.in_edges),
             "coverage": sorted(result.coverage),
         }
 

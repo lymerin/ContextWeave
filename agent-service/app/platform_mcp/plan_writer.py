@@ -6,7 +6,6 @@ MCP 后端仍接受 BindingProposal[]（增量操作）。
 转换在此完成，不在核心领域层。
 """
 
-from uuid import UUID
 
 from app.clients.mcp_client import ReviewMcpClient
 from app.schemas.document_planner.plan import AgentPlan
@@ -42,8 +41,9 @@ class PlanWriter:
         }
 
         # operations
-        mcp_payload["operations"] = [
-            {
+        mcp_payload["operations"] = []
+        for op in plan.document_operations:
+            operation = {
                 "clientOperationId": op.client_operation_id,
                 "sequenceNumber": op.sequence_number,
                 "operationType": op.operation_type,
@@ -55,8 +55,9 @@ class PlanWriter:
                 "proposedPlainText": op.proposed_plain_text,
                 "proposedContentFormat": "MARKDOWN",
             }
-            for op in plan.document_operations
-        ]
+            if op.base_block_version is not None:
+                operation["baseBlockVersion"] = op.base_block_version
+            mcp_payload["operations"].append(operation)
 
         # bindingProposals
         proposals: list[dict] = []
@@ -93,6 +94,24 @@ class PlanWriter:
                         binding.created_document_op_id
                     )
                 proposals.append(proposal)
+
+        # reconcile：匹配块上已过期的绑定 → REMOVE_BINDING
+        for bs in plan.section_binding_sets:
+            for stale in bs.stale_bindings:
+                seq += 1
+                proposals.append({
+                    "clientBindingProposalId": f"binding-remove-{seq}",
+                    "sequenceNumber": seq,
+                    "action": "REMOVE_BINDING",
+                    "repositoryId": repository_id,
+                    "revision": plan.revision,
+                    "filePath": stale.file_path,
+                    "bindingId": stale.binding_id,
+                    "documentId": stale.document_id,
+                    "blockId": stale.block_id,
+                    "reason": "语义分析收敛：该绑定不再属于此文档区块",
+                    "confidence": 1.0,
+                })
 
         mcp_payload["bindingProposals"] = proposals
 

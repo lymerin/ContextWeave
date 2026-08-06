@@ -3,7 +3,7 @@
 编排顺序:
   1. platform_mcp 读取源码
   2. source_selection 粗筛
-  3. source_analysis AST 解析 + 直接范围构造（跳过关系图）
+  3. source_analysis AST 解析 + 关系图 + 范围构建（多文件单元合并为模块 scope）
   4. model_context_mcp 上下文整形 + 冻结快照
   5. semantic DeepSeek 语义补充 (Bounded Repair)
   6. Gates 校验
@@ -14,7 +14,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from collections.abc import Callable
+from typing import Any
 from uuid import UUID
 
 from app.document_planner.binding_resolver import resolve_bindings
@@ -23,17 +26,23 @@ from app.document_planner.evidence_catalog_builder import build
 from app.document_planner.plan_validator import PlanValidationError, assemble_and_validate
 from app.document_planner.target_resolver import resolve_targets
 from app.model_context_mcp.context_freeze_snapshot import freeze_context
-from app.model_context_mcp.snapshot_store_registry import SnapshotStoreRegistry
 from app.model_context_mcp.service_mcp_tool import McpContextTools
+from app.model_context_mcp.snapshot_store_registry import SnapshotStoreRegistry
 from app.platform_mcp.binding_reader import BindingReader
 from app.platform_mcp.document_reader import DocumentReader
 from app.platform_mcp.plan_writer import PlanWriter
 from app.platform_mcp.source_reader import SourceReader
 from app.platform_mcp.workspace_reader import WorkspaceReader
+from app.schemas.ast_atom import AtomCatalog
+from app.schemas.model_context.snapshot import ContextSnapshot
 from app.schemas.platform_mcp.source_file import SelectedSourceFileBatch
+from app.schemas.repository_graph import RepositoryCodeGraph
+from app.schemas.scope import ScopeMember, SemanticScope
+from app.schemas.semantic.analysis_result import SemanticAnalysisResult
 from app.semantic.analysis_orchestrator import AnalysisOrchestrator
+from app.source_analysis.atom_relation_graph import build_graph
 from app.source_analysis.code_ast_atom import parse_batch
-from app.source_analysis.graph_entry_scope import build_file_scopes
+from app.source_analysis.graph_entry_scope import build_file_scopes, discover_scopes
 from app.source_analysis.scope_shape_context import shape_context
 from app.source_selection.file_filter import SourceFileFilter
 
@@ -53,6 +62,7 @@ class JobExecutor:
         file_filter: SourceFileFilter,
         registry: SnapshotStoreRegistry,
         provider: Any = None,
+        budget_chars: int = 40_000,
     ) -> None:
         self._ws = workspace_reader
         self._src = source_reader
@@ -62,6 +72,7 @@ class JobExecutor:
         self._filter = file_filter
         self._registry = registry
         self._provider = provider
+        self._budget_chars = budget_chars
 
     async def execute(
         self,
@@ -106,7 +117,11 @@ class JobExecutor:
             return None
 
         catalog = parse_batch(sources, read_source)
-        scopes = build_file_scopes(catalog)
+
+        # ── 2b. 范围构建（按单元类型分支）─────────────────────────
+        # 多文件单元（SEMANTIC_ANALYSIS）→ 整模块一个 scope，一次 DS 会话；
+        # 单文件单元（CURRENT_FILE_ANALYSIS）→ 维持每文件 scope。
+        scopes, graph = build_execution_scopes(catalog, read_source, selected_paths)
 
         if not scopes:
             return {
@@ -121,7 +136,10 @@ class JobExecutor:
         first_review_id: str | None = None
 
         for scope in scopes:
-            shaped = shape_context(scope, catalog, read_source)
+            shaped = shape_context(
+                scope, catalog, read_source, graph,
+                budget_chars=self._budget_chars,
+            )
 
             snap = freeze_context(shaped)
             self._registry.register(snap)
@@ -193,10 +211,17 @@ class JobExecutor:
                     result,
                     title=result.overall_responsibility[:80] or "代码职责说明",
                 )
+                atom_symbol_keys = {
+                    a.atom_id: a.symbol_key for a in snap.atoms
+                }
                 targets = resolve_targets(
                     sections, candidates, structures, bindings_list,
+                    atom_symbol_keys=atom_symbol_keys,
                 )
-                binding_sets = resolve_bindings(sections, evidence, targets)
+                binding_sets = resolve_bindings(
+                    sections, evidence, targets,
+                    existing_bindings=bindings_list,
+                )
 
                 plan = assemble_and_validate(
                     sections, binding_sets, evidence,
@@ -267,8 +292,6 @@ class JobExecutor:
 
         接入真实 DeepSeek provider，处理工具调用循环。
         """
-        from app.schemas.semantic.analysis_result import SemanticAnalysisResult
-
         if self._provider is None:
             raise RuntimeError("Provider not configured")
 
@@ -328,8 +351,8 @@ class JobExecutor:
 
 
 def _bind_result_atoms(
-    result: "SemanticAnalysisResult",
-    snap: "ContextSnapshot",
+    result: SemanticAnalysisResult,
+    snap: ContextSnapshot,
 ) -> None:
     """把模型结果中的 symbol_key 引用绑定回 atom_id（唯一的 ID 处理点）。
 
@@ -364,3 +387,62 @@ def _bind_result_atoms(
         step.atom_id = resolve(step.atom_id, step.atom_id)
         for ref in step.evidence_refs:
             ref.atom_id = resolve(ref.atom_id, ref.atom_id)
+
+
+# ── 范围构建（按单元类型分支）─────────────────────────────────────────────
+
+
+def build_execution_scopes(
+    catalog: AtomCatalog,
+    read_source: Callable[[str], str | None],
+    selected_paths: list[str],
+) -> tuple[tuple[SemanticScope, ...], RepositoryCodeGraph | None]:
+    """按单元类型决定分析范围。
+
+    多文件单元（SEMANTIC_ANALYSIS）：
+      build_graph → discover_scopes（跨文件 BFS）→ 合并为恰好一个模块 scope。
+      discover_scopes 无入口时回退 build_file_scopes 再合并，保证模块永远单 scope。
+    单文件单元（CURRENT_FILE_ANALYSIS）：维持每文件一个 scope。
+
+    返回 (scopes, graph)；graph 为 None 表示关系未构建（不会发生——
+    两条路径都会构建图，供 shape_context 输出关系边）。
+    """
+    graph = build_graph(catalog, read_source)
+    if len(selected_paths) > 1:
+        scopes = discover_scopes(graph)
+        if not scopes:
+            scopes = build_file_scopes(catalog)
+        return (_merge_module_scopes(scopes),), graph
+    return build_file_scopes(catalog), graph
+
+
+def _merge_module_scopes(scopes: tuple[SemanticScope, ...]) -> SemanticScope:
+    """把同一模块的所有入口 scope 合并为一个模块 scope。
+
+    成员按 symbol_key 去重，保留到任意入口距离更短的一项；
+    入口、边界、未解析、相关文件取并集。scope_id 由入口集合哈希，跨 revision 稳定。
+    """
+    entries = tuple(
+        sorted({e for s in scopes for e in s.entries}, key=lambda e: e.symbol_key)
+    )
+    members: dict[str, ScopeMember] = {}
+    for s in scopes:
+        for m in s.members:
+            old = members.get(m.symbol_key)
+            if old is None or m.distance < old.distance:
+                members[m.symbol_key] = m
+    scope_id = "scope_" + hashlib.sha256(
+        "\0".join(sorted(e.symbol_key for e in entries)).encode()
+    ).hexdigest()[:24]
+    return SemanticScope(
+        scope_id=scope_id,
+        entries=entries,
+        members=tuple(
+            sorted(members.values(), key=lambda m: (m.distance, m.symbol_key))
+        ),
+        boundary=tuple(sorted({b for s in scopes for b in s.boundary})),
+        unresolved=tuple(sorted({u for s in scopes for u in s.unresolved})),
+        related_files=tuple(
+            sorted({f for s in scopes for f in s.related_files})
+        ),
+    )

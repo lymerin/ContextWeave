@@ -13,6 +13,7 @@ from app.schemas.document_planner.plan import (
     PlannedSection,
     SectionBinding,
     SectionBindingSet,
+    StaleBinding,
 )
 
 
@@ -20,6 +21,7 @@ def resolve_bindings(
     sections: tuple[PlannedSection, ...],
     evidence: PlanningEvidenceCatalog,
     section_targets: tuple | None = None,
+    existing_bindings: list | tuple = (),
 ) -> tuple[SectionBindingSet, ...]:
     """从 PlannedSection 的 atom_id 引用解析完整绑定状态。
 
@@ -30,6 +32,10 @@ def resolve_bindings(
     如果提供了 section_targets，每个 SectionBinding 会带上对应
     SectionTarget.created_block_op_id（如 "add_block_0_abc123"），
     使上下游能通过 review 管线为新建 Block 创建带 blockId 的正式绑定。
+
+    reconcile：匹配到现有 Block（action=UPDATE_BLOCK）时，计算该 Block 上
+    已有但不在本次计划绑定集内的绑定 → stale_bindings（REMOVE_BINDING 依据）。
+    过期判定：已有绑定的 (file_path, symbol_key) 不在计划集合中。
     """
     target_by_ref: dict[str, object] = {}
     if section_targets:
@@ -105,9 +111,31 @@ def resolve_bindings(
                 created_document_op_id=created_document_op_id,
             ))
 
+        # reconcile：匹配块上不再属于本区块的已有绑定 → REMOVE_BINDING
+        stale: list[StaleBinding] = []
+        if target is not None and getattr(target, "action", "") == "UPDATE_BLOCK":
+            matched_block_id = getattr(target, "block_id", None)
+            planned_pairs = {
+                (b.file_path, b.symbol_key) for b in bindings if b.file_path
+            }
+            for old in existing_bindings:
+                if old.block_id != matched_block_id:
+                    continue
+                pair = (old.file_path or "", old.symbol_key or "")
+                if not pair[0] or not pair[1]:
+                    continue
+                if pair not in planned_pairs:
+                    stale.append(StaleBinding(
+                        binding_id=str(old.binding_id),
+                        file_path=pair[0],
+                        document_id=str(target.document_id),
+                        block_id=str(matched_block_id),
+                    ))
+
         sets.append(SectionBindingSet(
             section_ref=section.section_ref,
             bindings=tuple(bindings),
+            stale_bindings=tuple(stale),
         ))
 
     return tuple(sets)

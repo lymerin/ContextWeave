@@ -12,8 +12,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections import defaultdict, deque
-from typing import Any
+from collections import deque
 
 from app.schemas.ast_atom import AtomCatalog, SymbolAtom, SymbolKind
 from app.schemas.repository_graph import RelationKind, RepositoryCodeGraph
@@ -249,6 +248,9 @@ def _expand_from_entry(
     """从一个入口沿调用关系 BFS 扩展，收集可达符号。"""
     fwd = graph.forward_index
     entry_atom_id = _atom_id_for_key(graph, entry.symbol_key)
+    # 图索引按 atom_id，ScopeMember.symbol_key 必须映射回真实 symbol_key，
+    # 否则下游（shape_context 按 symbol_key 查 catalog）会丢失所有成员。
+    by_atom = {s.atom_id: s.symbol_key for s in graph.catalog.symbols}
 
     members: dict[str, ScopeMember] = {}
     queue: deque[tuple[str, int]] = deque()
@@ -278,14 +280,11 @@ def _expand_from_entry(
                     else MemberRole.INDIRECT_CALLEE
                 )
                 members[target] = ScopeMember(
-                    symbol_key=target,
+                    symbol_key=by_atom.get(target, target),
                     role=role,
                     distance=distance,
                     entry_paths=(entry.symbol_key,),
                 )
-
-    # 补充类型依赖
-    _collect_type_dependencies(graph, entry_atom_id, entry.symbol_key, members, visited)
 
     # 入口自身
     members[entry_atom_id] = ScopeMember(
@@ -294,6 +293,9 @@ def _expand_from_entry(
         distance=0,
         entry_paths=(entry.symbol_key,),
     )
+
+    # 补充类型依赖（PARAMETER_TYPE/RETURN_TYPE 可达符号）
+    _collect_type_dependencies(graph, entry_atom_id, entry.symbol_key, members, visited, by_atom)
 
     # 边界和未解析
     boundary: set[str] = set()
@@ -305,10 +307,10 @@ def _expand_from_entry(
             elif rel.category == "UNRESOLVED":
                 unresolved.add(rel.target_external or "")
 
-    # 收集相关文件
+    # 收集相关文件（用真实 symbol_key，members 键是 atom_id）
     files: set[str] = set()
-    for key in members:
-        f = _file_from_key(key)
+    for m in members.values():
+        f = _file_from_key(m.symbol_key)
         if f:
             files.add(f)
 
@@ -331,6 +333,7 @@ def _collect_type_dependencies(
     entry_symbol_key: str,
     members: dict[str, ScopeMember],
     visited: set[str],
+    by_atom: dict[str, str],
 ) -> None:
     """从入口出发收集所有类型依赖（参数类型、返回类型）。"""
     fwd = graph.forward_index
@@ -350,7 +353,7 @@ def _collect_type_dependencies(
             seen.add(target)
             queue.append(target)
             members[target] = ScopeMember(
-                symbol_key=target,
+                symbol_key=by_atom.get(target, target),
                 role=MemberRole.TYPE_DEPENDENCY,
                 distance=members.get(current, ScopeMember("", "", 0)).distance + 1,
                 entry_paths=(entry_symbol_key,),
@@ -435,7 +438,10 @@ def _merge_group(group: list[SemanticScope]) -> SemanticScope:
                 is_shared=True,
             )
 
-    scope_id = _hash_id("scope", *(e.symbol_key for e in sorted(all_entries, key=lambda e: e.symbol_key)))
+    scope_id = _hash_id(
+        "scope",
+        *(e.symbol_key for e in sorted(all_entries, key=lambda e: e.symbol_key)),
+    )
     return SemanticScope(
         scope_id=scope_id,
         entries=tuple(all_entries),

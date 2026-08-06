@@ -10,7 +10,6 @@
 """
 
 import uuid as _uuid
-from uuid import UUID
 
 from app.schemas.document_planner.evidence import PlanningEvidenceCatalog
 from app.schemas.document_planner.plan import (
@@ -144,6 +143,23 @@ def assemble_and_validate(
                 operation_type="ADD_BLOCK",
                 document_id=target.document_id,
                 created_document_op_id=target.created_document_op_id,
+                proposed_plain_text=section.content_markdown if section else "",
+            ))
+            seq += 1
+
+    # reconcile：匹配到的现有 Block → UPDATE_BLOCK（带 baseBlockVersion 乐观锁）
+    for target in targets:
+        if target.action == "UPDATE_BLOCK" and target.block_id:
+            section = next(
+                (s for s in sections if s.section_ref == target.section_ref), None
+            )
+            operations.append(PlanOperation(
+                client_operation_id=f"update_{target.section_ref}"[:100],
+                sequence_number=seq,
+                operation_type="UPDATE_BLOCK",
+                document_id=target.document_id,
+                block_id=target.block_id,
+                base_block_version=target.base_block_version,
                 proposed_plain_text=section.content_markdown if section else "",
             ))
             seq += 1

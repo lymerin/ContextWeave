@@ -19,6 +19,7 @@ from app.clients.delegation_client import (
 from app.clients.mcp_client import McpClientError, OfficialMcpClient, ReviewMcpClient
 from app.config import Settings, get_settings
 from app.document_planner.plan_validator import PlanValidationError
+from app.execution.errors import JobExecutionError
 from app.execution.job_executor import JobExecutor
 from app.model_context_mcp.snapshot_store_registry import SnapshotStoreRegistry
 from app.persistence.job_repository import AgentJobRepository, PostgresAgentJobRepository
@@ -33,7 +34,6 @@ from app.profiling import MemoryProfileConfig, RuntimeMemoryProfiler
 from app.providers.base import ModelProvider, ModelProviderError
 from app.providers.deepseek import DeepSeekProvider
 from app.runtime.delegated_mcp_client import DelegatedMcpClient
-from app.execution.errors import JobExecutionError
 from app.runtime.project_discovery import ProjectDiscoveryService
 from app.runtime.semantic_planner import materialize_deepseek_units, overlapping_file_count
 from app.source_selection.file_filter import SourceFileFilter
@@ -228,6 +228,7 @@ class AgentWorker:
                 file_filter=SourceFileFilter(),
                 registry=self._registry,
                 provider=self._provider,
+                budget_chars=self._settings.agent_max_code_chars,
             )
             with self._profile_stage("UNIT_EXECUTION", job, job_id, unit_id):
                 return await executor.execute(

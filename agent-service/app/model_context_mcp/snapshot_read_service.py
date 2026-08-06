@@ -3,7 +3,38 @@
 from dataclasses import dataclass, field
 
 from app.schemas.model_context.snapshot import ContextSnapshot
+from app.schemas.repository_graph import RelationCategory
 from app.schemas.shaped_context import SourceChunk
+
+
+def _render_edges(
+    snapshot: ContextSnapshot, atom_id: str, *, outgoing: bool
+) -> tuple[str, ...]:
+    """把关系渲染为可读边。
+
+    出边: "KIND -> 目标"（目标用 symbol_key 或外部名）。
+    入边: "KIND <- 来源"（显示是谁发起了这条边）。
+    """
+    if outgoing:
+        rels = snapshot.relation_by_source.get(atom_id, ())
+    else:
+        rels = tuple(
+            r for r in snapshot.relations if r.target_atom_id == atom_id
+        )
+    rendered: list[str] = []
+    for r in rels:
+        if r.category == RelationCategory.INTERNAL and r.target_atom_id:
+            target = snapshot.atom_by_id.get(r.target_atom_id)
+            label = target.symbol_key if target else r.target_atom_id
+        else:
+            label = r.target_external or ""
+        if outgoing:
+            rendered.append(f"{r.kind} -> {label}")
+        else:
+            source = snapshot.atom_by_id.get(r.source_atom_id)
+            source_label = source.symbol_key if source else r.source_atom_id
+            rendered.append(f"{r.kind} <- {source_label}")
+    return tuple(sorted(rendered))
 
 
 @dataclass
@@ -15,6 +46,7 @@ class OverviewResult:
     block_count: int
     entry_paths: tuple[str, ...] = ()
     block_summaries: tuple[str, ...] = ()
+    trimmed_atom_count: int = 0
     coverage: set[str] = field(default_factory=set)
 
 
@@ -31,6 +63,8 @@ class BlockResult:
 class AtomResult:
     symbol_key: str
     sources: tuple[SourceChunk, ...] = ()
+    out_edges: tuple[str, ...] = ()
+    in_edges: tuple[str, ...] = ()
     coverage: set[str] = field(default_factory=set)
 
 
@@ -67,9 +101,11 @@ class SnapshotReadService:
             block_count=self._snap.block_count,
             entry_paths=self._snap.entry_paths,
             block_summaries=tuple(
-                f"{b.block_id}: d={b.entry_distance} atoms={len(b.atoms)}"
+                f"{b.block_id}: {b.entry_label or '共享依赖'} "
+                f"atoms={len(b.atoms)} d≤{b.entry_distance}"
                 for b in self._snap.structure_blocks
             ),
+            trimmed_atom_count=self._snap.manifest.trimmed_atom_count,
         )
 
     def get_block(self, block_id: str) -> BlockResult | None:
@@ -120,6 +156,8 @@ class SnapshotReadService:
         return AtomResult(
             symbol_key=atom.symbol_key,
             sources=tuple(sources),
+            out_edges=_render_edges(self._snap, atom_id, outgoing=True),
+            in_edges=_render_edges(self._snap, atom_id, outgoing=False),
             coverage=coverage,
         )
 
