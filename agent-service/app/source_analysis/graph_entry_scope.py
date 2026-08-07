@@ -14,7 +14,13 @@ from __future__ import annotations
 import hashlib
 from collections import deque
 
-from app.schemas.ast_atom import AtomCatalog, SymbolAtom, SymbolKind
+from app.schemas.ast_atom import (
+    CLASS_LIKE_KINDS,
+    AtomCatalog,
+    SymbolAtom,
+    SymbolKind,
+    is_private_symbol,
+)
 from app.schemas.repository_graph import RelationKind, RepositoryCodeGraph
 from app.schemas.scope import (
     EntryKind,
@@ -28,6 +34,13 @@ from app.schemas.scope import (
 _MAX_CALL_DEPTH = 5
 # 两个范围合并的最小重叠比例（共享成员 / 较小范围成员数）
 _MERGE_OVERLAP_THRESHOLD = 0.6
+# 类型依赖拉入 scope 的关系（Java 基类/接口与参数类型同权；仅 INTERNAL 跟随）
+_TYPE_DEP_KINDS = frozenset({
+    RelationKind.PARAMETER_TYPE,
+    RelationKind.RETURN_TYPE,
+    RelationKind.INHERITS,
+    RelationKind.IMPLEMENTS,
+})
 
 
 # ── 直接范围构造（单文件/少量文件，不依赖关系图）─────────────────────────
@@ -54,11 +67,11 @@ def build_file_scopes(catalog: AtomCatalog) -> tuple[SemanticScope, ...]:
         entries: list[EntryPoint] = []
         top_level_ids: set[str] = set()
         for sym in symbols:
-            if _is_private_name(sym.name):
+            if is_private_symbol(sym):
                 continue
             if sym.parent_qualified is not None:
                 continue  # 方法/类方法，归入所属类的范围
-            if sym.kind == SymbolKind.CLASS:
+            if sym.kind in CLASS_LIKE_KINDS:
                 label = f"model:{sym.qualified_name}" if sym.is_pydantic else sym.qualified_name
                 entries.append(EntryPoint(
                     symbol_key=sym.symbol_key,
@@ -77,7 +90,7 @@ def build_file_scopes(catalog: AtomCatalog) -> tuple[SemanticScope, ...]:
         # 如果没有顶层入口（极罕见：全是私有函数或只有方法），回退到方法级
         if not entries:
             for sym in symbols:
-                if _is_private_name(sym.name):
+                if is_private_symbol(sym):
                     continue
                 if sym.kind in (SymbolKind.METHOD, SymbolKind.CLASS_METHOD):
                     entries.append(EntryPoint(
@@ -198,9 +211,9 @@ def _detect_entries(graph: RepositoryCodeGraph) -> list[EntryPoint]:
 
     # 回退: 没有 HTTP 路由时，顶层类/函数都是语义入口
     for sym in graph.catalog.symbols:
-        if _is_private_name(sym.name):
+        if is_private_symbol(sym):
             continue
-        if sym.kind == SymbolKind.CLASS:
+        if sym.kind in CLASS_LIKE_KINDS:
             label = sym.qualified_name
             if sym.is_pydantic:
                 label = f"model:{sym.qualified_name}"
@@ -221,7 +234,7 @@ def _detect_entries(graph: RepositoryCodeGraph) -> list[EntryPoint]:
     # 如果连顶层类/函数都没有（极罕见），回退到公开方法
     if not entries:
         for sym in graph.catalog.symbols:
-            if _is_private_name(sym.name):
+            if is_private_symbol(sym):
                 continue
             if sym.kind in (SymbolKind.METHOD, SymbolKind.CLASS_METHOD):
                 entries.append(EntryPoint(
@@ -231,11 +244,6 @@ def _detect_entries(graph: RepositoryCodeGraph) -> list[EntryPoint]:
                 ))
 
     return entries
-
-
-def _is_private_name(name: str) -> bool:
-    """Python 私有命名约定: 以 _ 开头但不以 __ 开头的是模块私有。"""
-    return name.startswith("_") and not name.startswith("__")
 
 
 # ── 从入口展开范围 ──────────────────────────────────────────────────────────
@@ -345,7 +353,7 @@ def _collect_type_dependencies(
         for rel in fwd.get(current, ()):
             if rel.category != "INTERNAL":
                 continue
-            if rel.kind not in (RelationKind.PARAMETER_TYPE, RelationKind.RETURN_TYPE):
+            if rel.kind not in _TYPE_DEP_KINDS:
                 continue
             target = rel.target_atom_id
             if not target or target in seen:

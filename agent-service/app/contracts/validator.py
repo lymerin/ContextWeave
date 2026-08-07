@@ -16,7 +16,7 @@ tool 名与文件的映射见 _CONTRACT_FILES。
 from __future__ import annotations
 
 import json
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -62,7 +62,7 @@ _CONTRACT_FILES: dict[str, tuple[str, str]] = {
 }
 
 
-@lru_cache(maxsize=None)
+@cache
 def _load_schema(filename: str) -> dict[str, Any]:
     path = _CONTRACTS_DIR / filename
     if not path.exists():

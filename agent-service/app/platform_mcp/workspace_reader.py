@@ -1,6 +1,5 @@
 """平台 MCP 仓库读取——workspace 上下文 + 文件目录。"""
 
-from typing import Any
 from uuid import UUID
 
 from app.clients.mcp_client import ReadOnlyMcpClient

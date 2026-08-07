@@ -1,8 +1,13 @@
 """语义结果校验——semantic_groups + member_interpretations 的完整性校验。"""
 
+import re
+
 from app.schemas.document_planner.skeleton import SkeletonSlot, SlotType
 from app.schemas.model_context.snapshot import ContextSnapshot
 from app.schemas.semantic.analysis_result import SemanticAnalysisResult
+
+# 模型面对 hash 型 chunk_id 时可能自创 "文件:行号-行号" 明文引用。
+_PLAIN_CHUNK_REF = re.compile(r"^(?P<file>.+):(?P<start>\d+)-(?P<end>\d+)$")
 
 
 class ResultValidator:
@@ -25,6 +30,10 @@ class ResultValidator:
         # 校验时两种 ID 都接受（存在即视为有效），避免符号缺失时误判格式错误。
         self._valid_ids: set[str] = set(snapshot.atom_by_id.keys())
         self._valid_ids.update(snapshot.atom_by_symbol.keys())
+        # 明文 chunk 引用按文件反查（行号经裁剪去重，引用区间与 chunk 相交即可）。
+        self._chunks_by_file: dict[str, list] = {}
+        for chunk in snapshot.chunks:
+            self._chunks_by_file.setdefault(chunk.file_path, []).append(chunk)
 
     def validate(self, result: SemanticAnalysisResult) -> list[str]:
         self._errors = []
@@ -125,4 +134,24 @@ class ResultValidator:
         elif ref.atom_id not in self._valid_ids:
             self._errors.append(f"{path}: atom_id not in snapshot: {ref.atom_id}")
         if ref.source_chunk_id and ref.source_chunk_id not in self._snap.chunk_by_id:
-            self._errors.append(f"{path}: source_chunk_id not in snapshot: {ref.source_chunk_id}")
+            # 宽容解析模型自创的明文引用 "文件:起始行-结束行"：能按文件与
+            # 行区间反查到快照内真实 chunk 即视为有效证据，避免把格式偏差
+            # 误判为引用不存在而耗尽 repair 重试。编造的行号无法反查，仍报错。
+            if not self._resolve_plain_chunk(ref.source_chunk_id):
+                self._errors.append(
+                    f"{path}: source_chunk_id not in snapshot: {ref.source_chunk_id}"
+                )
+
+    def _resolve_plain_chunk(self, ref_value: str) -> bool:
+        match = _PLAIN_CHUNK_REF.match(ref_value)
+        if not match:
+            return False
+        file = match.group("file")
+        start = int(match.group("start"))
+        end = int(match.group("end"))
+        for chunk in self._chunks_by_file.get(file, ()):
+            if chunk.start_line == start and chunk.end_line == end:
+                return True
+            if start <= chunk.end_line and end >= chunk.start_line:
+                return True
+        return False

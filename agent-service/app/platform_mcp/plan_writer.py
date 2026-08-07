@@ -8,9 +8,16 @@ MCP 后端仍接受 BindingProposal[]（增量操作）。
 
 import hashlib
 import json
+import logging
 
 from app.clients.mcp_client import ReviewMcpClient
 from app.schemas.document_planner.plan import AgentPlan
+
+LOGGER = logging.getLogger(__name__)
+
+# 平台限制：单条变更请求最多 50 条绑定提案（mcp-server max-bindings）。
+# 超出后 MCP 服务端直接拒绝整条请求，因此提交前按优先级截断。
+_PLATFORM_MAX_BINDINGS = 50
 
 
 class PlanWriter:
@@ -101,6 +108,10 @@ class PlanWriter:
                     )
                 proposals.append(proposal)
 
+        # 平台限制截断：大模块总览 batch 的 SUPPORTING 绑定可能超过 50 条。
+        # 按优先级保留，其余丢弃并记日志（traceability 降级，不阻断文档内容）。
+        proposals = _truncate_proposals(proposals)
+
         # reconcile：匹配块上已过期的绑定 → REMOVE_BINDING
         for bs in plan.section_binding_sets:
             for stale in bs.stale_bindings:
@@ -122,25 +133,25 @@ class PlanWriter:
         mcp_payload["bindingProposals"] = proposals
 
         # evidence —— 每个 binding 是它所属 block 的一条证据，不排列组合。
-        # binding.created_block_operation_id 已编码归属关系，一对一映射，
-        # 而非 operation × section × binding 笛卡尔积。
+        # 直接从保留的 proposals 派生（与 binding 一对一），截断后的
+        # evidence 数量天然 ≤ 保留绑定数，不会单独超限。
         # evidence 只针对本次创建的块（UPDATE_BLOCK 的绑定是既有块，
         # clientOperationId 为空会触发 knowledge-core 引用校验失败）
         mcp_payload["evidence"] = [
             {
                 "clientOperationId": (
-                    binding.created_block_operation_id
-                    or binding.created_document_op_id or ""
+                    p.get("createdBlockClientOperationId")
+                    or p.get("createdDocumentClientOperationId") or ""
                 ),
                 "repositoryId": repository_id,
-                "filePath": binding.file_path,
-                "startLine": binding.start_line,
-                "endLine": binding.start_line,  # 只指起始行，避免截断解析行号越界
+                "filePath": p["filePath"],
+                "startLine": p["startLine"],
+                "endLine": p["startLine"],  # 只指起始行，避免截断解析行号越界
                 "description": f"语义分析证据: {plan.summary}",
             }
-            for bs in plan.section_binding_sets
-            for binding in bs.bindings
-            if binding.created_block_operation_id or binding.created_document_op_id
+            for p in proposals
+            if p.get("createdBlockClientOperationId")
+            or p.get("createdDocumentClientOperationId")
         ]
 
         # 复用现有 MCP 客户端提交逻辑
@@ -151,6 +162,42 @@ class PlanWriter:
             run_id=run_id,
             authorization=authorization,
         )
+
+
+def _truncate_proposals(proposals: list[dict]) -> list[dict]:
+    """平台 max-bindings=50 约束下保留最高优先级绑定。
+
+    优先级（stable，同优先级保持原 sequenceNumber 顺序）:
+      0. PRIMARY 锚点绑定
+      1. 带创建块操作的绑定（新建块需要绑定才能被 trace 到）
+      2. 既有块上的 SUPPORTING 绑定
+      3. REMOVE_BINDING（过期清理——丢弃只影响收敛，不影响新内容）
+
+    被丢弃的绑定记 warning 日志，数量计入审计。
+    """
+    if len(proposals) <= _PLATFORM_MAX_BINDINGS:
+        return proposals
+
+    def priority(p: dict) -> tuple[int, int]:
+        seq = p.get("sequenceNumber", 0)
+        if p.get("action") == "REMOVE_BINDING":
+            return (3, seq)
+        if p.get("bindingRole") == "PRIMARY":
+            return (0, seq)
+        if p.get("createdBlockClientOperationId") or p.get(
+            "createdDocumentClientOperationId"
+        ):
+            return (1, seq)
+        return (2, seq)
+
+    kept = sorted(proposals, key=priority)[:_PLATFORM_MAX_BINDINGS]
+    dropped = len(proposals) - len(kept)
+    LOGGER.warning(
+        "binding proposals truncated: %d -> %d (platform max %d); "
+        "dropped %d low-priority bindings (traceability degraded)",
+        len(proposals), len(kept), _PLATFORM_MAX_BINDINGS, dropped,
+    )
+    return kept
 
 
 def _plan_fingerprint(plan: AgentPlan) -> str:

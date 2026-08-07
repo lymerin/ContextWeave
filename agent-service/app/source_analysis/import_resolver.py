@@ -27,12 +27,19 @@ class FileImportScope:
                     from app.x import y       → ("y", "app.x.y")（子模块命中）
     symbol_imports  名字 → 源模块点路径（符号级导入，from a.b import Y 且 Y 非子模块）
     star_imports    from a.b import * 的源模块（不可定向解析，仅记录）
+
+    Java 扩展字段（Python 构造点保持默认值，零改动）:
+    package         包名（com.devcollab.knowledgecore.auth.api）
+    local_types     本文件声明的类型简单名（类/接口/枚举/record，含嵌套）
+    symbol_imports  Java: (简单名, 全限定名)；静态导入 (成员名, 类全限定名)
     """
 
     file_path: str
     module_aliases: tuple[tuple[str, str], ...] = ()
     symbol_imports: tuple[tuple[str, str], ...] = ()
     star_imports: tuple[str, ...] = ()
+    package: str = ""
+    local_types: tuple[str, ...] = ()
 
 
 def module_to_file(module: str, file_paths: frozenset[str]) -> str | None:
@@ -44,6 +51,19 @@ def module_to_file(module: str, file_paths: frozenset[str]) -> str | None:
     """
     rel = module.replace(".", "/")
     candidates = (f"{rel}.py", f"{rel}/__init__.py")
+    hits = [c for c in candidates if c in file_paths]
+    return hits[0] if len(hits) == 1 else None
+
+
+def java_module_to_file(module: str, file_paths: frozenset[str]) -> str | None:
+    """Java 全限定类型名/包名 → 唯一文件。
+
+    "com.devcollab.auth.AuthController" → "com/devcollab/auth/AuthController.java"
+    候选布局：{rel}.java 与 src/main/java/{rel}.java；
+    候选多于 1 个 → None（宁缺勿错，与 module_to_file 同一铁律）。
+    """
+    rel = module.replace(".", "/")
+    candidates = (f"{rel}.java", f"src/main/java/{rel}.java")
     hits = [c for c in candidates if c in file_paths]
     return hits[0] if len(hits) == 1 else None
 

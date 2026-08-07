@@ -7,7 +7,6 @@ from app.config import Settings
 from app.graph.state import AgentState
 from app.tracing.trace_logger import traced
 
-
 # ── 原 context/ 模块的内联（该目录已删除）──────────────────────────
 
 class BudgetExceededError(RuntimeError):
@@ -18,13 +17,13 @@ class ToolCallLimitExceededError(BudgetExceededError):
     pass
 
 
-def __reserve_tool_call(current: int, maximum: int) -> int:
+def _reserve_tool_call(current: int, maximum: int) -> int:
     if current >= maximum:
         raise ToolCallLimitExceededError("MCP tool call limit exceeded")
     return current + 1
 
 
-def __build_bundle(state: dict[str, Any]) -> dict[str, Any]:
+def _build_bundle(state: dict[str, Any]) -> dict[str, Any]:
     workspace_context = state["workspace_context"]
     repository_id = state["repository_id"]
     repository: dict[str, Any] = next(

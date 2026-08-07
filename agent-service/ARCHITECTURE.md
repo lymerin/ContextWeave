@@ -23,13 +23,20 @@
   │
   ▼
 ┌─ 第1层: AST结构解析 ───────────────────────────────────────┐
-│ source_analysis/code_ast_atom.py                            │
+│ source_analysis/code_ast_atom.py (薄调度器)                  │
 │   输入: SourceFileBatch (含源码文本)                         │
-│   处理: ast.parse() → 遍历 ClassDef/FunctionDef             │
+│   处理: 按语言解析器注册表分派 (parsers 包)                  │
+│     Python: ast.parse() → ClassDef/FunctionDef              │
+│     Java:   tree-sitter-java → class/interface/enum/record/ │
+│             method (构造器/字段不产原子)                      │
 │   输出: AtomCatalog                                         │
 │     SymbolAtom { atom_id, symbol_key, kind, name,           │
 │       start_line, end_line, body_start_line, body_end_line, │
 │       signature, http_method, http_path, ... }               │
+│                                                             │
+│ source_analysis/parsers/       LanguageParser 协议 + 注册表 │
+│   python_parser.py  Java 语义迁移 (Python)                   │
+│   java_parser.py    tree-sitter 实现 + Spring 路由 + Javadoc │
 │                                                             │
 │ schemas/ast_atom.py        SymbolAtom, ModuleAtom,          │
 │                             AtomCatalog (@dataclass frozen)  │
@@ -41,14 +48,21 @@
 │ 2a. 关系连接                                                │
 │ source_analysis/atom_relation_graph.py                      │
 │   输入: AtomCatalog + 源码                                   │
-│   处理: 对每个符号重新解析AST，收集:                          │
-│     CALLS (调用关系)                                        │
+│   处理: 按文件语言解析器收集关系 (extract_relations)          │
+│     CALLS / CREATES (new X() 升级)                          │
 │     PARAMETER_TYPE / RETURN_TYPE (类型引用)                  │
 │     CONTAINS (类包含方法)                                    │
+│     INHERITS / IMPLEMENTS (Java 继承/实现)                   │
 │     FIELD_READS / FIELD_WRITES (字段读写)                    │
 │     THROWS (异常抛出)                                        │
+│   目标解析: Python 走 import 别名表；Java 走字段类型/         │
+│     import 全限定名/同包回退 (宁缺勿错，候选非恰好1 → 不解析)  │
 │   分类: INTERNAL / BOUNDARY / UNRESOLVED                     │
 │   输出: RepositoryCodeGraph (AtomCatalog + Relation[] + 索引)│
+│                                                             │
+│ source_analysis/import_resolver.py                          │
+│   FileImportScope (module_aliases/symbol_imports/           │
+│     package/local_types) + module_to_file/java_module_to_file│
 │                                                             │
 │ schemas/repository_graph.py                                 │
 │   Relation { relation_id, source_atom_id, kind,             │

@@ -1,9 +1,10 @@
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 sys.path.insert(0, "agent-service")
 
+from app.execution.job_executor import _bind_result_atoms
 from app.schemas.model_context.snapshot import ContextSnapshot, SnapshotManifest
 from app.schemas.semantic.analysis_result import (
     EvidenceRef,
@@ -13,7 +14,6 @@ from app.schemas.semantic.analysis_result import (
     SemanticGroup,
 )
 from app.schemas.shaped_context import AtomRef
-from app.execution.job_executor import _bind_result_atoms
 
 
 def _snap() -> ContextSnapshot:
@@ -31,7 +31,7 @@ def _snap() -> ContextSnapshot:
             symbol_key="PYTHON:app/schemas.py:ReviewBlockRequest:CLASS",
         ),
     )
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     return ContextSnapshot(
         context_id="ctx-1",
         repository_id=uuid4(),
@@ -151,7 +151,10 @@ def test_validator_accepts_both() -> None:
 
     snap = _snap()
     v = ResultValidator(snap)
-    assert v._check_atom_exists("x", "PYTHON:app/schemas.py:ReviewBlockRequest:CLASS") or not v._errors
+    assert (
+        v._check_atom_exists("x", "PYTHON:app/schemas.py:ReviewBlockRequest:CLASS")
+        or not v._errors
+    )
     v2 = ResultValidator(snap)
     v2._check_atom_exists("x", "sym_aaaa")
     assert not v2._errors

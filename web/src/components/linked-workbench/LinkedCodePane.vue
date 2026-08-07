@@ -80,14 +80,14 @@
     </div>
     <el-dialog
       v-model="agentDialogOpen"
-      title="Agent 检查当前文件"
+      title="Agent 项目检查"
       width="440px"
       append-to-body
       destroy-on-close
       @closed="resetAgentDialog"
     >
       <div class="agent-dialog-content">
-        <p><strong>文件：</strong>{{ path }}</p>
+        <p><strong>仓库：</strong>{{ repositoryId }}</p>
         <el-input
           data-testid="agent-instruction-input"
           v-model="userInstruction"
@@ -371,13 +371,12 @@ async function startAgentCheck() {
   if (!canInspect.value || creatingRun.value) return;
   creatingRun.value = true;
   try {
+    // 单文件分析入口已废弃：Agent 检查统一走完整模块流水线，
+    // 由 worker 扫描仓库、按语义模块生成并隔离文档。
     const queued = await createAgentJob({
       workspaceId: props.workspaceId,
       repositoryId: props.repositoryId,
-      scope: {
-        type: 'CURRENT_FILE',
-        filePath: props.path,
-      },
+      scope: { type: 'PROJECT_INITIALIZATION' },
       userInstruction: userInstruction.value.trim() || null,
     });
     jobId.value = queued.jobId;
@@ -385,8 +384,8 @@ async function startAgentCheck() {
       jobId: queued.jobId,
       workspaceId: props.workspaceId,
       repositoryId: props.repositoryId,
-      label: props.path,
-      filePath: props.path,
+      label: `项目检查 ${props.repositoryId.slice(0, 8)}`,
+      filePath: null,
       createdAt: queued.createdAt,
       lastKnownStatus: queued.status,
     });
@@ -402,10 +401,11 @@ async function startAgentCheck() {
 function restoreAgentJob() {
   agentDialogOpen.value = false;
   resetAgentDialog();
+  // Agent 检查统一为仓库级完整模块流水线（filePath 为 null），
+  // 按仓库匹配即可恢复状态，不再按单文件匹配。
   jobId.value = backgroundActivity.findActiveJob({
     workspaceId: props.workspaceId,
     repositoryId: props.repositoryId,
-    filePath: props.path,
   })?.jobId ?? null;
 }
 
