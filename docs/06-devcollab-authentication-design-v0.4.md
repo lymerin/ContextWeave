@@ -675,8 +675,6 @@ auth/domain/
 └─ RefreshSessionRepository.java
 
 auth/infrastructure/
-├─ InMemoryUserRepository.java
-├─ InMemoryRefreshSessionRepository.java
 ├─ JwtProperties.java
 ├─ JwtTokenService.java
 ├─ RefreshTokenProperties.java
