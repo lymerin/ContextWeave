@@ -58,7 +58,7 @@ describe('LandingView protected entry points', () => {
   it('returns a guest to the homepage after login from public navigation', async () => {
     const wrapper = mount(LandingView);
     const documents = wrapper.findAll('.landing-nav-item')
-      .find(button => button.text().includes('文档'))!;
+      .find(button => button.text().includes('协作空间'))!;
 
     await documents.trigger('click');
 

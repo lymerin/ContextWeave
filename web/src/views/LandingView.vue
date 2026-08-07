@@ -251,8 +251,7 @@ const workspaceLoadFailed = ref(false);
 
 const navigationItems: NavigationItem[] = [
   { label: '总览', target: null },
-  { label: '文档', target: '/workspaces?section=documents' },
-  { label: '协作空间', target: '/workspaces?section=collaboration' },
+  { label: '协作空间', target: '/workspaces' },
   { label: '审阅中心', target: '/workspaces?section=reviews' },
   { label: '工作流', target: '/workspaces?section=workflows' },
   { label: '运行记录', target: '/workspaces?section=runs' },

@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   createWorkspace: vi.fn(),
   deleteWorkspace: vi.fn(),
   renameWorkspace: vi.fn(),
+  listDocumentTree: vi.fn(),
+  getPendingDocumentChangeCount: vi.fn(),
   registerGitRepository: vi.fn(),
   routerPush: vi.fn(),
   logout: vi.fn(),
@@ -25,6 +27,14 @@ vi.mock('@/api/workspace', () => ({
 
 vi.mock('@/api/git', () => ({
   registerGitRepository: mocks.registerGitRepository,
+}));
+
+vi.mock('@/api/document', () => ({
+  listDocumentTree: mocks.listDocumentTree,
+}));
+
+vi.mock('@/api/documentChange', () => ({
+  getPendingDocumentChangeCount: mocks.getPendingDocumentChangeCount,
 }));
 
 vi.mock('vue-router', () => ({
@@ -115,11 +125,27 @@ describe('HomeView workspace deletion', () => {
     vi.clearAllMocks();
     mocks.routeQuery = {};
     mocks.deleteWorkspace.mockResolvedValue(undefined);
+    mocks.listDocumentTree.mockResolvedValue([
+      { id: 'document-1', title: '项目说明', children: [] },
+    ]);
+    mocks.getPendingDocumentChangeCount.mockResolvedValue(2);
     mocks.renameWorkspace.mockResolvedValue({
       ...workspace,
       name: '重命名后的工作区',
       updatedAt: '2026-07-23T09:30:00Z',
     });
+  });
+
+  it('renders the landing-style collaboration shell with real workspace stats', async () => {
+    const wrapper = await mountHome();
+
+    expect(wrapper.find('.workspace-selection-page').exists()).toBe(true);
+    expect(wrapper.find('.app-shell').exists()).toBe(false);
+    expect(wrapper.get('.workspace-selection-nav-item.is-active').text())
+      .toContain('协作空间');
+    expect(wrapper.text()).not.toContain('文档总览');
+    expect(wrapper.get('.workspace-card-stats').text()).toContain('1 篇文档');
+    expect(wrapper.get('.workspace-card-stats').text()).toContain('2 项待审批');
   });
 
   afterEach(() => {
@@ -151,7 +177,10 @@ describe('HomeView workspace deletion', () => {
         '.el-dropdown-menu__item',
       ),
     );
-    expect(items.map(item => item.textContent?.trim())).toEqual([
+    expect(items
+      .map(item => item.textContent?.trim())
+      .filter(text => text === '重命名工作区' || text === '删除工作区'))
+      .toEqual([
       '重命名工作区',
       '删除工作区',
     ]);
@@ -187,7 +216,7 @@ describe('HomeView workspace deletion', () => {
       workspace.id,
       { name: '重命名后的工作区' },
     );
-    expect(wrapper.get('.workspace-card h3').text())
+    expect(wrapper.get('.workspace-card h2').text())
       .toBe('重命名后的工作区');
     expect(wrapper.findComponent(WorkspaceRenameDialog).props('modelValue'))
       .toBe(false);
@@ -213,7 +242,7 @@ describe('HomeView workspace deletion', () => {
     saveButton?.click();
     await flushPromises();
 
-    expect(wrapper.get('.workspace-card h3').text()).toBe(workspace.name);
+    expect(wrapper.get('.workspace-card h2').text()).toBe(workspace.name);
     expect(document.body.querySelector<HTMLInputElement>(
       '#workspace-rename-name',
     )?.value).toBe('失败后的名称');
@@ -237,7 +266,7 @@ describe('HomeView workspace deletion', () => {
     expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(1);
     expect(mocks.deleteWorkspace).toHaveBeenCalledWith(workspace.id);
     expect(wrapper.find('.workspace-card').exists()).toBe(false);
-    expect(wrapper.text()).toContain('0 个工作区');
+    expect(wrapper.text()).toContain('还没有工作区');
   });
 
   it('keeps the card and dialog when deletion fails', async () => {
@@ -254,7 +283,7 @@ describe('HomeView workspace deletion', () => {
     await flushPromises();
 
     expect(wrapper.find('.workspace-card').exists()).toBe(true);
-    expect(wrapper.text()).toContain('1 个工作区');
+    expect(wrapper.get('.workspace-card h2').text()).toBe(workspace.name);
     expect(confirmationInput()).not.toBeNull();
   });
 });

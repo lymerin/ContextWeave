@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>工作区选择 - 浅色首页色调与排版</title>
+  <style>
+    :root {
+      --landing-ink: #090c0e;
+      --landing-paper: #ffffff;
+      --landing-canvas: #e8edef;
+      --landing-muted: #69757c;
+      --landing-cyan: #18c9ef;
+    }
+
+    * { box-sizing: border-box; }
+    
+    body {
+      margin: 0;
+      font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      color: var(--landing-ink);
+      
+      /* 严格复用 ContextWeave Beta 首页的浅色背景色调 */
+      background:
+        radial-gradient(ellipse 42% 34% at 8% 12%, rgb(24 201 239 / 15%), transparent 70%),
+        radial-gradient(ellipse 34% 32% at 91% 17%, rgb(121 137 255 / 10%), transparent 72%),
+        radial-gradient(ellipse 38% 30% at 54% 98%, rgb(54 212 195 / 9%), transparent 72%),
+        linear-gradient(180deg, #f2f5f7 0%, var(--landing-canvas) 100%);
+      
+      min-height: 100vh;
+      position: relative;
+      isolation: isolate;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 首页背景点缀效果 */
+    body::before,
+    body::after {
+      position: absolute;
+      z-index: -1;
+      content: "";
+      pointer-events: none;
+    }
+
+    body::before {
+      inset: 72px -44px -44px;
+      opacity: 0.32;
+      background-image: radial-gradient(circle, rgb(45 67 77 / 36%) 0.75px, transparent 0.9px);
+      background-size: 18px 18px;
+      mask-image: linear-gradient(to bottom, black 0%, black 58%, transparent 96%);
+    }
+
+    button { cursor: pointer; font: inherit; }
+
+    /* 完全抛弃旧版 Sidebar，采用首页的纯顶部导航排版 */
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(250px, 1fr) auto minmax(190px, 1fr);
+      align-items: center;
+      min-height: 72px;
+      padding: 0 36px;
+      border-bottom: 1px solid rgb(15 26 31 / 8%);
+      background: rgb(255 255 255 / 96%);
+      box-shadow: 0 10px 32px rgb(38 56 67 / 6%);
+      position: relative;
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    /* 保留 AI 图中受欢迎的三瓣图标 */
+    .workflow-logo {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .workflow-logo svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .brand-name {
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      font-size: 16px;
+    }
+
+    .beta-badge {
+      padding: 3px 7px;
+      border: 1px solid #e2e8eb;
+      border-radius: 4px;
+      background: #f0f3f5;
+      color: #566066;
+      font-size: 10px;
+      font-family: "IBM Plex Mono", Consolas, monospace;
+      letter-spacing: 0.11em;
+    }
+
+    /* 首页同款居中导航栏 */
+    .navigation {
+      display: flex;
+      gap: 4px;
+      padding: 5px;
+      border: 1px solid #e4e9ec;
+      border-radius: 999px;
+      background: #eef1f3;
+    }
+
+    .nav-item {
+      min-height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: #6d777c;
+      white-space: nowrap;
+      font-size: 13px;
+      transition: color 180ms ease, background 180ms ease, transform 180ms ease;
+    }
+    
+    .nav-item:hover { color: var(--landing-ink); }
+    .nav-item:active { transform: translateY(1px); }
+
+    .nav-item.is-active {
+      background: var(--landing-ink);
+      box-shadow: 0 5px 16px rgb(9 12 14 / 20%);
+      color: #fff;
+    }
+
+    .nav-item.is-active span {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--landing-cyan);
+    }
+
+    /* 右侧账号区域 */
+    .account {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .online {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: #4b565b;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    
+    .online > span {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #15c783;
+      box-shadow: 0 0 0 4px rgb(21 199 131 / 11%);
+    }
+
+    .avatar {
+      width: 38px;
+      height: 38px;
+      border: 0;
+      border-radius: 50%;
+      background: var(--landing-ink);
+      color: #fff;
+      display: grid;
+      place-items: center;
+    }
+
+    /* 主内容区 */
+    .main-content {
+      width: min(1240px, calc(100% - 48px));
+      margin: 32px auto 44px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 保留 AI 图中的磨砂玻璃特效容器，但背景更为通透浅色 */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.55);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      border-radius: 24px;
+      padding: 48px;
+      box-shadow: 0 16px 45px rgb(39 59 70 / 4%);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 40px;
+    }
+
+    .title-area h1 {
+      font-size: 38px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      margin: 0 0 8px 0;
+      color: var(--landing-ink);
+    }
+
+    .title-area p {
+      font-size: 15px;
+      color: var(--landing-muted);
+      margin: 0;
+    }
+
+    /* 完全复用首页的创建工作区按钮 */
+    .btn-create {
+      border: 1px solid var(--landing-ink);
+      background: var(--landing-ink);
+      color: #fff;
+      border-radius: 8px;
+      padding: 0 18px;
+      min-height: 42px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      transition: transform 180ms ease, box-shadow 220ms ease;
+    }
+    
+    .btn-create span {
+      display: inline-block;
+      margin-left: 14px;
+      color: var(--landing-cyan);
+      transition: transform 180ms ease;
+    }
+
+    .btn-create:hover {
+      box-shadow:
+        7px 7px 14px -9px rgb(24 201 239 / 68%),
+        13px 12px 24px -17px rgb(24 201 239 / 58%),
+        0 10px 18px -13px rgb(24 201 239 / 54%);
+      transform: translateY(-2px);
+    }
+    .btn-create:hover span {
+      transform: translateX(2px);
+    }
+    .btn-create:active {
+      box-shadow:
+        4px 4px 9px -8px rgb(24 201 239 / 62%),
+        0 5px 10px -9px rgb(24 201 239 / 48%);
+      transform: translateY(0);
+      transition-duration: 80ms;
+    }
+
+    /* 工作区卡片网格 */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 20px;
+    }
+
+    /* 干净的卡片设计 */
+    .card {
+      background: var(--landing-paper);
+      border-radius: 16px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid rgb(28 49 59 / 7.5%);
+      box-shadow: 0 12px 32px rgb(39 59 70 / 4%);
+      transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease;
+    }
+    
+    .card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 16px 45px rgb(39 59 70 / 8%);
+      border-color: rgba(24, 201, 239, 0.4);
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .card-top h3 {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 0;
+      color: var(--landing-ink);
+      letter-spacing: -0.01em;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: #eef1f3;
+      color: #566066;
+      font-family: "IBM Plex Mono", Consolas, monospace;
+    }
+
+    .card-meta {
+      font-size: 13px;
+      color: var(--landing-muted);
+      margin-bottom: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    
+    .stats {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .stats .pending { color: #d97706; }
+
+    .card-bottom {
+      margin-top: auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 16px;
+      border-top: 1px solid #f0f3f5;
+    }
+
+    .view-btn {
+      border: 0; 
+      background: transparent; 
+      color: var(--landing-cyan);
+      padding: 0; 
+      font-weight: 600; 
+      font-size: 14px; 
+      display: flex; 
+      align-items: center; 
+      gap: 4px;
+    }
+    
+    .card:hover .view-btn {
+      color: var(--landing-ink);
+    }
+    .view-btn span { transition: transform 0.2s; }
+    .card:hover .view-btn span { transform: translateX(3px); }
+
+    .kebab {
+      width: 30px; height: 30px; border: 0; background: transparent; border-radius: 6px;
+      color: #8a9499; font-size: 18px; line-height: 1; display: grid; place-items: center;
+    }
+    .kebab:hover { background: #f0f3f5; color: var(--landing-ink); }
+
+  </style>
+</head>
+<body>
+  
+  <header class="topbar">
+    <a href="#" class="brand">
+      <div class="workflow-logo">
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- 您喜爱的 AI 图三瓣花图标保留 -->
+          <path d="M12.5 7.5C14.5 7.5 16 9 16 11V25C16 27 14.5 28.5 12.5 28.5C10.5 28.5 9 27 9 25V11C9 9 10.5 7.5 12.5 7.5Z" fill="#090C0E" transform="rotate(-30 12.5 18)"/>
+          <path d="M19.5 7.5C21.5 7.5 23 9 23 11V21C23 23 21.5 24.5 19.5 24.5C17.5 24.5 16 23 16 21V11C16 9 17.5 7.5 19.5 7.5Z" fill="#090C0E" transform="rotate(30 19.5 16)"/>
+          <path d="M10 17C10 15 11.5 13.5 13.5 13.5H18.5C20.5 13.5 22 15 22 17V22C22 24 20.5 25.5 18.5 25.5H13.5C11.5 25.5 10 24 10 22V17Z" fill="#090C0E"/>
+        </svg>
+      </div>
+      <span class="brand-name">ContextWeave</span>
+      <span class="beta-badge">BETA</span>
+    </a>
+
+    <!-- 完全采用首页布局的居中导航栏 -->
+    <nav class="navigation">
+      <button class="nav-item">总览</button>
+      <button class="nav-item is-active">工作区选择 <span></span></button>
+      <button class="nav-item">协作空间</button>
+      <button class="nav-item">审阅中心</button>
+      <button class="nav-item">工作流</button>
+      <button class="nav-item">运行记录</button>
+    </nav>
+
+    <div class="account">
+      <span class="online">
+        <span></span>
+        4 在线
+      </span>
+      <button class="avatar">林</button>
+    </div>
+  </header>
+
+  <main class="main-content">
+    
+    <!-- 磨砂玻璃层，容纳内容 -->
+    <div class="glass-panel">
+      
+      <div class="panel-header">
+        <div class="title-area">
+          <h1>工作区选择</h1>
+          <p>管理并访问您参与的协作环境。</p>
+        </div>
+        <!-- 完全复用首页的按钮及悬停光效 -->
+        <button class="btn-create">
+          创建工作区 <span aria-hidden="true">↗</span>
+        </button>
+      </div>
+
+      <div class="grid">
+        
+        <!-- 卡片 1 -->
+        <article class="card">
+          <div class="card-top">
+            <h3>colab</h3>
+            <span class="badge">ADMIN</span>
+          </div>
+          <div class="card-meta">
+            <div class="stats">
+              <span>28 篇文档</span>
+              <span>0 项待审批</span>
+            </div>
+            <div>最近更新：2026/8/2 20:40</div>
+          </div>
+          <div class="card-bottom">
+            <button class="view-btn">进入工作区 <span aria-hidden="true">→</span></button>
+            <button class="kebab">⋯</button>
+          </div>
+        </article>
+
+        <!-- 卡片 2 -->
+        <article class="card">
+          <div class="card-top">
+            <h3>DevCollab</h3>
+            <span class="badge">MEMBER</span>
+          </div>
+          <div class="card-meta">
+            <div class="stats">
+              <span>142 篇文档</span>
+              <span class="pending">7 项待审批</span>
+            </div>
+            <div>最近更新：2026/8/5 09:30</div>
+          </div>
+          <div class="card-bottom">
+            <button class="view-btn">进入工作区 <span aria-hidden="true">→</span></button>
+            <button class="kebab">⋯</button>
+          </div>
+        </article>
+        
+        <!-- 卡片 3 -->
+        <article class="card">
+          <div class="card-top">
+            <h3>ContextWeave Beta</h3>
+            <span class="badge">ADMIN</span>
+          </div>
+          <div class="card-meta">
+            <div class="stats">
+              <span>8 篇文档</span>
+              <span>0 项待审批</span>
+            </div>
+            <div>最近更新：2026/8/6 18:20</div>
+          </div>
+          <div class="card-bottom">
+            <button class="view-btn">进入工作区 <span aria-hidden="true">→</span></button>
+            <button class="kebab">⋯</button>
+          </div>
+        </article>
+
+      </div>
+    </div>
+  </main>
+
+</body>
+</html>

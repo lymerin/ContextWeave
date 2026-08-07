@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>登录工作台 - 浅色首页风格重设计</title>
+  <style>
+    :root {
+      --landing-ink: #090c0e;
+      --landing-paper: #ffffff;
+      --landing-canvas: #e8edef;
+      --landing-muted: #69757c;
+      --landing-cyan: #18c9ef;
+    }
+
+    * { box-sizing: border-box; }
+    
+    body {
+      margin: 0;
+      font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      color: var(--landing-ink);
+      
+      /* 严格复用 ContextWeave Beta 首页的浅色背景色调 */
+      background:
+        radial-gradient(ellipse 42% 34% at 8% 12%, rgb(24 201 239 / 15%), transparent 70%),
+        radial-gradient(ellipse 34% 32% at 91% 17%, rgb(121 137 255 / 10%), transparent 72%),
+        radial-gradient(ellipse 38% 30% at 54% 98%, rgb(54 212 195 / 9%), transparent 72%),
+        linear-gradient(180deg, #f2f5f7 0%, var(--landing-canvas) 100%);
+      
+      min-height: 100vh;
+      position: relative;
+      isolation: isolate;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 首页背景点缀效果 */
+    body::before,
+    body::after {
+      position: absolute;
+      z-index: -1;
+      content: "";
+      pointer-events: none;
+    }
+
+    body::before {
+      inset: 72px -44px -44px;
+      opacity: 0.32;
+      background-image: radial-gradient(circle, rgb(45 67 77 / 36%) 0.75px, transparent 0.9px);
+      background-size: 18px 18px;
+      mask-image: linear-gradient(to bottom, black 0%, black 58%, transparent 96%);
+    }
+
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+
+    /* 全局顶部导航排版 */
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(250px, 1fr) auto minmax(190px, 1fr);
+      align-items: center;
+      min-height: 72px;
+      padding: 0 36px;
+      border-bottom: 1px solid rgb(15 26 31 / 8%);
+      background: rgb(255 255 255 / 96%);
+      box-shadow: 0 10px 32px rgb(38 56 67 / 6%);
+      position: relative;
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .workflow-logo {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .workflow-logo svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .brand-name {
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      font-size: 16px;
+    }
+
+    .beta-badge {
+      padding: 3px 7px;
+      border: 1px solid #e2e8eb;
+      border-radius: 4px;
+      background: #f0f3f5;
+      color: #566066;
+      font-size: 10px;
+      font-family: "IBM Plex Mono", Consolas, monospace;
+      letter-spacing: 0.11em;
+    }
+
+    .navigation {
+      display: flex;
+      gap: 4px;
+      padding: 5px;
+      border: 1px solid #e4e9ec;
+      border-radius: 999px;
+      background: #eef1f3;
+    }
+
+    .nav-item {
+      min-height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: #6d777c;
+      white-space: nowrap;
+      font-size: 13px;
+      transition: color 180ms ease, background 180ms ease, transform 180ms ease;
+    }
+    
+    .nav-item:hover { color: var(--landing-ink); }
+    .nav-item:active { transform: translateY(1px); }
+
+    /* 右侧区域，登录页显示去注册 */
+    .account {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 12px;
+      font-size: 14px;
+      color: var(--landing-muted);
+    }
+    
+    .account a {
+      color: var(--landing-ink);
+      font-weight: 600;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .account a:hover {
+      color: var(--landing-cyan);
+    }
+
+    /* 主内容区，居中对齐 */
+    .main-content {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+    }
+
+    /* 登录面板，使用磨砂玻璃+白底的层叠效果 */
+    .auth-panel {
+      width: 100%;
+      max-width: 440px;
+      background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+      border-radius: 24px;
+      padding: 48px;
+      box-shadow: 0 24px 64px rgb(39 59 70 / 8%);
+      position: relative;
+    }
+
+    /* 内部纯白卡片感 */
+    .auth-panel::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.5));
+      border-radius: 24px;
+      z-index: -1;
+    }
+
+    .auth-heading {
+      margin-bottom: 36px;
+    }
+
+    .eyebrow {
+      font-family: "IBM Plex Mono", Consolas, monospace;
+      font-size: 11px;
+      color: #24798c;
+      margin: 0 0 8px;
+      letter-spacing: 0.11em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-transform: uppercase;
+    }
+    .eyebrow::before {
+      content: "";
+      width: 22px;
+      height: 1px;
+      background: var(--landing-cyan);
+    }
+
+    .auth-heading h1 {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      margin: 0 0 12px;
+      color: var(--landing-ink);
+    }
+
+    .auth-heading p {
+      font-size: 14px;
+      color: var(--landing-muted);
+      line-height: 1.6;
+      margin: 0;
+    }
+
+    .auth-form {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .form-item {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .form-item label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--landing-ink);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .form-item label .required {
+      color: #e53935;
+    }
+
+    .form-input {
+      width: 100%;
+      height: 48px;
+      border: 1px solid #dce4e8;
+      border-radius: 10px;
+      padding: 0 16px;
+      font-size: 15px;
+      color: var(--landing-ink);
+      background: #ffffff;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      outline: none;
+    }
+    
+    .form-input::placeholder {
+      color: #aab4ba;
+    }
+
+    .form-input:focus {
+      border-color: var(--landing-cyan);
+      box-shadow: 0 0 0 4px rgba(24, 201, 239, 0.12);
+    }
+
+    /* 登录按钮复用首页暗色风格 */
+    .btn-submit {
+      width: 100%;
+      border: 1px solid var(--landing-ink);
+      background: var(--landing-ink);
+      color: #fff;
+      border-radius: 10px;
+      height: 48px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 8px;
+      transition: transform 180ms ease, box-shadow 220ms ease;
+    }
+
+    .btn-submit:hover {
+      box-shadow:
+        7px 7px 14px -9px rgb(24 201 239 / 68%),
+        13px 12px 24px -17px rgb(24 201 239 / 58%),
+        0 10px 18px -13px rgb(24 201 239 / 54%);
+      transform: translateY(-2px);
+    }
+
+    .btn-submit:active {
+      box-shadow:
+        4px 4px 9px -8px rgb(24 201 239 / 62%),
+        0 5px 10px -9px rgb(24 201 239 / 48%);
+      transform: translateY(0);
+      transition-duration: 80ms;
+    }
+
+    .auth-switch {
+      margin-top: 24px;
+      text-align: center;
+      font-size: 14px;
+      color: var(--landing-muted);
+    }
+
+    .auth-switch a {
+      color: var(--landing-ink);
+      font-weight: 600;
+      text-decoration: none;
+      margin-left: 4px;
+      transition: color 0.2s;
+    }
+    
+    .auth-switch a:hover {
+      color: var(--landing-cyan);
+    }
+  </style>
+</head>
+<body>
+  
+  <header class="topbar">
+    <a href="#" class="brand">
+      <div class="workflow-logo">
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12.5 7.5C14.5 7.5 16 9 16 11V25C16 27 14.5 28.5 12.5 28.5C10.5 28.5 9 27 9 25V11C9 9 10.5 7.5 12.5 7.5Z" fill="#090C0E" transform="rotate(-30 12.5 18)"/>
+          <path d="M19.5 7.5C21.5 7.5 23 9 23 11V21C23 23 21.5 24.5 19.5 24.5C17.5 24.5 16 23 16 21V11C16 9 17.5 7.5 19.5 7.5Z" fill="#090C0E" transform="rotate(30 19.5 16)"/>
+          <path d="M10 17C10 15 11.5 13.5 13.5 13.5H18.5C20.5 13.5 22 15 22 17V22C22 24 20.5 25.5 18.5 25.5H13.5C11.5 25.5 10 24 10 22V17Z" fill="#090C0E"/>
+        </svg>
+      </div>
+      <span class="brand-name">ContextWeave</span>
+      <span class="beta-badge">BETA</span>
+    </a>
+
+    <!-- 登录界面要求保留导航栏 -->
+    <nav class="navigation">
+      <button class="nav-item">总览</button>
+      <button class="nav-item">文档</button>
+      <button class="nav-item">协作空间</button>
+      <button class="nav-item">审阅中心</button>
+      <button class="nav-item">工作流</button>
+      <button class="nav-item">运行记录</button>
+    </nav>
+
+    <div class="account">
+      还没有账号？ <a href="#">立即注册</a>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <section class="auth-panel">
+      <div class="auth-heading">
+        <p class="eyebrow">Knowledge Core</p>
+        <h1>登录工作台</h1>
+        <p>进入协作文档空间，继续整理需求、接口、工程知识和后续评审记录。</p>
+      </div>
+
+      <div class="auth-form">
+        <div class="form-item">
+          <label><span class="required">*</span> 用户名</label>
+          <input type="text" class="form-input" placeholder="请输入用户名" autocomplete="username">
+        </div>
+
+        <div class="form-item">
+          <label><span class="required">*</span> 密码</label>
+          <input type="password" class="form-input" placeholder="请输入密码" autocomplete="current-password">
+        </div>
+
+        <button class="btn-submit">
+          登 录
+        </button>
+      </div>
+    </section>
+  </main>
+
+</body>
+</html>
