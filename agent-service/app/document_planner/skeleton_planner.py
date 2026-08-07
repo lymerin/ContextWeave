@@ -15,7 +15,13 @@ from app.document_planner.binding_resolver import resolve_bindings
 from app.document_planner.evidence_catalog_builder import build as build_evidence
 from app.document_planner.plan_validator import assemble_and_validate
 from app.document_planner.target_resolver import resolve_targets
-from app.schemas.ast_atom import AtomCatalog, SymbolAtom, SymbolKind
+from app.schemas.ast_atom import (
+    CLASS_LIKE_KINDS,
+    AtomCatalog,
+    SymbolAtom,
+    SymbolKind,
+    is_private_symbol,
+)
 from app.schemas.document_planner.plan import AgentPlan, PlannedSection
 from app.schemas.document_planner.skeleton import (
     BatchPlan,
@@ -72,8 +78,8 @@ def plan_skeleton(
     for sym in sorted(
         (s for s in catalog.symbols
          if _file_from_key(s.symbol_key) in module_files
-         and s.kind in (SymbolKind.CLASS, SymbolKind.FUNCTION, SymbolKind.ASYNC_FUNCTION)
-         and not _is_private(s.name)),
+         and s.kind in CLASS_LIKE_KINDS | {SymbolKind.FUNCTION, SymbolKind.ASYNC_FUNCTION}
+         and not is_private_symbol(s)),
         key=lambda s: (_file_from_key(s.symbol_key), s.start_line, s.symbol_key),
     ):
         slots.append(SkeletonSlot(
@@ -231,13 +237,9 @@ def build_skeleton_plan(
 
 
 def _symbol_title(sym: SymbolAtom) -> str:
-    if sym.kind == SymbolKind.CLASS:
+    if sym.kind in CLASS_LIKE_KINDS:
         return sym.qualified_name
     return f"{sym.qualified_name}()"
-
-
-def _is_private(name: str) -> bool:
-    return name.startswith("_") and not name.startswith("__")
 
 
 def _file_from_key(symbol_key: str) -> str:

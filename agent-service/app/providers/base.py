@@ -2,7 +2,6 @@
 
 from typing import Any, Protocol
 
-from app.schemas.plans import AgentPlan
 from app.schemas.unit_plans import UnitPlan
 
 

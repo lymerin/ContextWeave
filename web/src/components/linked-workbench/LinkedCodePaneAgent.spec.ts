@@ -138,7 +138,7 @@ describe('LinkedCodePane Agent check', () => {
     expect(wrapper.get('[data-testid="agent-check-button"]').attributes('disabled')).toBeDefined();
   });
 
-  it('submits only the current file and stops polling on NO_CHANGE', async () => {
+  it('submits a full project pipeline (single-file analysis deprecated) and stops polling on NO_CHANGE', async () => {
     vi.mocked(getAgentJob)
       .mockResolvedValueOnce({
         ...agentJob('RUNNING'),
@@ -158,10 +158,7 @@ describe('LinkedCodePane Agent check', () => {
     expect(createAgentJob).toHaveBeenCalledWith({
       workspaceId: 'workspace-1',
       repositoryId: 'repository-1',
-      scope: {
-        type: 'CURRENT_FILE',
-        filePath: 'src/Example.java',
-      },
+      scope: { type: 'PROJECT_INITIALIZATION' },
       userInstruction: '核对接口说明',
     });
     expect(getAgentJob).toHaveBeenCalledTimes(1);
@@ -229,8 +226,8 @@ function agentJob(status: AgentJobStatus) {
   return {
     jobId: 'job-1',
     status,
-    scopeType: 'CURRENT_FILE' as const,
-    scopePayload: { type: 'CURRENT_FILE' as const, filePath: 'src/Example.java' },
+    scopeType: 'PROJECT_INITIALIZATION' as const,
+    scopePayload: { type: 'PROJECT_INITIALIZATION' as const },
     result: null,
     phase: null,
     revision: 'abc',

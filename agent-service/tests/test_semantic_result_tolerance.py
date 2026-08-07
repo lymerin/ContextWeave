@@ -122,7 +122,6 @@ def test_full_roundtrip_rules_style() -> None:
 
 
 if __name__ == "__main__":
-    import inspect
 
     fns = [
         obj for _, obj in sorted(globals().items())

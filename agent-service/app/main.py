@@ -61,7 +61,9 @@ def create_app(
         )
         yield
         try:
-            await app.state.run_executor.close()
+            executor = getattr(app.state, "run_executor", None)
+            if executor is not None:
+                await executor.close()
             if job_repository is None:
                 await app.state.job_repository.close()
         finally:

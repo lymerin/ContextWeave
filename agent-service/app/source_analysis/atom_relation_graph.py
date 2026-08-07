@@ -9,16 +9,17 @@
   - 解析到 0 或 ≥2 个候选 → UNRESOLVED，禁止猜测；动态调用（非 Name/Attribute 基底）→ UNRESOLVED。
   - relation_id 是 (源原子, 类型, 目标, 文件, 行) 的确定性哈希，同 revision 内稳定。
   - 调用目标解析为 CLASS 原子 → 升级为 CREATES（实例化），其余 → CALLS。
+  - 语言相关逻辑（AST 遍历、关系收集、外部名判定）按语言解析器分派（parsers 包）。
 """
 
 from __future__ import annotations
 
-import ast
 import hashlib
 from collections import defaultdict
 from collections.abc import Callable
+from typing import Any
 
-from app.schemas.ast_atom import AtomCatalog, SymbolAtom, SymbolKind
+from app.schemas.ast_atom import CLASS_LIKE_KINDS, AtomCatalog, SymbolAtom, SymbolKind
 from app.schemas.repository_graph import (
     Relation,
     RelationCategory,
@@ -27,50 +28,15 @@ from app.schemas.repository_graph import (
 )
 from app.source_analysis.import_resolver import (
     FileImportScope,
-    build_file_scope,
+    java_module_to_file,
     module_to_file,
 )
-
-_STDLIB_MODULES: frozenset[str] = frozenset({
-    "os", "sys", "re", "json", "time", "datetime", "collections",
-    "typing", "io", "pathlib", "logging", "hashlib", "uuid", "math",
-    "random", "itertools", "functools", "asyncio", "threading",
-    "subprocess", "socket", "http", "urllib", "enum", "abc", "dataclasses",
-})
-
-_EXTERNAL_PREFIXES: tuple[str, ...] = (
-    "fastapi.", "pydantic.", "sqlalchemy.", "redis.", "celery.",
-    "django.", "flask.", "requests.", "httpx.", "aiohttp.",
-    "boto3.", "google.", "stripe.", "twilio.", "sendgrid.",
-    "starlette.", "uvicorn.", "kafka.", "aiokafka.", "psycopg.",
-    "asyncpg.", "numpy.", "pandas.",
+from app.source_analysis.parsers import (
+    LanguageParser,
+    get_parser,
+    symbol_file_from_key,
+    symbol_language_from_key,
 )
-
-# 第三方/框架的顶层模块名（import fastapi / from fastapi import ... 的归属判定）
-_EXTERNAL_TOP_LEVEL: frozenset[str] = frozenset({
-    "fastapi", "pydantic", "sqlalchemy", "redis", "celery", "django",
-    "flask", "requests", "httpx", "aiohttp", "boto3", "google", "stripe",
-    "twilio", "sendgrid", "starlette", "uvicorn", "kafka", "aiokafka",
-    "psycopg", "asyncpg", "numpy", "pandas",
-})
-
-# 类型注解内置/泛型名——不产生关系（纯噪声）
-_ANNOTATION_INTRINSICS: frozenset[str] = frozenset({
-    "str", "int", "float", "bool", "bytes", "list", "dict", "set", "tuple",
-    "frozenset", "Any", "Optional", "Union", "Literal", "Self", "Sequence",
-    "Mapping", "Callable", "Iterable", "Iterator", "Type", "ClassVar",
-    "Final", "object", "type",
-})
-
-_BUILTINS: frozenset[str] = frozenset({
-    "print", "len", "str", "int", "float", "bool", "list", "dict",
-    "set", "tuple", "type", "range", "enumerate", "zip", "map",
-    "filter", "sorted", "reversed", "isinstance", "issubclass",
-    "hasattr", "getattr", "setattr", "delattr", "super", "abs",
-    "min", "max", "sum", "any", "all", "open", "repr", "id",
-    "input", "next", "iter", "format", "pow", "round", "slice",
-    "property", "staticmethod", "classmethod",
-})
 
 
 def build_graph(
@@ -83,19 +49,27 @@ def build_graph(
     file_paths = frozenset(m.file_path for m in catalog.modules)
 
     relations: list[Relation] = []
-    parsed: dict[str, ast.Module] = {}
+    parsed: dict[tuple[str, str], Any] = {}
     scopes: dict[str, FileImportScope] = {}
+    parsers_by_file: dict[str, LanguageParser] = {}
+    trees_by_file: dict[str, Any] = {}
 
     for sym in catalog.symbols:
-        file = _file_from_key(sym.symbol_key)
+        file = symbol_file_from_key(sym.symbol_key)
         if not file:
             continue
-        tree = _parsed_tree(file, parsed, source_reader)
+        lang = symbol_language_from_key(sym.symbol_key)
+        parser = get_parser(lang)
+        if parser is None:
+            continue
+        parsers_by_file[file] = parser
+        tree = _parsed_tree(file, lang, parsed, parser, source_reader)
         if tree is None:
             continue
+        trees_by_file[file] = tree
         if file not in scopes:
-            scopes[file] = build_file_scope(file, tree, file_paths)
-        relations.extend(_collect_relations(sym, tree, file))
+            scopes[file] = parser.build_import_scope(file, tree, file_paths)
+        relations.extend(parser.extract_relations(sym, tree, file))
 
     relations.extend(_collect_contains(catalog))
 
@@ -103,6 +77,7 @@ def build_graph(
     internal: list[Relation] = []
     boundary: list[Relation] = []
     unresolved: list[Relation] = []
+    by_atom_id = {s.atom_id: s for s in catalog.symbols}
 
     for rel in relations:
         # 已确定 INTERNAL 的关系（CONTAINS）直接保留，不再走名字解析
@@ -116,11 +91,17 @@ def build_graph(
             )
             continue
         target = _resolve_target(
-            rel, scopes.get(rel.file_path), file_symbols, file_paths
+            rel,
+            scopes.get(rel.file_path),
+            file_symbols,
+            file_paths,
+            source_sym=by_atom_id.get(rel.source_atom_id),
+            tree=trees_by_file.get(rel.file_path),
+            parser=parsers_by_file.get(rel.file_path),
         )
         if target is not None:
             kind = rel.kind
-            if rel.kind == RelationKind.CALLS and target.kind == SymbolKind.CLASS:
+            if rel.kind == RelationKind.CALLS and target.kind in CLASS_LIKE_KINDS:
                 kind = RelationKind.CREATES
             internal.append(
                 _finalize(
@@ -130,7 +111,9 @@ def build_graph(
                     category=RelationCategory.INTERNAL,
                 )
             )
-        elif _is_external(rel.target_external or ""):
+        elif _is_external(
+            rel.target_external or "", parsers_by_file.get(rel.file_path)
+        ):
             boundary.append(_finalize(rel, category=RelationCategory.BOUNDARY))
         else:
             unresolved.append(_finalize(rel, category=RelationCategory.UNRESOLVED))
@@ -158,114 +141,15 @@ def build_graph(
     )
 
 
-# ── 关系收集 ────────────────────────────────────────────────────────────
-
-
-def _collect_relations(
-    sym: SymbolAtom,
-    tree: ast.Module,
-    file: str,
-) -> list[Relation]:
-    """遍历符号对应的 AST 节点，收集调用、类型引用等关系。
-
-    返回的 Relation 中 target_external 是待解析的临时键：
-      - CALLS/CREATES: 点路径（"service.create" / "helper"），解析时按最后一个点拆
-        base 与 target；
-      - PARAMETER_TYPE/RETURN_TYPE/THROWS: 简单名。
-    relation_id 留空，由 _finalize 在分类时按最终字段确定。
-    """
-    result: list[Relation] = []
-
-    node = _find_node(tree, sym.name, sym.start_line, sym.kind)
-    if node is None:
-        return result
-
-    # 参数类型
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        for arg in node.args.args + node.args.kwonlyargs:
-            if arg.annotation:
-                for type_name in _extract_type_names(arg.annotation):
-                    if type_name in _ANNOTATION_INTRINSICS:
-                        continue
-                    result.append(
-                        _raw_relation(
-                            sym.atom_id, RelationKind.PARAMETER_TYPE,
-                            type_name, file, arg.lineno,
-                        )
-                    )
-        # 返回类型
-        if node.returns:
-            for type_name in _extract_type_names(node.returns):
-                if type_name in _ANNOTATION_INTRINSICS:
-                    continue
-                result.append(
-                    _raw_relation(
-                        sym.atom_id, RelationKind.RETURN_TYPE, type_name, file,
-                        node.returns.lineno
-                        if hasattr(node.returns, "lineno")
-                        else node.lineno,
-                    )
-                )
-
-    # 遍历函数/类体
-    # 类原子只收类体直接语句（类级赋值等），方法体内的调用归方法原子自己收集，
-    # 避免同一条调用在类原子和方法原子各出现一次。
-    if sym.kind == SymbolKind.CLASS:
-        walk_targets: list[ast.AST] = [
-            child
-            for child in node.body
-            if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
-        ]
-    else:
-        walk_targets = [node]
-
-    for walk_target in walk_targets:
-        for child in ast.walk(walk_target):
-            if isinstance(child, ast.Call):
-                base, target = _call_parts(child)
-                if not target or target in _BUILTINS:
-                    continue
-                dotted = f"{base}.{target}" if base else target
-                result.append(
-                    _raw_relation(sym.atom_id, RelationKind.CALLS, dotted, file, child.lineno)
-                )
-            elif isinstance(child, ast.Raise):
-                exc_name = _exception_name(child)
-                if exc_name:
-                    result.append(
-                        _raw_relation(
-                            sym.atom_id, RelationKind.THROWS, exc_name, file, child.lineno
-                        )
-                    )
-            elif isinstance(child, ast.Assign):
-                for target in child.targets:
-                    if isinstance(target, ast.Attribute) and _is_self(target.value):
-                        result.append(
-                            _raw_relation(
-                                sym.atom_id, RelationKind.FIELD_WRITES,
-                                target.attr, file, child.lineno,
-                            )
-                        )
-            elif isinstance(child, ast.Attribute):
-                if _is_self(child.value):
-                    result.append(
-                        _raw_relation(
-                            sym.atom_id, RelationKind.FIELD_READS, child.attr, file, child.lineno
-                        )
-                    )
-
-    return result
-
-
 def _collect_contains(catalog: AtomCatalog) -> list[Relation]:
     """类 → 其方法（CONTAINS）。"""
     result: list[Relation] = []
     for sym in catalog.symbols:
-        if sym.kind != SymbolKind.CLASS:
+        if sym.kind not in CLASS_LIKE_KINDS:
             continue
         for child in catalog.symbols:
             if child.parent_qualified == sym.qualified_name:
-                file = _file_from_key(child.symbol_key)
+                file = symbol_file_from_key(child.symbol_key)
                 result.append(
                     Relation(
                         relation_id=_rel_id(
@@ -291,6 +175,10 @@ def _resolve_target(
     scope: FileImportScope | None,
     file_symbols: dict[str, list[SymbolAtom]],
     file_paths: frozenset[str],
+    *,
+    source_sym: SymbolAtom | None = None,
+    tree: Any = None,
+    parser: LanguageParser | None = None,
 ) -> SymbolAtom | None:
     """把关系的临时键解析为仓库内符号原子；解析不到返回 None（交由外部/未解析分类）。"""
     if scope is None:
@@ -298,9 +186,20 @@ def _resolve_target(
     name = rel.target_external or ""
     if not name:
         return None
+    is_java = (
+        source_sym is not None
+        and symbol_language_from_key(source_sym.symbol_key) == "java"
+    )
     if rel.kind in (RelationKind.CALLS, RelationKind.CREATES):
         base, target = name.rsplit(".", 1) if "." in name else (None, name)
+        if is_java:
+            return _resolve_java_call(
+                base, target, rel.file_path, scope, file_symbols, file_paths,
+                tree, parser,
+            )
         return _resolve_call(base, target, rel.file_path, scope, file_symbols, file_paths)
+    if is_java:
+        return _resolve_java_type(name, rel.file_path, scope, file_symbols, file_paths)
     return _resolve_name(name, rel.file_path, scope, file_symbols, file_paths)
 
 
@@ -405,6 +304,128 @@ def _lookup_in_module(
     return hits[0] if len(hits) == 1 else None
 
 
+# ── Java 目标解析（this/字段类型/静态类型，宁缺勿错）────────────────────────
+
+
+def _resolve_java_call(
+    base: str | None,
+    target: str,
+    file: str,
+    scope: FileImportScope,
+    file_symbols: dict[str, list[SymbolAtom]],
+    file_paths: frozenset[str],
+    tree: Any,
+    parser: LanguageParser | None,
+) -> SymbolAtom | None:
+    """Java 调用目标解析：
+
+      - this / 裸调用 → 同文件方法（new X() 同路径命中类 → CREATES 升级）；
+      - 字段类型：base 是字段名 → 声明类型 → 跨文件方法；
+      - 静态调用：base 本身是类型名（本文件 / import / 同包）→ 成员方法。
+    候选 0 个或 ≥2 个 → None。
+    """
+    if not target:
+        return None
+    local = file_symbols.get(file, ())
+    if base is None or base == "this":
+        hits = [
+            s for s in local
+            if s.name == target
+            and (s.kind == SymbolKind.METHOD or s.kind in CLASS_LIKE_KINDS)
+        ]
+        if len(hits) == 1:
+            return hits[0]
+        # new 导入类型 → 跨文件类符号（build_graph 升级为 CREATES）
+        return _resolve_java_type(target, file, scope, file_symbols, file_paths)
+
+    field_type = _java_field_type(base, tree, parser)
+    if field_type:
+        owner = _resolve_java_type(field_type, file, scope, file_symbols, file_paths)
+        if owner is not None:
+            member = _java_member(owner, target, file_symbols)
+            if member is not None:
+                return member
+    # 静态调用：base 是类型名（Java 变量优先于类型，故字段路径先行）
+    owner = _resolve_java_type(base, file, scope, file_symbols, file_paths)
+    if owner is not None:
+        return _java_member(owner, target, file_symbols)
+    return None
+
+
+def _resolve_java_type(
+    name: str,
+    file: str,
+    scope: FileImportScope,
+    file_symbols: dict[str, list[SymbolAtom]],
+    file_paths: frozenset[str],
+) -> SymbolAtom | None:
+    """Java 类型名解析：本文件 → import 全限定名 → 同包回退。
+
+    PARAMETER_TYPE/RETURN_TYPE/THROWS/INHERITS/IMPLEMENTS 共用此路径。
+    """
+    local = file_symbols.get(file, ())
+    hits = [s for s in local if s.name == name and s.kind in CLASS_LIKE_KINDS]
+    if len(hits) == 1:
+        return hits[0]
+    fq = dict(scope.symbol_imports).get(name)
+    if fq:
+        found = _java_type_in_file(name, fq, file_symbols, file_paths)
+        if found is not None:
+            return found
+    if scope.package:
+        return _java_type_in_file(
+            name, f"{scope.package}.{name}", file_symbols, file_paths
+        )
+    return None
+
+
+def _java_type_in_file(
+    name: str,
+    fq: str,
+    file_symbols: dict[str, list[SymbolAtom]],
+    file_paths: frozenset[str],
+) -> SymbolAtom | None:
+    """全限定类型名 → 目标文件中的类符号（恰好 1 个命中才返回）。"""
+    target_file = java_module_to_file(fq, file_paths)
+    if target_file is None:
+        return None
+    hits = [
+        s for s in file_symbols.get(target_file, ())
+        if s.name == name and s.kind in CLASS_LIKE_KINDS
+    ]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _java_member(
+    owner: SymbolAtom,
+    target: str,
+    file_symbols: dict[str, list[SymbolAtom]],
+) -> SymbolAtom | None:
+    """owner 类型下的方法成员，恰好 1 个命中才返回。"""
+    owner_file = symbol_file_from_key(owner.symbol_key)
+    hits = [
+        s for s in file_symbols.get(owner_file, ())
+        if s.parent_qualified == owner.qualified_name
+        and s.name == target
+        and s.kind == SymbolKind.METHOD
+    ]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _java_field_type(
+    base: str,
+    tree: Any,
+    parser: LanguageParser | None,
+) -> str | None:
+    """字段名 → 声明类型简单名（解析器提供 field_types；无 AST → 不解析）。"""
+    if tree is None or parser is None:
+        return None
+    field_types = getattr(parser, "field_types", None)
+    if field_types is None:
+        return None
+    return field_types(tree).get(base)
+
+
 # ── helpers ─────────────────────────────────────────────────────────────
 
 
@@ -415,19 +436,6 @@ def _rel_id(
     return "rel_" + hashlib.sha256(
         "\0".join([source_atom_id, kind, target, file_path, str(line)]).encode()
     ).hexdigest()[:24]
-
-
-def _raw_relation(
-    source_atom_id: str, kind: str, target_external: str, file_path: str, line: int
-) -> Relation:
-    return Relation(
-        relation_id="",
-        source_atom_id=source_atom_id,
-        kind=kind,
-        target_external=target_external,
-        file_path=file_path,
-        line=line,
-    )
 
 
 def _finalize(
@@ -457,111 +465,33 @@ def _finalize(
 def _group_symbols_by_file(catalog: AtomCatalog) -> dict[str, list[SymbolAtom]]:
     by_file: dict[str, list[SymbolAtom]] = defaultdict(list)
     for sym in catalog.symbols:
-        by_file[_file_from_key(sym.symbol_key)].append(sym)
+        by_file[symbol_file_from_key(sym.symbol_key)].append(sym)
     return dict(by_file)
 
 
 def _parsed_tree(
     file: str,
-    parsed: dict[str, ast.Module],
+    lang: str,
+    parsed: dict[tuple[str, str], Any],
+    parser: LanguageParser,
     source_reader: Callable[[str], str | None],
-) -> ast.Module | None:
-    """读取并缓存文件 AST；不可解析返回 None。"""
-    if file in parsed:
-        return parsed[file]
+) -> Any:
+    """读取并缓存文件 AST；不可解析返回 None。缓存键 (file, lang)。"""
+    key = (file, lang)
+    if key in parsed:
+        return parsed[key]
     source = source_reader(file)
     if source is None:
         return None
-    try:
-        tree = ast.parse(source, filename=file)
-    except (SyntaxError, ValueError):
+    tree = parser.parse_source(source)
+    if tree is None:
         return None
-    parsed[file] = tree
+    parsed[key] = tree
     return tree
 
 
-def _call_parts(node: ast.Call) -> tuple[str | None, str]:
-    """(base, target)。base 为属性链的可解析基底，target 为最末属性名。
-
-    foo()            → (None, "foo")
-    service.create() → ("service", "create")
-    self.repo.save() → ("self.repo", "save")
-    obj[0].run()     → (None, "")（动态基底，不解析）
-    """
-    func = node.func
-    if isinstance(func, ast.Name):
-        return None, func.id
-    if isinstance(func, ast.Attribute):
-        base = _dotted_base(func.value)  # 从 value 开始，不含最后一层 attr
-        return base, func.attr
-    return None, ""
-
-
-def _dotted_base(node: ast.Attribute) -> str | None:
-    """属性链最左 Name 之外的完整点路径；基底不是 Name（动态）→ None。"""
-    segments: list[str] = []
-    current: ast.AST = node
-    while isinstance(current, ast.Attribute):
-        segments.append(current.attr)
-        current = current.value
-    if not isinstance(current, ast.Name):
-        return None
-    segments.append(current.id)
-    return ".".join(reversed(segments))
-
-
-def _find_node(tree, name, lineno, kind):
-    for node in ast.walk(tree):
-        if not hasattr(node, "lineno"):
-            continue
-        if node.lineno != lineno:
-            continue
-        if kind == SymbolKind.CLASS:
-            if isinstance(node, ast.ClassDef) and node.name == name:
-                return node
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
-            return node
-    return None
-
-
-def _exception_name(node: ast.Raise) -> str | None:
-    if node.exc is None:
-        return None
-    if isinstance(node.exc, ast.Call) and isinstance(node.exc.func, ast.Name):
-        return node.exc.func.id
-    if isinstance(node.exc, ast.Name):
-        return node.exc.id
-    return None
-
-
-def _extract_type_names(node: ast.expr) -> list[str]:
-    names: list[str] = []
-    if isinstance(node, ast.Name):
-        names.append(node.id)
-    elif isinstance(node, ast.Attribute):
-        names.append(node.attr)
-    elif isinstance(node, ast.Subscript):
-        names.extend(_extract_type_names(node.value))
-    elif isinstance(node, ast.BinOp):
-        names.extend(_extract_type_names(node.left))
-        names.extend(_extract_type_names(node.right))
-    return names
-
-
-def _is_self(node: ast.expr) -> bool:
-    return isinstance(node, ast.Name) and node.id == "self"
-
-
-def _is_external(name: str) -> bool:
-    parts = name.split(".")
-    if parts and parts[0] in _STDLIB_MODULES:
-        return True
-    if parts and parts[0] in _EXTERNAL_TOP_LEVEL:
-        return True
-    full = name.lower()
-    return any(full.startswith(prefix) for prefix in _EXTERNAL_PREFIXES)
-
-
-def _file_from_key(symbol_key: str) -> str:
-    parts = symbol_key.split(":", 2)
-    return parts[1] if len(parts) > 1 else ""
+def _is_external(name: str, parser: LanguageParser | None) -> bool:
+    """BOUNDARY 判定：按关系所在文件的解析器判定；无解析器 → 不判外部。"""
+    if parser is None:
+        return False
+    return parser.is_external_name(name)

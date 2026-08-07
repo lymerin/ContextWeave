@@ -2,9 +2,9 @@
 
 from pydantic import BaseModel, ConfigDict
 
+from app.schemas.document_planner.evidence import PlanningEvidenceCatalog
 from app.schemas.platform_mcp.binding import ExistingBinding
 from app.schemas.platform_mcp.document import DocumentCandidate, DocumentStructure
-from app.schemas.document_planner.evidence import PlanningEvidenceCatalog
 from app.schemas.semantic.analysis_result import SemanticAnalysisResult
 
 

@@ -1067,27 +1067,27 @@ async function handleAgentReviewNavigation(changeRequestId: string | null) {
 }
 
 async function handleDocumentPaneAgentCheck() {
-  if (!selectedRepositoryId.value || !selectedFilePath.value) return;
+  // 单文件分析入口已废弃：Agent 检查统一走完整模块流水线，
+  // 由 worker 扫描仓库、按语义模块生成并隔离文档。
+  if (!selectedRepositoryId.value) return;
   try {
     const queued = await createAgentJob({
       workspaceId: workspaceId.value,
       repositoryId: selectedRepositoryId.value,
-      scope: { type: 'CURRENT_FILE', filePath: selectedFilePath.value },
-      userInstruction: unboundBlockId.value
-        ? `请检查当前文件是否与文档 Block (ID: ${unboundBlockId.value.slice(0, 12)}) 有关联`
-        : null,
+      scope: { type: 'PROJECT_INITIALIZATION' },
+      userInstruction: null,
     });
     backgroundActivity.registerJob({
       jobId: queued.jobId,
       workspaceId: workspaceId.value,
       repositoryId: selectedRepositoryId.value,
-      label: selectedFilePath.value,
-      filePath: selectedFilePath.value,
+      label: activeRepository.value?.name ?? '项目检查',
+      filePath: null,
       createdAt: queued.createdAt,
       lastKnownStatus: queued.status,
     });
     clearUnboundBlock();
-    ElMessage.success('Agent 已在后台开始处理，分析完成后将检查 Block 关联。');
+    ElMessage.success('Agent 已在后台扫描整个仓库，将按模块生成文档。');
   } catch (error) {
     ElMessage.error(readableAgentError(error, 'Agent 检查启动失败'));
   }

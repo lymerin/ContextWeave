@@ -267,16 +267,26 @@ class AgentWorker:
             scope = job["scope_payload"]
             if unit.get("unit_kind") == "SEMANTIC_ANALYSIS":
                 context = await self._repository.get_unit_context(unit_id)
-                selected_paths = [
-                    str(item.get("file_path") or item.get("filePath"))
-                    for item in context.get("files", [])
-                ]
                 # 批次单元：槽位清单随单元持久化（slot_plan），注入会话作用域
                 slot_plan = context.get("slot_plan") or {}
                 slot_scope = tuple(
                     SkeletonSlot(**slot)
                     for slot in slot_plan.get("slots", [])
                 )
+                # 批次只需槽位目标的源码。单元文件列表在多骨架 job 下会
+                # 累积全部模块文件（batch:1 共享单元 ID），超过 SourceReader
+                # 字符预算后路径靠后的文件被截断为空 → 槽位目标不在快照 →
+                # 批次永远覆盖失败。按槽位 file_path 选取，快照只含目标符号。
+                slot_files = sorted(
+                    {s.file_path for s in slot_scope if s.file_path}
+                )
+                if slot_files:
+                    selected_paths = slot_files
+                else:
+                    selected_paths = [
+                        str(item.get("file_path") or item.get("filePath"))
+                        for item in context.get("files", [])
+                    ]
                 batch_label = str(slot_plan.get("batchLabel") or "")
                 # 骨架 review 未 APPLIED 前批次不执行：否则 candidates 查不到
                 # 绑定会重复创建文档。PENDING → 自动重试等待；REJECTED → 优雅完成。
@@ -587,7 +597,8 @@ class AgentWorker:
                 "MCP_UNAVAILABLE",
                 f"Review status query rejected: {response.status_code}",
             )
-        return str((response.json() or {}).get("status") or "")
+        data = response.json() or {}
+        return str((data.get("request") or {}).get("status") or "")
 
     def _profile_stage(
         self,

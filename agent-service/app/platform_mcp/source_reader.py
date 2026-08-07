@@ -6,7 +6,6 @@ MCP code.read 有 maxCodeLines 限制（400 行）。对于更大的文件，
 
 from __future__ import annotations
 
-from typing import Any
 from uuid import UUID
 
 from app.clients.mcp_client import ReadOnlyMcpClient

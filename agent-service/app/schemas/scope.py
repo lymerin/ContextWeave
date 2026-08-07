@@ -7,8 +7,7 @@ SemanticScope   从一个或多个入口出发收集的跨文件代码子图。
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
+from dataclasses import dataclass
 
 # ── 入口类型 ────────────────────────────────────────────────────────────────
 

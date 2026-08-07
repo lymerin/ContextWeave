@@ -618,8 +618,17 @@ class PostgresAgentJobRepository:
             for batch in batches:
                 batch_index = int(batch.get("batch_index", 0))
                 max_ordinal += 1
+                # 批次单元 ID 必须以骨架 review 区分：多骨架 job 下每个模块
+                # 都有批 1（及各自速查批），共享 (job_id, batch_index) 会让
+                # 多个模块的批次落到同一单元，slot_plan 取先执行者、文件行
+                # 却累积全部模块文件 → 超 SourceReader 预算被截断 → 失败。
+                skeleton_review_id = str(
+                    (batch.get("slot_plan") or {}).get("skeletonReviewId")
+                    or "skeleton"
+                )
                 unit_id = uuid5(
-                    NAMESPACE_URL, f"devcollab:{job_id}:batch:{batch_index}"
+                    NAMESPACE_URL,
+                    f"devcollab:{job_id}:{skeleton_review_id}:batch:{batch_index}",
                 )
                 await connection.execute(
                     """

@@ -35,8 +35,12 @@ class CoverageTracker:
         m = self._snap.manifest
         self._report.missing_block_ids = m.required_block_ids - self._report.delivered_block_ids
         self._report.missing_atom_ids = m.required_atom_ids - self._report.delivered_atom_ids
-        self._report.missing_chunk_ids = m.required_source_chunk_ids - self._report.delivered_chunk_ids
-        self._report.missing_relation_ids = m.required_relation_ids - self._report.delivered_relation_ids
+        self._report.missing_chunk_ids = (
+            m.required_source_chunk_ids - self._report.delivered_chunk_ids
+        )
+        self._report.missing_relation_ids = (
+            m.required_relation_ids - self._report.delivered_relation_ids
+        )
         return self._report
 
     @property

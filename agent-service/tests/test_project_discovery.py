@@ -15,9 +15,9 @@ from conftest import (
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.execution.errors import JobExecutionError
 from app.main import create_app
 from app.runtime.file_classification import classify_file
-from app.runtime.job_executor import JobExecutionError
 from app.runtime.project_discovery import ProjectDiscoveryService
 from app.runtime.semantic_planner import ProjectFile, build_semantic_units
 from app.schemas.unit_plans import UnitPlan

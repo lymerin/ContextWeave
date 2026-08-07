@@ -232,13 +232,20 @@ class DeepSeekProvider:
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        user_payload, ensure_ascii=False, separators=(",", ":")
+                    ),
+                },
             ],
         }
         if self._thinking:
             body["thinking"] = {"type": "enabled"}
         try:
-            async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
+            async with httpx.AsyncClient(
+                timeout=self._timeout, transport=self._transport
+            ) as client:
                 response = await client.post(
                     f"{self._base_url}/chat/completions",
                     headers={"Authorization": f"Bearer {self._api_key}"},
@@ -270,10 +277,28 @@ class DeepSeekProvider:
                  "message": str(e["msg"])[:300]}
                 for e in exc.errors(include_url=False)
             ]
-            raise ModelProviderError("MODEL_INVALID_RESPONSE", "Model returned an invalid UnitPlan", raw_plan=raw_plan, validation_errors=validation_errors) from exc
+            raise ModelProviderError(
+                "MODEL_INVALID_RESPONSE",
+                "Model returned an invalid UnitPlan",
+                raw_plan=raw_plan,
+                validation_errors=validation_errors,
+            ) from exc
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            code = "MODEL_JSON_DECODE_ERROR" if isinstance(exc, json.JSONDecodeError) else "MODEL_RESPONSE_CONTENT_INVALID"
-            raise ModelProviderError("MODEL_INVALID_RESPONSE", "Model response could not be parsed as UnitPlan", raw_plan=raw_plan, validation_errors=[{"path": "$", "code": code, "message": "Model response could not be parsed as UnitPlan"}]) from exc
+            code = (
+                "MODEL_JSON_DECODE_ERROR"
+                if isinstance(exc, json.JSONDecodeError)
+                else "MODEL_RESPONSE_CONTENT_INVALID"
+            )
+            raise ModelProviderError(
+                "MODEL_INVALID_RESPONSE",
+                "Model response could not be parsed as UnitPlan",
+                raw_plan=raw_plan,
+                validation_errors=[{
+                    "path": "$",
+                    "code": code,
+                    "message": "Model response could not be parsed as UnitPlan",
+                }],
+            ) from exc
 
     async def analyze_batch(
         self,
@@ -306,44 +331,91 @@ class DeepSeekProvider:
         }
         if self._thinking:
             body["thinking"] = {"type": "enabled"}
-        try:
-            async with httpx.AsyncClient(
-                timeout=self._timeout, transport=self._transport
-            ) as client:
-                response = await client.post(
-                    f"{self._base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {self._api_key}"},
-                    json=body,
+
+        # 空响应/解析失败时变异重试：同一请求原样重发会确定性复现
+        # （实测 deepseek-v4-flash 对高推理消耗请求偶发 200+空 content）。
+        # 追加强制指令改变模型行为路径，最多变异 2 次。
+        for _retry in range(3):
+            try:
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    response = await client.post(
+                        f"{self._base_url}/chat/completions",
+                        headers={"Authorization": f"Bearer {self._api_key}"},
+                        json=body,
+                    )
+            except httpx.TimeoutException as exc:
+                raise ModelProviderError("MODEL_TIMEOUT", "Batch analysis timed out") from exc
+            except httpx.HTTPError as exc:
+                raise ModelProviderError("MODEL_UNAVAILABLE", "Batch analysis request failed") from exc
+            if response.status_code == 429:
+                raise ModelProviderError("MODEL_RATE_LIMITED", "Model rate limit exceeded")
+            if response.status_code >= 500:
+                raise ModelProviderError("MODEL_UNAVAILABLE", "Model service is unavailable")
+            if response.status_code >= 400:
+                raise ModelProviderError("MODEL_CONFIGURATION_ERROR", "Model request was rejected")
+            try:
+                response_json = response.json()
+                message = response_json["choices"][0]["message"]
+                content = message.get("content") or ""
+                reasoning = message.get("reasoning_content") or ""
+                payload = _normalize_payload(_extract_json_object(content))
+                if not isinstance(payload, dict):
+                    raise ValueError("batch response must be a JSON object")
+                payload["analysis_id"] = request.analysis_id
+                payload["context_id"] = request.context_id
+                payload["revision"] = request.revision
+                payload["snapshot_hash"] = request.snapshot_hash
+                return SemanticAnalysisResult.model_validate(payload)
+            except Exception as exc:
+                LOGGER.error(
+                    "BATCH PARSE FAILED: status=%s finish=%s content_len=%s "
+                    "reasoning_len=%s usage=%s err=%s retry=%s",
+                    response.status_code,
+                    response_json["choices"][0].get("finish_reason"),
+                    len(content),
+                    len(reasoning),
+                    response_json.get("usage"),
+                    exc, _retry,
                 )
-        except httpx.TimeoutException as exc:
-            raise ModelProviderError("MODEL_TIMEOUT", "Batch analysis timed out") from exc
-        except httpx.HTTPError as exc:
-            raise ModelProviderError("MODEL_UNAVAILABLE", "Batch analysis request failed") from exc
-        if response.status_code == 429:
-            raise ModelProviderError("MODEL_RATE_LIMITED", "Model rate limit exceeded")
-        if response.status_code >= 500:
-            raise ModelProviderError("MODEL_UNAVAILABLE", "Model service is unavailable")
-        if response.status_code >= 400:
-            raise ModelProviderError("MODEL_CONFIGURATION_ERROR", "Model request was rejected")
-        try:
-            response_json = response.json()
-            content = response_json["choices"][0]["message"]["content"]
-            payload = _normalize_payload(_extract_json_object(content))
-            if not isinstance(payload, dict):
-                raise ValueError("batch response must be a JSON object")
-            payload["analysis_id"] = request.analysis_id
-            payload["context_id"] = request.context_id
-            payload["revision"] = request.revision
-            payload["snapshot_hash"] = request.snapshot_hash
-            return SemanticAnalysisResult.model_validate(payload)
-        except Exception as exc:
-            LOGGER.error(
-                "BATCH PARSE FAILED: len=%s err=%s", len(content), exc,
-            )
-            raise ModelProviderError(
-                "MODEL_INVALID_RESPONSE",
-                f"Could not parse batch SemanticAnalysisResult: {exc}",
-            ) from exc
+                # 兜底：v4-flash 在深度推理请求下偶发把全部输出花在
+                # reasoning（finish=stop 但 content 为空，实测 reasoning
+                # 可达 5 万+ 字符，其中常含完整 JSON 草稿）。变异重试前
+                # 先从 reasoning_content 提取 JSON。
+                if content == "" and reasoning:
+                    try:
+                        payload = _normalize_payload(_extract_json_object(reasoning))
+                        if not isinstance(payload, dict):
+                            raise ValueError("reasoning payload must be a JSON object")
+                        payload["analysis_id"] = request.analysis_id
+                        payload["context_id"] = request.context_id
+                        payload["revision"] = request.revision
+                        payload["snapshot_hash"] = request.snapshot_hash
+                        return SemanticAnalysisResult.model_validate(payload)
+                    except Exception as r_exc:
+                        LOGGER.error(
+                            "REASONING EXTRACT FAILED: err=%s retry=%s",
+                            r_exc, _retry,
+                        )
+                if _retry < 2:
+                    user_payload["instruction"] += (
+                        "\n\n【强制】直接输出符合输出契约的完整 JSON 对象，"
+                        "不要输出任何其他文本、注释或思考。"
+                    )
+                    messages[1] = {
+                        "role": "user",
+                        "content": json.dumps(user_payload, ensure_ascii=False),
+                    }
+                    body["messages"] = messages
+                    continue
+                raise ModelProviderError(
+                    "MODEL_INVALID_RESPONSE",
+                    f"Could not parse batch SemanticAnalysisResult: {exc}",
+                ) from exc
+        raise ModelProviderError(
+            "MODEL_INVALID_RESPONSE", "Batch analysis exhausted retries",
+        )
 
     async def analyze_semantics(
         self,
@@ -392,10 +464,14 @@ class DeepSeekProvider:
             except httpx.TimeoutException as exc:
                 raise ModelProviderError("MODEL_TIMEOUT", "Semantic analysis timed out") from exc
             except httpx.HTTPError as exc:
-                raise ModelProviderError("MODEL_UNAVAILABLE", "Semantic analysis request failed") from exc
+                raise ModelProviderError(
+                    "MODEL_UNAVAILABLE", "Semantic analysis request failed"
+                ) from exc
 
             if response.status_code >= 400:
-                raise ModelProviderError("MODEL_UNAVAILABLE", f"Model returned {response.status_code}")
+                raise ModelProviderError(
+                    "MODEL_UNAVAILABLE", f"Model returned {response.status_code}"
+                )
 
             msg = response.json()
             choice = msg.get("choices", [{}])[0]

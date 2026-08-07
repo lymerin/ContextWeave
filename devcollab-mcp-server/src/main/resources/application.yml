@@ -33,6 +33,7 @@ devcollab:
     allowed-hosts:
       - ${DEVCOLLAB_MCP_ALLOWED_HOST_LOCALHOST:localhost:*}
       - ${DEVCOLLAB_MCP_ALLOWED_HOST_LOOPBACK:127.0.0.1:*}
+      - ${DEVCOLLAB_MCP_ALLOWED_HOST_DOCKER:host.docker.internal:*}
     core-base-url: ${DEVCOLLAB_CORE_BASE_URL:http://localhost:8080}
     core-timeout: ${DEVCOLLAB_MCP_CORE_TIMEOUT:PT3S}
   security:

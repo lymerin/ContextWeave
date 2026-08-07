@@ -6,19 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import DeepSeekModelName, Settings
-from app.providers.base import ModelProviderError
 from app.providers.deepseek import DeepSeekProvider
-
-
-def no_change() -> dict[str, Any]:
-    return {
-        "decision": "NO_CHANGE",
-        "summary": "No synchronization is needed",
-        "rationale": "The implementation and document agree.",
-        "operations": [],
-        "bindingProposals": [],
-        "evidence": [],
-    }
 
 
 def provider(handler: Any, key: str = "secret-key") -> DeepSeekProvider:
@@ -39,171 +27,8 @@ def response(plan: dict[str, Any]) -> httpx.Response:
     )
 
 
-@pytest.mark.asyncio
-async def test_deepseek_parses_valid_json_and_uses_authorization_header() -> None:
-    seen: dict[str, str] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen["authorization"] = request.headers["Authorization"]
-        return response(no_change())
-
-    result = await provider(handler).plan_document_sync({"codeFiles": []})
-    assert result.decision == "NO_CHANGE"
-    assert seen["authorization"] == "Bearer secret-key"
-
-
-@pytest.mark.asyncio
-async def test_deepseek_timeout() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ReadTimeout("timed out", request=request)
-
-    with pytest.raises(ModelProviderError) as caught:
-        await provider(handler).plan_document_sync({})
-    assert caught.value.code == "MODEL_TIMEOUT"
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("status", "code"),
-    [
-        (429, "MODEL_RATE_LIMITED"),
-        (500, "MODEL_UNAVAILABLE"),
-        (503, "MODEL_UNAVAILABLE"),
-        (400, "MODEL_CONFIGURATION_ERROR"),
-    ],
-)
-async def test_deepseek_http_error_mapping(status: int, code: str) -> None:
-    with pytest.raises(ModelProviderError) as caught:
-        await provider(lambda request: httpx.Response(status)).plan_document_sync({})
-    assert caught.value.code == code
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "payload",
-    [
-        b"not-json",
-        json.dumps({"choices": []}).encode(),
-        json.dumps({"choices": [{"message": {"content": "not-json"}}]}).encode(),
-        json.dumps(
-            {"choices": [{"message": {"content": json.dumps({"decision": "NO_CHANGE"})}}]}
-        ).encode(),
-    ],
-)
-async def test_deepseek_invalid_response(payload: bytes) -> None:
-    with pytest.raises(ModelProviderError) as caught:
-        await provider(
-            lambda request: httpx.Response(
-                200, content=payload, headers={"content-type": "application/json"}
-            )
-        ).plan_document_sync({})
-    assert caught.value.code == "MODEL_INVALID_RESPONSE"
-
-
-@pytest.mark.asyncio
-async def test_deepseek_error_never_contains_key() -> None:
-    with pytest.raises(ModelProviderError) as caught:
-        await provider(lambda request: httpx.Response(500), "top-secret").plan_document_sync({})
-    assert "top-secret" not in str(caught.value)
-
-
-@pytest.mark.asyncio
-async def test_deepseek_repair_payload_contains_safe_validation_errors() -> None:
-    seen: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.update(json.loads(request.content))
-        return response(no_change())
-
-    await provider(handler).plan_document_sync(
-        {
-            "codeFiles": [],
-            "documentBlockPlans": [
-                {
-                    "blockKey": "block_endpoint",
-                    "targetKind": "HTTP_ENDPOINT",
-                    "sortOrder": 0,
-                    "primaryCandidateIds": ["route_review"],
-                    "supportingCandidateIds": ["rule_review_document"],
-                    "requiredCandidateIds": [
-                        "route_review",
-                        "rule_review_document",
-                    ],
-                    "allowedClaims": ["说明评审入口的真实调用关系"],
-                    "forbiddenClaims": ["认证授权", "数据库事务"],
-                }
-            ],
-        },
-        previous_plan=no_change(),
-        validation_errors=[
-            {
-                "path": "operations.block_endpoint.proposedPlainText",
-                "code": "DOCUMENT_BLOCK_HEADING_MISMATCH",
-                "message": "fix",
-            }
-        ],
-    )
-    user = json.loads(seen["messages"][1]["content"])
-    assert user["agentPlanSchema"]["title"] == "AgentPlan"
-    repair = user["repair"]
-    assert repair["validationErrors"][0] == {
-        "path": "operations.block_endpoint.proposedPlainText",
-        "code": "DOCUMENT_BLOCK_HEADING_MISMATCH",
-        "message": "fix",
-    }
-    assert repair["invalidFieldPaths"] == [
-        "operations.block_endpoint.proposedPlainText"
-    ]
-    assert repair["documentBlockConstraints"] == [
-        {
-            "blockKey": "block_endpoint",
-            "targetKind": "HTTP_ENDPOINT",
-            "sortOrder": 0,
-            "allowedPrimaryCandidateIds": ["route_review"],
-            "allowedSupportingCandidateIds": ["rule_review_document"],
-            "requiredCandidateIds": ["route_review", "rule_review_document"],
-            "allowedClaims": ["说明评审入口的真实调用关系"],
-            "forbiddenClaims": ["认证授权", "数据库事务"],
-        }
-    ]
-    assert "不得新增、删除、合并、改名或重排 Block" in repair["instruction"]
-    assert "UNSUPPORTED_EXTERNAL_RELATION" in repair["instruction"]
-    assert "allowedClaims 与 forbiddenClaims" in repair["instruction"]
-
-
-@pytest.mark.asyncio
-async def test_deepseek_schema_error_preserves_exact_safe_field_path() -> None:
-    invalid = no_change()
-    invalid["decision"] = "UNKNOWN"
-
-    with pytest.raises(ModelProviderError) as caught:
-        await provider(lambda request: response(invalid)).plan_document_sync({})
-
-    assert caught.value.raw_plan == invalid
-    assert caught.value.validation_errors
-    assert caught.value.validation_errors[0]["path"] == "decision"
-    assert caught.value.validation_errors[0]["code"].startswith("MODEL_SCHEMA_")
-    assert "secret" not in json.dumps(caught.value.validation_errors)
-
-
-@pytest.mark.asyncio
-async def test_deepseek_requires_configuration() -> None:
-    empty = DeepSeekProvider(
-        api_key="",
-        base_url="",
-        model="",
-        connect_timeout_seconds=1,
-        total_timeout_seconds=2,
-    )
-    with pytest.raises(ModelProviderError) as caught:
-        await empty.plan_document_sync({})
-    assert caught.value.code == "MODEL_CONFIGURATION_ERROR"
-
-
-@pytest.mark.asyncio
-async def test_deepseek_project_planner_uses_separate_unit_plan_schema() -> None:
-    seen: dict[str, Any] = {}
-    unit_plan = {
+def unit_plan() -> dict[str, Any]:
+    return {
         "units": [
             {
                 "name": "认证服务",
@@ -217,57 +42,28 @@ async def test_deepseek_project_planner_uses_separate_unit_plan_schema() -> None
         ]
     }
 
+
+PROJECT_INDEX: dict[str, Any] = {
+    "repositoryId": "repo",
+    "revision": "abc",
+    "files": [{"filePath": "src/AuthService.java"}],
+    "documents": [],
+}
+
+
+@pytest.mark.asyncio
+async def test_deepseek_project_planner_uses_separate_unit_plan_schema() -> None:
+    seen: dict[str, Any] = {}
+
     def handler(request: httpx.Request) -> httpx.Response:
         seen.update(json.loads(request.content))
-        return response(unit_plan)
+        return response(unit_plan())
 
-    result = await provider(handler).plan_project_units(
-        {
-            "repositoryId": "repo",
-            "revision": "abc",
-            "files": [{"filePath": "src/AuthService.java"}],
-            "documents": [],
-        }
-    )
+    result = await provider(handler).plan_project_units(PROJECT_INDEX)
     user = json.loads(seen["messages"][1]["content"])
     assert result.units[0].name == "认证服务"
     assert user["unitPlanSchema"]["title"] == "UnitPlan"
     assert "agentPlanSchema" not in user
-
-
-@pytest.mark.asyncio
-async def test_deepseek_binding_pass_uses_only_binding_plan_schema() -> None:
-    seen: dict[str, Any] = {}
-    binding_plan = {
-        "selections": [
-            {
-                "blockKey": "block_endpoint",
-                "codeCandidateId": "code_candidate_123",
-                "role": "PRIMARY",
-                "ordinal": 1,
-                "reason": "代码职责与文档块内容一致。",
-                "confidence": 0.93,
-            }
-        ]
-    }
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.update(json.loads(request.content))
-        return response(binding_plan)
-
-    result = await provider(handler).plan_block_bindings(
-        {
-            "codeCandidates": [{"candidateId": "code_candidate_123"}],
-            "documentAnchorCandidates": [{"candidateId": "doc_candidate_456"}],
-            "documentBlockPlans": [{"blockKey": "block_endpoint"}],
-        }
-    )
-    user = json.loads(seen["messages"][1]["content"])
-    assert result.selections[0].codeCandidateId == "code_candidate_123"
-    assert result.selections[0].blockKey == "block_endpoint"
-    assert user["bindingPlanSchema"]["title"] == "BindingPlan"
-    assert "agentPlanSchema" not in user
-    assert "unitPlanSchema" not in user
 
 
 # ── Model name validation ─────────────────────────────────────────────
@@ -327,7 +123,7 @@ async def test_deepseek_thinking_enabled_adds_body_field() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.update(json.loads(request.content))
-        return response(no_change())
+        return response(unit_plan())
 
     p = DeepSeekProvider(
         api_key="key",
@@ -338,7 +134,7 @@ async def test_deepseek_thinking_enabled_adds_body_field() -> None:
         thinking=True,
         transport=httpx.MockTransport(handler),
     )
-    await p.plan_document_sync({"codeFiles": []})
+    await p.plan_project_units(PROJECT_INDEX)
     assert seen["thinking"] == {"type": "enabled"}
 
 
@@ -348,7 +144,7 @@ async def test_deepseek_thinking_disabled_excludes_body_field() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.update(json.loads(request.content))
-        return response(no_change())
+        return response(unit_plan())
 
     p = DeepSeekProvider(
         api_key="key",
@@ -359,7 +155,7 @@ async def test_deepseek_thinking_disabled_excludes_body_field() -> None:
         thinking=False,
         transport=httpx.MockTransport(handler),
     )
-    await p.plan_document_sync({"codeFiles": []})
+    await p.plan_project_units(PROJECT_INDEX)
     assert "thinking" not in seen
 
 

@@ -8,8 +8,8 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from app.clients.mcp_client import McpClientError, ReadOnlyMcpClient
 from app.config import Settings
-from app.runtime.file_classification import ClassifiedFile, classify_file
 from app.execution.errors import JobExecutionError
+from app.runtime.file_classification import ClassifiedFile, classify_file
 from app.runtime.semantic_planner import ProjectFile
 
 PhaseCallback = Callable[[str], Awaitable[None]]

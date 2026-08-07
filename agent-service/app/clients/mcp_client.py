@@ -43,6 +43,17 @@ class ReviewMcpClient(ReadOnlyMcpClient, Protocol):
     ) -> dict[str, Any]: ...
 
 
+def _authorization_header(authorization: str) -> str:
+    """规范化 Authorization 头：过滤器只认 `Bearer <token>` 前缀。
+
+    delegation exchange 返回裸 accessToken，直接放进请求头会被
+    mcp-server / knowledge-core 的 Bearer 过滤器跳过 → 401。
+    """
+    if authorization.startswith("Bearer "):
+        return authorization
+    return f"Bearer {authorization}"
+
+
 class OfficialMcpClient:
     ALLOWED_TOOLS = frozenset(
         {
@@ -110,7 +121,7 @@ class OfficialMcpClient:
     ) -> dict[str, Any]:
         try:
             async with httpx.AsyncClient(
-                headers={"Authorization": authorization},
+                headers={"Authorization": _authorization_header(authorization)},
                 timeout=self._timeout_seconds,
             ) as http_client:
                 async with streamable_http_client(

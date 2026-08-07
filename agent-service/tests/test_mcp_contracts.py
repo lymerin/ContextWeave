@@ -220,7 +220,6 @@ def test_document_structure_output_matches() -> None:
 
 
 if __name__ == "__main__":
-    import inspect
 
     fns = [
         obj for _, obj in sorted(globals().items())

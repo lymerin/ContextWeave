@@ -187,11 +187,12 @@ async def test_worker_completes_no_change_job_with_short_lived_delegation(
 ) -> None:
     repository = await _seed_repository()
     delegation = FakeDelegationClient()
+    mcp = FakeMcpClient(code_content="")
     worker = _worker(
         repository,
         settings,
         delegation=delegation,
-        mcp=FakeMcpClient(code_content=""),
+        mcp=mcp,
     )
     claimed = await repository.claim_next_unit("test-worker", 60)
     assert claimed is not None
@@ -199,7 +200,10 @@ async def test_worker_completes_no_change_job_with_short_lived_delegation(
     job = next(iter(repository.jobs.values()))
     assert job["status"] == "COMPLETED"
     assert job["result"] == "NO_CHANGE"
-    assert delegation.exchanges >= 4
+    # 短生命周期授权 token：每次 MCP 工具调用都重新交换，绝不缓存复用。
+    # 空代码文件走 EMPTY_SCOPE 快速路径（get_context + code.read 共 2 次调用）。
+    assert delegation.exchanges == len(mcp.calls) + len(mcp.submissions)
+    assert delegation.exchanges >= 2
 
 
 @pytest.mark.asyncio
@@ -333,25 +337,28 @@ async def test_worker_stops_unit_when_lease_heartbeat_is_lost(
             return False
 
     class SlowProvider(FakeModelProvider):
-        async def plan_document_sync(
+        async def analyze_semantics(
             self,
-            context_bundle: dict[str, Any],
-            *,
-            previous_plan: dict[str, Any] | None = None,
-            validation_errors: list[dict[str, str]] | None = None,
-        ) -> AgentPlan:
+            request: Any,
+            tool_handler: Any,
+        ) -> Any:
+            # 模拟长时间模型调用：期间 heartbeat 丢失应中止整个单元
             await asyncio.sleep(1)
-            return await super().plan_document_sync(
-                context_bundle,
-                previous_plan=previous_plan,
-                validation_errors=validation_errors,
-            )
+            return {"status": "NO_CHANGE", "change_request_id": None}
 
     repository = LeaseLosingRepository()
     seeded = await _seed_repository()
     repository.jobs = seeded.jobs
     repository.units = seeded.units
-    worker = _worker(repository, settings, provider=SlowProvider())
+    worker = _worker(
+        repository,
+        settings,
+        provider=SlowProvider(),
+        mcp=FakeMcpClient(
+            code_content="def hello():\n    return 1",
+            language="Python",
+        ),
+    )
     claimed = await repository.claim_next_unit("test-worker", 60)
     assert claimed is not None
 

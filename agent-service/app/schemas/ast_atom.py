@@ -16,10 +16,23 @@ from uuid import UUID
 class SymbolKind:
     MODULE = "MODULE"
     CLASS = "CLASS"
+    INTERFACE = "INTERFACE"
+    ENUM = "ENUM"
+    RECORD = "RECORD"
     FUNCTION = "FUNCTION"
     ASYNC_FUNCTION = "ASYNC_FUNCTION"
     METHOD = "METHOD"
     CLASS_METHOD = "CLASS_METHOD"
+
+
+# 跨语言"类型容器"集合：类/接口/枚举/record 一律按类语义处理
+# （入口、范围成员、CONTAINS、类型依赖、骨架标题）。
+CLASS_LIKE_KINDS: frozenset[str] = frozenset({
+    SymbolKind.CLASS,
+    SymbolKind.INTERFACE,
+    SymbolKind.ENUM,
+    SymbolKind.RECORD,
+})
 
 
 # ── 模块原子 ────────────────────────────────────────────────────────────────
@@ -74,6 +87,10 @@ class SymbolAtom:
     is_async         是否 async def。
     is_pydantic      是否继承 BaseModel（仅 CLASS）。
 
+    ── 访问级别（Java 等显式声明语言）──
+    access_level     public / private / protected / package（Java modifiers 显式声明）；
+                     空串 = 语言无访问级别概念（Python），按命名约定判定私有。
+
     ── 路由（仅 HTTP_ROUTE 转换后填写）──
     http_method      路由方法（GET / POST / PUT / …）。
     http_path        路由路径（/users）。
@@ -98,6 +115,7 @@ class SymbolAtom:
     http_method: str | None = None
     http_path: str | None = None
     http_response: str | None = None
+    access_level: str = ""
 
 
 # ── 原子目录 ────────────────────────────────────────────────────────────────
@@ -129,6 +147,22 @@ class AtomCatalog:
     @property
     def error_count(self) -> int:
         return sum(1 for m in self.modules if not m.atom_id)
+
+
+# ── 私有符号判定 ─────────────────────────────────────────────────────────────
+
+
+def is_private_symbol(sym: SymbolAtom) -> bool:
+    """私有符号判定：显式 access_level 优先，否则按 Python 命名约定。
+
+    Java 等语言的符号带 access_level（public/private/protected/package），
+    以显式声明为准；Python 无访问级别（access_level=""），退回命名约定
+    （_ 开头但非 __ 开头 → 私有）。
+    """
+    if sym.access_level:
+        return sym.access_level == "private"
+    name = sym.name
+    return name.startswith("_") and not name.startswith("__")
 
 
 # ── symbol_key 解析工具 ─────────────────────────────────────────────────────

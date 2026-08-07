@@ -9,12 +9,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 from app.runtime.semantic_planner import PlannedSemanticUnit
-from app.schemas.binding_plans import BindingPlan, BindingSelection
-from app.schemas.document_block_content import (
-    DocumentBlockContent,
-    DocumentBlockContentPlan,
-)
-from app.schemas.plans import AgentPlan, BindingAction, Decision
+from app.schemas.plans import AgentPlan, Decision
 from app.schemas.unit_plans import UnitPlan
 
 
@@ -460,9 +455,11 @@ class FakeMcpClient:
         *,
         bound: bool = True,
         code_content: str = "class Example {}",
+        language: str = "Java",
     ) -> None:
         self.bound = bound
         self.code_content = code_content
+        self.language = language
         self.calls: list[tuple[str, dict[str, Any], str]] = []
         self.submissions: list[tuple[AgentPlan, str, str, str]] = []
 
@@ -493,7 +490,7 @@ class FakeMcpClient:
                 "repositoryId": arguments["repositoryId"],
                 "path": arguments["path"],
                 "commitHash": "abc",
-                "language": "Java",
+                "language": self.language,
                 "sizeBytes": len(self.code_content),
                 "startLine": 1,
                 "endLine": 1,
@@ -682,10 +679,7 @@ class FakeModelProvider:
         ]
         self.calls: list[dict[str, Any]] = []
         self.unit_plan_calls: list[dict[str, Any]] = []
-        self.binding_plan_calls: list[dict[str, Any]] = []
-        self.pending_binding_proposals: list[Any] = []
         self.block_content_calls: list[dict[str, Any]] = []
-        self.block_repair_calls: list[dict[str, Any]] = []
         self.unit_plans: list[UnitPlan | Exception] = [
             UnitPlan.model_validate(
                 {
@@ -704,48 +698,6 @@ class FakeModelProvider:
             )
         ]
 
-    async def generate_document_blocks(
-        self,
-        context: dict[str, Any],
-    ) -> DocumentBlockContentPlan:
-        self.block_content_calls.append(context)
-        item = self.plans[min(len(self.block_content_calls) - 1, len(self.plans) - 1)]
-        if isinstance(item, Exception):
-            raise item
-        return DocumentBlockContentPlan(
-            blocks=[
-                DocumentBlockContent(
-                    blockKey=item["blockKey"],
-                    status="CONTENT",
-                    content=(
-                        "本节依据程序提供的代码证据，说明该职责的输入、处理步骤、"
-                        "输出以及与同一调用链其他代码的协作边界。"
-                    ),
-                )
-                for item in context.get("blocks", [])
-            ]
-        )
-
-    async def repair_document_block(
-        self,
-        context: dict[str, Any],
-        *,
-        previous_block: dict[str, Any],
-        validation_errors: list[dict[str, str]],
-    ) -> DocumentBlockContent:
-        self.block_repair_calls.append(
-            {
-                "context": context,
-                "previousBlock": previous_block,
-                "validationErrors": validation_errors,
-            }
-        )
-        return DocumentBlockContent(
-            blockKey=previous_block["blockKey"],
-            status="CONTENT",
-            content="本节只保留能够由当前代码证据直接确认的职责、输入、处理和输出。",
-        )
-
     async def plan_document_sync(
         self,
         context_bundle: dict[str, Any],
@@ -763,7 +715,6 @@ class FakeModelProvider:
         item = self.plans[min(len(self.calls) - 1, len(self.plans) - 1)]
         if isinstance(item, Exception):
             raise item
-        self.pending_binding_proposals = list(item.bindingProposals)
         return item.model_copy(
             update={
                 "decision": (
@@ -795,91 +746,6 @@ class FakeModelProvider:
         if isinstance(item, Exception):
             raise item
         return item
-
-    async def plan_block_bindings(
-        self,
-        candidates: dict[str, Any],
-        *,
-        previous_plan: dict[str, Any] | None = None,
-        validation_errors: list[dict[str, str]] | None = None,
-    ) -> BindingPlan:
-        self.binding_plan_calls.append(
-            {
-                "candidates": candidates,
-                "previousPlan": previous_plan,
-                "validationErrors": validation_errors,
-            }
-        )
-        selections: list[BindingSelection] = []
-        for proposal in self.pending_binding_proposals:
-            if proposal.action != BindingAction.UPSERT_BINDING:
-                continue
-            code = next(
-                (
-                    item
-                    for item in candidates.get("codeCandidates", [])
-                    if item.get("filePath") == proposal.filePath
-                    and item.get("anchorKind") == proposal.anchorKind
-                    and item.get("symbolKey") == proposal.symbolKey
-                    and item.get("startLine") == proposal.startLine
-                    and item.get("endLine") == proposal.endLine
-                ),
-                None,
-            )
-            document = next(
-                (
-                    item
-                    for item in candidates.get("documentAnchorCandidates", [])
-                    if item.get("documentId")
-                    == (
-                        str(proposal.documentId)
-                        if proposal.documentId is not None
-                        else None
-                    )
-                    and item.get("createdDocumentClientOperationId")
-                    == proposal.createdDocumentClientOperationId
-                    and item.get("blockId")
-                    == (
-                        str(proposal.blockId)
-                        if proposal.blockId is not None
-                        else None
-                    )
-                    and item.get("createdBlockClientOperationId")
-                    == proposal.createdBlockClientOperationId
-                ),
-                None,
-            )
-            if code is None or document is None:
-                continue
-            block_key = proposal.createdBlockClientOperationId or document["candidateId"]
-            available_block_keys = {
-                item["blockKey"] for item in candidates.get("documentBlockPlans", [])
-            }
-            if block_key not in available_block_keys:
-                child = next(
-                    (
-                        item
-                        for item in candidates.get("documentAnchorCandidates", [])
-                        if item.get("createdDocumentClientOperationId")
-                        == proposal.createdDocumentClientOperationId
-                        and item.get("createdBlockClientOperationId")
-                    ),
-                    None,
-                )
-                if child is not None:
-                    document = child
-                    block_key = child["createdBlockClientOperationId"]
-            selections.append(
-                BindingSelection(
-                    blockKey=block_key,
-                    codeCandidateId=code["candidateId"],
-                    role=proposal.bindingRole,
-                    ordinal=proposal.bindingOrdinal,
-                    reason=proposal.reason,
-                    confidence=proposal.confidence or 0.9,
-                )
-            )
-        return BindingPlan(selections=selections)
 
 
 @pytest.fixture

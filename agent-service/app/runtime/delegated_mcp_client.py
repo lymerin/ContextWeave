@@ -4,7 +4,7 @@ from uuid import UUID
 import httpx
 
 from app.clients.delegation_client import DelegationClient
-from app.clients.mcp_client import McpClientError, ReviewMcpClient
+from app.clients.mcp_client import McpClientError, ReviewMcpClient, _authorization_header
 from app.schemas.plans import AgentPlan
 
 
@@ -65,7 +65,7 @@ class DelegatedMcpClient:
         try:
             async with httpx.AsyncClient(
                 timeout=self._request_timeout_seconds,
-                headers={"Authorization": authorization},
+                headers={"Authorization": _authorization_header(authorization)},
             ) as client:
                 response = await client.get(
                     (

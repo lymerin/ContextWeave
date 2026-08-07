@@ -13,7 +13,8 @@ def test_markdown_fenced() -> None:
 {
   "overall_responsibility": "定义 Pydantic 模型",
   "semantic_groups": [
-    {"group_id": "g1", "order": 1, "title": "模型", "primary_atom_ids": ["a1"], "informed_by_atom_ids": ["a1"]}
+    {"group_id": "g1", "order": 1, "title": "模型",
+     "primary_atom_ids": ["a1"], "informed_by_atom_ids": ["a1"]}
   ],
   "member_interpretations": [],
   "execution_flow": []
@@ -43,7 +44,7 @@ def test_unfenced_no_tag() -> None:
 def test_invalid() -> None:
     try:
         _extract_json_object("这不是JSON")
-        assert False, "should have raised"
+        raise AssertionError("should have raised")
     except ValueError:
         pass
 
