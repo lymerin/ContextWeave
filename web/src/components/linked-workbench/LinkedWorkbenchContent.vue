@@ -13,7 +13,7 @@
       @request-agent-check="emit('request-agent-check')"
     />
     <LinkedInspector
-      v-show="inspectorOpen"
+      v-if="inspectorOpen"
       :mode="mode"
       :active-link="activeLink"
       :active-anchor="activeAnchor"
@@ -94,7 +94,7 @@ defineExpose({ focusAnchor, focusBlock, clearBlockFocus, confirmDocumentLeave })
 </script>
 
 <style scoped>
-.linked-content { display: grid; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1fr); overflow: hidden; }
-.linked-content.has-inspector { grid-template-columns: minmax(0, 1fr) minmax(270px, 310px); }
-@media (max-width: 1280px) { .linked-content.has-inspector { grid-template-columns: minmax(0, 1fr) 270px; } }
+.linked-content { position: relative; display: grid; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1fr); overflow: hidden; }
+.linked-content.has-inspector { grid-template-columns: minmax(0, 1fr); }
+.linked-content :deep(.linked-inspector) { position: absolute; z-index: 12; top: 10px; right: 10px; bottom: 10px; width: min(320px, calc(100% - 20px)); border: 1px solid #dde5ea; border-radius: 12px; box-shadow: -12px 18px 36px rgba(22, 42, 54, .16); }
 </style>

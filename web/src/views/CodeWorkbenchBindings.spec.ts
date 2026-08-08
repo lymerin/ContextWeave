@@ -215,25 +215,16 @@ describe('CodeWorkbenchView formal bindings', () => {
     wrapper.unmount();
   });
 
-  it('uses reading history buttons without reusing stale file bindings', async () => {
+  it('keeps file switching accurate without rendering redundant history controls', async () => {
     const wrapper = mountView();
     await flushPromises();
     await selectFile(wrapper, 'src/C.java');
-    expect(snapshot(wrapper).sourcePath).toBe('src/C.java');
-
-    await wrapper.get('[data-test="linked-history-back"]').trigger('click');
-    await flushPromises();
-    expect(snapshot(wrapper)).toEqual({
-      sourcePath: 'src/A.java',
-      documentIds: 'document-a',
-    });
-
-    await wrapper.get('[data-test="linked-history-forward"]').trigger('click');
-    await flushPromises();
     expect(snapshot(wrapper)).toEqual({
       sourcePath: 'src/C.java',
       documentIds: 'document-c',
     });
+    expect(wrapper.find('[data-test="linked-history-back"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="linked-history-forward"]').exists()).toBe(false);
     wrapper.unmount();
   });
 
@@ -331,7 +322,7 @@ describe('CodeWorkbenchView formal bindings', () => {
     wrapper.unmount();
   });
 
-  it('keeps two formal bindings for one file and switches the active binding', async () => {
+  it('keeps two formal bindings for one file and switches through the anchor rail', async () => {
     mocks.queryBindings.mockResolvedValue({
       ...bindingResult('src/A.java'),
       bindings: [
@@ -342,8 +333,8 @@ describe('CodeWorkbenchView formal bindings', () => {
     const wrapper = mountView();
     await flushPromises();
 
-    expect(wrapper.get('[data-test="next-binding"]').text()).toBe('下一关联');
-    await wrapper.get('[data-test="next-binding"]').trigger('click');
+    expect(wrapper.find('[data-test="next-binding"]').exists()).toBe(false);
+    await wrapper.get('[data-test="activate-second-link"]').trigger('click');
     await flushPromises();
     expect(testNavigation().restoreCurrent()?.bindingId).toBe('binding-overview');
     expect(testNavigation().state.value.backStack).toEqual([]);
@@ -403,8 +394,8 @@ function mountView() {
           `,
         },
         LinkedWorkbenchShell: {
-          props: ['sourcePath', 'document'],
-          emits: ['select-block', 'blocks-loaded'],
+          props: ['sourcePath', 'document', 'links'],
+          emits: ['select-block', 'blocks-loaded', 'activate-rail'],
           methods: {
             focusAnchor: vi.fn(),
             focusBlock: vi.fn(),
@@ -424,7 +415,7 @@ function mountView() {
               },
             },
           },
-          template: '<section><span data-test="source-path">{{ sourcePath }}</span><button data-test="select-block" @click="$emit(\'select-block\', \'block-a\')" /><slot name="header-actions" /></section>',
+          template: '<section><span data-test="source-path">{{ sourcePath }}</span><button data-test="select-block" @click="$emit(\'select-block\', \'block-a\')" /><button v-if="links?.[1]" data-test="activate-second-link" @click="$emit(\'activate-rail\', links[1].id)" /></section>',
         },
         NotificationCenter: true,
         ElAlert: true,

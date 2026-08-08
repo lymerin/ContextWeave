@@ -1,40 +1,99 @@
 <template>
-  <main class="app-shell linked-page-shell" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
-    <AppSidebar
-      v-model="sidebarCollapsed"
-      active="code"
-      :workspace-id="workspaceId"
-      :linked-navigation-active="sidebarNavigationActive"
-      :linked-count="links.length"
-      :review-count="pendingReviewCount"
-      :drift-count="driftedLinkIds.length"
-      @open-linked="handleLinkedNavigation"
-      @open-review="handleReviewNavigation"
-      @open-drift="handleModeChange('DRIFT_REVIEW')"
-    >
-      <template #workspace-panel>
-        <LinkedRepositoryContext
-          :repositories="repositories"
-          :repository-id="selectedRepositoryId"
-          :file-tree="fileTree"
-          :files-count="files.length"
-          :selected-file-path="selectedFilePath"
-          :documents="relatedDocumentChoices"
-          :selected-document-id="selectedDocumentId"
-          :active-anchor="activeCodeAnchor"
-          :file-link-counts="fileLinkCounts"
-          :linked-block-count="activeLinkedBlockCount"
-          :unresolved-issue-count="activeUnresolvedIssueCount"
-          :recent-commit-count="recentCommitCount"
-          :loading="contextLoading"
-          @select-repository="handleRepositoryChange"
-          @select-file="openSourceByPath"
-          @select-document="handleDocumentChange"
-        />
-      </template>
-    </AppSidebar>
+  <main
+    class="collaboration-page linked-page-shell"
+    data-ark-theme="ark"
+    data-ark-depth="moderate"
+  >
+    <header class="collaboration-topbar">
+      <button
+        class="collaboration-brand"
+        type="button"
+        aria-label="返回 ContextWeave 首页"
+        @click="navigatePrimary('/')"
+      >
+        <span class="collaboration-logo" aria-hidden="true"><span /></span>
+        <span class="collaboration-brand-name">ContextWeave</span>
+        <span class="collaboration-beta">BETA</span>
+      </button>
 
-    <section class="linked-page-main">
+      <WorkspaceContextNavigation :workspace-id="workspaceId" active="linked" />
+
+      <div class="collaboration-account">
+        <span class="collaboration-avatar" :aria-label="`当前用户：${currentUserName}`">
+          {{ currentUserInitial }}
+        </span>
+      </div>
+    </header>
+
+    <section class="collaboration-stage">
+      <div class="collaboration-workspace-grid">
+        <header class="collaboration-workspace-header">
+          <div class="workspace-identity">
+            <span class="workspace-signal" aria-hidden="true" />
+            <div>
+              <p>COLLABORATION / WORKSPACE</p>
+              <h1>{{ workspace?.name || '协作空间' }}</h1>
+              <span class="workspace-context-line">
+                <i aria-hidden="true" />
+                {{ repositorySyncLabel }}
+                <b>·</b>{{ activeRepository?.defaultBranch || '-' }}
+                <b>·</b>{{ shortWorkspaceCommit }}
+              </span>
+            </div>
+          </div>
+          <div class="workspace-check-actions" aria-label="检查操作">
+            <el-button
+              v-if="activeRepository"
+              data-test="project-scan"
+              :loading="projectScanStarting"
+              @click="confirmProjectScan"
+            >全项目检查 <span aria-hidden="true">↗</span></el-button>
+            <el-button
+              v-if="activeRepository"
+              class="is-primary-check"
+              data-test="module-scan"
+              :loading="moduleCheckStarting"
+              :disabled="!selectedFilePath"
+              @click="confirmModuleCheck"
+            >模块检查 <span aria-hidden="true">↗</span></el-button>
+            <el-button
+              v-if="activeRepository"
+              data-test="agent-check"
+              :loading="agentCheckStarting"
+              :disabled="!selectedFilePath"
+              @click="agentCheckDialogOpen = true"
+            >Agent 检查 <span aria-hidden="true">↗</span></el-button>
+          </div>
+        </header>
+
+        <div class="collaboration-workspace-body">
+          <aside class="collaboration-tree-panel" aria-label="文档与仓库树">
+            <header>
+              <span>DOCUMENT / TREE</span>
+              <strong>文档树</strong>
+            </header>
+            <LinkedRepositoryContext
+              :repositories="repositories"
+              :repository-id="selectedRepositoryId"
+              :file-tree="fileTree"
+              :files-count="files.length"
+              :selected-file-path="selectedFilePath"
+              :documents="relatedDocumentChoices"
+              :selected-document-id="selectedDocumentId"
+              :active-anchor="activeCodeAnchor"
+              :file-link-counts="fileLinkCounts"
+              :linked-block-count="activeLinkedBlockCount"
+              :unresolved-issue-count="activeUnresolvedIssueCount"
+              :recent-commit-count="recentCommitCount"
+              :loading="contextLoading"
+              :show-summary="false"
+              @select-repository="handleRepositoryChange"
+              @select-file="openSourceByPath"
+              @select-document="handleDocumentChange"
+            />
+          </aside>
+
+          <section class="linked-page-main">
       <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" />
       <el-alert
         v-if="activeRepository?.lastSyncError"
@@ -53,7 +112,7 @@
         :branch="activeRepository?.defaultBranch"
         :commit-sha="selectedSource?.commitSha || activeRepository?.lastSyncedCommit"
         :mode="mode"
-        :inspector-open="inspectorOpen"
+        :inspector-open="false"
         :source-content="selectedSource?.content || ''"
         :source-path="selectedSource?.path || selectedFilePath"
         :source-language="selectedSource?.language"
@@ -79,8 +138,6 @@
         :versions="versions"
         :collaboration-connected="collaborationConnected"
         :members-count="collaborationMembers.length"
-        @set-mode="handleModeChange"
-        @toggle-inspector="toggleInspector()"
         @activate-code="handleActivate($event, 'code')"
         @activate-rail="handleActivate($event, 'rail')"
         @activate-inspector="handleActivate($event, 'inspector')"
@@ -90,63 +147,12 @@
         @editing-stop="stopEditing"
         @open-agent-review="handleAgentReviewNavigation"
         @request-agent-check="handleDocumentPaneAgentCheck"
-      >
-        <template #header-actions>
-          <el-button
-            data-test="linked-history-back"
-            size="small"
-            circle
-            :icon="ArrowLeft"
-            :disabled="!linkedNavigation.canGoBack.value"
-            :title="historyTargetTitle('后退', linkedNavigation.backTarget.value)"
-            @click="handleHistoryBack"
-          />
-          <el-button
-            data-test="linked-history-forward"
-            size="small"
-            circle
-            :icon="ArrowRight"
-            :disabled="!linkedNavigation.canGoForward.value"
-            :title="historyTargetTitle('前进', linkedNavigation.forwardTarget.value)"
-            @click="handleHistoryForward"
-          />
-          <el-button-group v-if="linkCount > 1" class="binding-switcher">
-            <el-button
-              data-test="previous-binding"
-              size="small"
-              :disabled="!canSelectPreviousLink"
-              @click="handleAdjacentLink('previous')"
-            >上一关联</el-button>
-            <el-button size="small" disabled>{{ activeLinkIndex + 1 }} / {{ linkCount }}</el-button>
-            <el-button
-              data-test="next-binding"
-              size="small"
-              :disabled="!canSelectNextLink"
-              @click="handleAdjacentLink('next')"
-            >下一关联</el-button>
-          </el-button-group>
-          <el-button
-            v-if="activeRepository"
-            data-test="project-scan"
-            size="small"
-            :loading="projectScanStarting"
-            @click="confirmProjectScan"
-          >检查整个项目</el-button>
-          <NotificationCenter />
-          <el-button
-            v-if="workspace.currentUserRole === 'ADMIN' && activeRepository"
-            size="small"
-            :loading="syncing"
-            :disabled="activeRepository.syncStatus === 'SYNC_PENDING' || activeRepository.syncStatus === 'SYNCING'"
-            @click="handleSync"
-          >重新同步</el-button>
-        </template>
-      </LinkedWorkbenchShell>
+      />
       <el-skeleton v-else :rows="12" animated />
 
       <el-drawer
         v-model="projectScanDrawerOpen"
-        title="项目结构分析"
+        title="全项目检查"
         size="420px"
         append-to-body
       >
@@ -200,18 +206,47 @@
           <p v-else class="project-scan-hint">扫描在后台运行，关闭当前页面不会取消任务。</p>
         </section>
       </el-drawer>
+
+      <el-dialog
+        v-model="agentCheckDialogOpen"
+        title="Agent 检查"
+        width="460px"
+        append-to-body
+      >
+        <div class="agent-check-dialog">
+          <p><strong>检查对象：</strong>{{ selectedFilePath || '尚未选择源码文件' }}</p>
+          <el-input
+            v-model="agentInstruction"
+            type="textarea"
+            :rows="4"
+            placeholder="补充希望 Agent 重点检查的内容（可选）"
+          />
+        </div>
+        <template #footer>
+          <el-button @click="agentCheckDialogOpen = false">取消</el-button>
+          <el-button
+            type="primary"
+            :loading="agentCheckStarting"
+            :disabled="!selectedFilePath"
+            @click="startAgentCheck"
+          >开始检查</el-button>
+        </template>
+      </el-dialog>
+          </section>
+        </div>
+      </div>
     </section>
   </main>
 </template>
 
 <script setup lang="ts">
-import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import type { DocumentBlock, DocumentBlockContent } from '@/api/block';
 import {
+  createAgentRun,
   createAgentJob,
   listAgentJobUnits,
   readableAgentError,
@@ -234,7 +269,6 @@ import {
   listGitRepositoryFiles,
   queryCodeBindings,
   resolveBlockFileContext,
-  syncGitRepository,
   type CodeBindingContextItem,
   type CodeBindingQueryItem,
   type GitRepository,
@@ -243,20 +277,20 @@ import {
   type GitRepositorySource,
 } from '@/api/git';
 import { getWorkspace, type Workspace } from '@/api/workspace';
-import AppSidebar from '@/components/layout/AppSidebar.vue';
 import LinkedRepositoryContext from '@/components/linked-workbench/LinkedRepositoryContext.vue';
 import LinkedWorkbenchShell from '@/components/linked-workbench/LinkedWorkbenchShell.vue';
-import NotificationCenter from '@/components/notification/NotificationCenter.vue';
 import { useDocumentCollaboration } from '@/composables/useDocumentCollaboration';
 import { useBackgroundActivityStore } from '@/stores/backgroundActivity';
+import { useAuthStore } from '@/stores/auth';
 import {
   createLinkedWorkbenchSnapshot,
   useLinkedWorkbenchNavigation,
   type LinkedWorkbenchSnapshot,
 } from '@/composables/useLinkedWorkbenchNavigation';
 import { useLinkedWorkbenchState } from '@/composables/useLinkedWorkbenchState';
-import type { LinkedDocumentChoice, LinkActivationSource, WorkbenchMode } from '@/types/linkedWorkbench';
+import type { LinkedDocumentChoice, LinkActivationSource } from '@/types/linkedWorkbench';
 import { readableError } from '@/utils/error';
+import WorkspaceContextNavigation from '@/components/layout/WorkspaceContextNavigation.vue';
 import {
   bindingDocumentChoices,
   buildBindingFixture,
@@ -274,6 +308,7 @@ import {
 
 const route = useRoute();
 const router = useRouter();
+const authStore = useAuthStore();
 const workspaceId = computed(() => String(route.params.workspaceId || ''));
 const workspace = ref<Workspace | null>(null);
 const repositories = ref<GitRepository[]>([]);
@@ -288,8 +323,11 @@ const contextLoading = ref(false);
 const sourceLoading = ref(false);
 const documentLoading = ref(false);
 const isRestoringNavigation = ref(false);
-const syncing = ref(false);
 const projectScanStarting = ref(false);
+const moduleCheckStarting = ref(false);
+const agentCheckStarting = ref(false);
+const agentCheckDialogOpen = ref(false);
+const agentInstruction = ref('');
 const projectScanJobId = ref<string | null>(null);
 const projectScanJob = ref<AgentJob | null>(null);
 const projectScanUnits = ref<AgentSemanticUnit[]>([]);
@@ -313,23 +351,46 @@ const documentScope = ref<DocumentScope>({
   source: 'document',
 });
 const errorMessage = ref('');
-const sidebarCollapsed = ref(localStorage.getItem('devcollab.sidebar.collapsed') === 'true');
-const sidebarNavigationActive = ref<'linked' | 'review' | 'drift'>('linked');
 const workbenchShellRef = ref<InstanceType<typeof LinkedWorkbenchShell> | null>(null);
 const backgroundActivity = useBackgroundActivityStore();
 
 const state = useLinkedWorkbenchState();
 const {
-  mode, inspectorOpen, activeLinkId, selectedRepositoryId, selectedFilePath, selectedDocumentId,
+  mode, activeLinkId, selectedRepositoryId, selectedFilePath, selectedDocumentId,
   selectedBlockId,
   codeAnchors, documentBlocks, links, issues, activeLink, activeCodeAnchor, activeDocumentBlock,
-  activeIssue, activeEvidence, driftedLinkIds, activeLinkIndex, linkCount,
-  canSelectPreviousLink, canSelectNextLink,
+  activeIssue, activeEvidence,
   toggleInspector,
   unboundBlockId, clearUnboundBlock,
 } = state;
 
+toggleInspector(false);
+
+const currentUserName = computed(() => (
+  authStore.currentUser?.displayName
+  || authStore.currentUser?.username
+  || '用户'
+));
+const currentUserInitial = computed(() => currentUserName.value.trim().slice(0, 1).toUpperCase() || 'U');
+function navigatePrimary(target: string) {
+  void router.push(target);
+}
+
 const activeRepository = computed(() => repositories.value.find(item => item.id === selectedRepositoryId.value) ?? null);
+const shortWorkspaceCommit = computed(() => (
+  selectedSource.value?.commitSha
+  || activeRepository.value?.lastSyncedCommit
+  || '尚无提交'
+).slice(0, 10));
+const repositorySyncLabel = computed(() => {
+  switch (activeRepository.value?.syncStatus) {
+    case 'READY': return '同步正常';
+    case 'SYNC_PENDING': return '等待同步';
+    case 'SYNCING': return '正在同步';
+    case 'FAILED': return '同步异常';
+    default: return '尚未同步';
+  }
+});
 const linkedNavigationScope = computed(() => {
   const repository = activeRepository.value;
   const revision = repository?.lastSyncedCommit;
@@ -357,7 +418,6 @@ const relatedDocumentChoices = computed<LinkedDocumentChoice[]>(() => {
         }
       : item);
 });
-const pendingReviewCount = computed(() => backgroundActivity.pendingReviewCount);
 const projectScanSnapshot = computed(() => (
   backgroundActivity.getJobSnapshot(projectScanJobId.value)
 ));
@@ -801,55 +861,22 @@ async function updateWorkbenchRoute() {
   });
 }
 
-async function restoreReadingTarget(snapshot: LinkedWorkbenchSnapshot) {
-  const repository = repositories.value.find(item =>
-    item.id === snapshot.repositoryId && item.lastSyncedCommit === snapshot.revision);
-  if (!repository) return;
-  isRestoringNavigation.value = true;
-  try {
-    if (selectedRepositoryId.value !== repository.id) {
-      sourceRequestSequence += 1;
-      state.selectedRepositoryId.value = repository.id;
-      state.selectFile('');
-      state.selectDocument(snapshot.documentId || '');
-      selectedSource.value = null;
-      selectedFileBindings.value = [];
-      await loadRepositoryDetails('restore', snapshot);
-      return;
-    }
-    state.selectDocument(snapshot.documentId || '');
-    const file = findRepositoryFile(snapshot.filePath);
-    if (file) {
-      await openSource(file, 'restore', snapshot);
-      return;
-    }
-    await loadRepositoryDetails('restore', snapshot);
-  } finally {
-    isRestoringNavigation.value = false;
-  }
-}
-
-async function handleHistoryBack() {
-  if (!(await confirmDocumentLeave())) return;
-  const target = linkedNavigation.goBack();
-  if (target) await restoreReadingTarget(target);
-}
-
-async function handleHistoryForward() {
-  if (!(await confirmDocumentLeave())) return;
-  const target = linkedNavigation.goForward();
-  if (target) await restoreReadingTarget(target);
-}
-
-function historyTargetTitle(action: string, target: LinkedWorkbenchSnapshot | null) {
-  const fileName = target?.filePath?.split('/').at(-1);
-  return fileName ? `${action}到 ${fileName}` : action;
-}
-
 function handleBlocksLoaded(blocks: DocumentBlock[]) {
   state.replaceDocumentBlocks(blocks);
-  const blockSortOrders = documentBlocks.value.length > 0
-    && documentBlocks.value[0].documentId === selectedDocumentId.value
+  const sameDocument = documentBlocks.value.length > 0
+    && documentBlocks.value[0].documentId === selectedDocumentId.value;
+  if (sameDocument) {
+    // 块被删除后（DB 级联删除其绑定），缓存 bindings 里的 blockExists
+    // 仍是查询时刻的旧值：按最新块列表就地修正为 false，
+    // displayableBindings 据此过滤，避免已删块的绑定残留显示。
+    const blockIds = new Set(blocks.map(block => block.id));
+    selectedFileBindings.value = selectedFileBindings.value.map((binding) => (
+      binding.blockId && !blockIds.has(binding.blockId)
+        ? { ...binding, blockExists: false }
+        : binding
+    ));
+  }
+  const blockSortOrders = sameDocument
     ? new Map(documentBlocks.value.map(block => [block.id, block.sortOrder]))
     : undefined;
   rebuildBindings(
@@ -1007,25 +1034,6 @@ async function handleBlockSelection(blockId: string) {
   }
 }
 
-async function handleAdjacentLink(direction: 'previous' | 'next') {
-  const link = direction === 'previous'
-    ? state.selectPreviousLink('rail')
-    : state.selectNextLink('rail');
-  if (link) await handleActivate(link.id, 'rail');
-}
-
-async function handleModeChange(nextMode: WorkbenchMode) {
-  sidebarNavigationActive.value = nextMode === 'DRIFT_REVIEW' ? 'drift' : 'linked';
-  state.setMode(nextMode);
-  await nextTick();
-  focusActiveLink('system');
-}
-
-async function handleLinkedNavigation() {
-  sidebarNavigationActive.value = 'linked';
-  await handleModeChange('LINKED');
-}
-
 function confirmDocumentLeave() {
   return workbenchShellRef.value?.confirmDocumentLeave?.() ?? Promise.resolve(true);
 }
@@ -1067,30 +1075,7 @@ async function handleAgentReviewNavigation(changeRequestId: string | null) {
 }
 
 async function handleDocumentPaneAgentCheck() {
-  // 单文件分析入口已废弃：Agent 检查统一走完整模块流水线，
-  // 由 worker 扫描仓库、按语义模块生成并隔离文档。
-  if (!selectedRepositoryId.value) return;
-  try {
-    const queued = await createAgentJob({
-      workspaceId: workspaceId.value,
-      repositoryId: selectedRepositoryId.value,
-      scope: { type: 'PROJECT_INITIALIZATION' },
-      userInstruction: null,
-    });
-    backgroundActivity.registerJob({
-      jobId: queued.jobId,
-      workspaceId: workspaceId.value,
-      repositoryId: selectedRepositoryId.value,
-      label: activeRepository.value?.name ?? '项目检查',
-      filePath: null,
-      createdAt: queued.createdAt,
-      lastKnownStatus: queued.status,
-    });
-    clearUnboundBlock();
-    ElMessage.success('Agent 已在后台扫描整个仓库，将按模块生成文档。');
-  } catch (error) {
-    ElMessage.error(readableAgentError(error, 'Agent 检查启动失败'));
-  }
+  await confirmModuleCheck();
 }
 
 function focusActiveLink(source: LinkActivationSource) {
@@ -1119,23 +1104,12 @@ async function saveBlockViaCollaboration(block: DocumentBlock, content: Document
   return updateBlockContentViaCollaboration(block.id, content, block.version);
 }
 
-async function handleSync() {
-  if (!selectedRepositoryId.value) return;
-  syncing.value = true;
-  try {
-    const updated = await syncGitRepository(workspaceId.value, selectedRepositoryId.value);
-    repositories.value = repositories.value.map(item => item.id === updated.id ? updated : item);
-    ElMessage.success('仓库同步任务已提交');
-  } catch (error) { ElMessage.error(readableError(error, '仓库同步失败')); }
-  finally { syncing.value = false; }
-}
-
 async function confirmProjectScan() {
   if (!selectedRepositoryId.value || projectScanStarting.value) return;
   try {
     await ElMessageBox.confirm(
-      'Agent 将在后台扫描当前仓库，识别代码文件、已有文档关联和语义模块。本阶段只分析项目结构，不会修改正式文档。',
-      '检查整个项目',
+      '系统将在后台扫描当前仓库，识别代码文件、已有文档关联和语义模块。本阶段只分析项目结构，不会修改正式文档。',
+      '全项目检查',
       {
         confirmButtonText: '开始扫描',
         cancelButtonText: '取消',
@@ -1146,6 +1120,73 @@ async function confirmProjectScan() {
     return;
   }
   await startProjectScan();
+}
+
+async function confirmModuleCheck() {
+  if (!selectedRepositoryId.value || !selectedFilePath.value || moduleCheckStarting.value) return;
+  try {
+    await ElMessageBox.confirm(
+      `将按当前文件所属模块执行检查：${selectedFilePath.value}`,
+      '模块检查',
+      {
+        confirmButtonText: '开始检查',
+        cancelButtonText: '取消',
+        type: 'info',
+      },
+    );
+  } catch {
+    return;
+  }
+  await startModuleCheck();
+}
+
+async function startModuleCheck() {
+  if (!selectedRepositoryId.value || !selectedFilePath.value || moduleCheckStarting.value) return;
+  moduleCheckStarting.value = true;
+  try {
+    const filePath = selectedFilePath.value;
+    const queued = await createAgentJob({
+      workspaceId: workspaceId.value,
+      repositoryId: selectedRepositoryId.value,
+      scope: { type: 'CURRENT_FILE', filePath },
+      userInstruction: null,
+    });
+    backgroundActivity.registerJob({
+      jobId: queued.jobId,
+      workspaceId: workspaceId.value,
+      repositoryId: selectedRepositoryId.value,
+      label: `模块检查 ${filePath}`,
+      filePath,
+      createdAt: queued.createdAt,
+      lastKnownStatus: queued.status,
+    });
+    clearUnboundBlock();
+    ElMessage.success('模块检查已在后台启动');
+  } catch (error) {
+    ElMessage.error(readableAgentError(error, '模块检查启动失败'));
+  } finally {
+    moduleCheckStarting.value = false;
+  }
+}
+
+async function startAgentCheck() {
+  if (!selectedRepositoryId.value || !selectedFilePath.value || agentCheckStarting.value) return;
+  agentCheckStarting.value = true;
+  try {
+    const queued = await createAgentRun({
+      workspaceId: workspaceId.value,
+      repositoryId: selectedRepositoryId.value,
+      selectedPaths: [selectedFilePath.value],
+      userInstruction: agentInstruction.value.trim() || null,
+    });
+    agentCheckDialogOpen.value = false;
+    agentInstruction.value = '';
+    ElMessage.success(`Agent 检查已提交（${queued.runId.slice(0, 8)}）`);
+  } catch (error) {
+    ElMessage.error(readableAgentError(error, 'Agent 检查启动失败'));
+  } finally {
+    agentCheckStarting.value = false;
+  }
 }
 
 async function startProjectScan() {
@@ -1218,9 +1259,69 @@ function flattenDocumentTree(nodes: DocumentTreeNode[], depth = 0): LinkedDocume
 </script>
 
 <style scoped>
-.linked-page-shell { height: 100vh; overflow: hidden; }
-.linked-page-main { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto auto minmax(0, 1fr); gap: 8px; overflow: hidden; padding: 12px 14px 0; background: #f2f5f9; }
+.linked-page-shell { height: 100vh; overflow: hidden; color: #101820; background: #eef3f5; }
+.collaboration-page { display: grid; grid-template-rows: 72px minmax(0, 1fr); }
+.collaboration-topbar { position: relative; z-index: 20; display: grid; grid-template-columns: minmax(240px, 1fr) auto minmax(240px, 1fr); align-items: center; padding: 0 28px; border-bottom: 1px solid rgba(202, 213, 220, .78); background: rgba(255, 255, 255, .94); box-shadow: 0 7px 24px rgba(28, 46, 58, .055); backdrop-filter: blur(18px); }
+.collaboration-brand { display: flex; width: max-content; align-items: center; gap: 11px; border: 0; padding: 0; background: transparent; color: #0c1116; cursor: pointer; }
+.collaboration-logo { position: relative; width: 38px; height: 38px; overflow: hidden; border-radius: 10px; background: #0b1015; }
+.collaboration-logo::before, .collaboration-logo::after, .collaboration-logo span { position: absolute; left: 9px; width: 20px; height: 2px; content: ''; background: #18d1ff; transform: skewX(-28deg); }
+.collaboration-logo::before { top: 11px; }
+.collaboration-logo span { top: 18px; width: 13px; }
+.collaboration-logo::after { top: 25px; }
+.collaboration-brand-name { font-size: 20px; font-weight: 760; letter-spacing: -.035em; }
+.collaboration-brand:focus-visible, .collaboration-navigation-item:focus-visible, .workspace-check-actions :deep(.el-button:focus-visible) { outline: 2px solid #18d1ff; outline-offset: 3px; }
+.collaboration-beta { padding: 4px 7px; border: 1px solid #dfe5e8; border-radius: 5px; background: #f3f5f6; color: #74808a; font-size: 10px; font-weight: 700; letter-spacing: .12em; }
+.collaboration-navigation { display: flex; align-items: center; gap: 3px; padding: 5px; border: 1px solid #e3e8eb; border-radius: 999px; background: #f0f2f3; }
+.collaboration-navigation-item { min-width: 82px; border: 0; border-radius: 999px; padding: 10px 14px; background: transparent; color: #78838c; font: inherit; font-size: 14px; cursor: pointer; transition: color .18s ease, background .18s ease, box-shadow .18s ease; }
+.collaboration-navigation-item:not(:disabled):hover { color: #0a1015; }
+.collaboration-navigation-item.is-active { background: #0b1015; color: #fff; box-shadow: 0 6px 14px rgba(8, 15, 20, .17); }
+.collaboration-navigation-item.is-active span { display: inline-block; width: 6px; height: 6px; margin-left: 7px; border-radius: 50%; background: #17d5f2; vertical-align: 2px; }
+.collaboration-navigation-item:disabled:not(.is-active) { opacity: .42; cursor: not-allowed; }
+.collaboration-account { display: flex; justify-content: flex-end; }
+.collaboration-avatar { display: grid; width: 39px; height: 39px; place-items: center; border-radius: 50%; background: #0b1015; color: #fff; font-size: 15px; font-weight: 700; }
+.collaboration-stage { min-height: 0; overflow: hidden; padding: 18px 22px 22px; background-color: #eef4f6; background-image: radial-gradient(circle at 1px 1px, rgba(27, 170, 199, .16) 1px, transparent 1.15px), radial-gradient(circle at 18% 8%, rgba(34, 213, 237, .13), transparent 25%), radial-gradient(circle at 82% 92%, rgba(90, 177, 210, .12), transparent 28%); background-size: 22px 22px, auto, auto; }
+.collaboration-workspace-grid { display: grid; height: 100%; min-height: 0; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; border: 1px solid rgba(215, 224, 229, .92); border-radius: 18px; background: rgba(255, 255, 255, .94); box-shadow: 0 22px 54px rgba(35, 57, 68, .1); backdrop-filter: blur(16px); }
+.collaboration-workspace-header { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 24px; padding: 18px 24px; border-bottom: 1px solid #e1e7ea; background: rgba(255, 255, 255, .97); }
+.workspace-identity { display: flex; min-width: 0; align-items: stretch; gap: 16px; }
+.workspace-signal { width: 3px; border-radius: 999px; background: linear-gradient(180deg, rgba(24, 209, 255, .35), #18d1ff 48%, rgba(24, 209, 255, .28)); box-shadow: 0 0 11px rgba(24, 209, 255, .25); }
+.workspace-identity > div { min-width: 0; }
+.workspace-identity p { margin: 0 0 6px; color: #71818d; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; letter-spacing: .11em; }
+.workspace-identity h1 { overflow: hidden; margin: 0 0 7px; color: #10171d; font-size: 24px; letter-spacing: -.035em; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-context-line { display: flex; align-items: center; gap: 8px; color: #75828c; font-size: 12px; }
+.workspace-context-line i { width: 7px; height: 7px; border-radius: 50%; background: #24c99a; box-shadow: 0 0 0 4px rgba(36, 201, 154, .1); }
+.workspace-context-line b { color: #bcc5ca; font-weight: 400; }
+.workspace-check-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
+.workspace-check-actions :deep(.el-button) { min-height: 44px; margin: 0; border-color: #dce4e8; border-radius: 8px; padding: 0 18px; background: #fff; color: #202b33; font-weight: 600; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.workspace-check-actions :deep(.el-button span span) { margin-left: 9px; color: #19bfe5; }
+.workspace-check-actions :deep(.el-button:not(:disabled):hover) { border-color: rgba(24, 198, 232, .35); color: #0b1116; box-shadow: 4px 5px 15px rgba(18, 195, 231, .18); transform: translateY(-1px); }
+.workspace-check-actions :deep(.el-button.is-primary-check) { border-color: #0b1116; background: #0b1116; color: #fff; box-shadow: 3px 4px 12px rgba(8, 16, 21, .14); }
+.workspace-check-actions :deep(.el-button.is-primary-check:not(:disabled):hover) { border-color: #0b1116; background: #0b1116; color: #fff; box-shadow: 4px 5px 16px rgba(18, 195, 231, .24); }
+.collaboration-workspace-body { display: grid; min-width: 0; min-height: 0; grid-template-columns: 264px minmax(0, 1fr); overflow: hidden; }
+.collaboration-tree-panel { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; border-right: 1px solid #e1e7eb; background: rgba(247, 249, 250, .86); }
+.collaboration-tree-panel > header { display: grid; gap: 5px; padding: 20px 20px 14px; }
+.collaboration-tree-panel > header span { color: #207f96; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 9px; letter-spacing: .16em; }
+.collaboration-tree-panel > header strong { font-size: 20px; letter-spacing: -.025em; }
+.collaboration-tree-panel :deep(.linked-context) { min-height: 0; overflow: auto; gap: 22px; padding: 0 12px 18px; }
+.collaboration-tree-panel :deep(.linked-context-title) { padding: 8px 8px 4px; color: #7c8993; font-size: 11px; }
+.collaboration-tree-panel :deep(.el-tree-node__content), .collaboration-tree-panel :deep(.related-document) { min-height: 38px; border-radius: 7px; }
+.collaboration-tree-panel :deep(.el-tree-node.is-current > .el-tree-node__content), .collaboration-tree-panel :deep(.related-document.is-active) { position: relative; background: #fff; color: #111820; box-shadow: 0 7px 18px rgba(33, 53, 64, .07); }
+.collaboration-tree-panel :deep(.el-tree-node.is-current > .el-tree-node__content::before), .collaboration-tree-panel :deep(.related-document.is-active::before) { position: absolute; top: 7px; bottom: 7px; left: 0; width: 3px; border-radius: 999px; background: #18d1ff; content: ''; }
+.linked-page-main { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto auto minmax(0, 1fr); gap: 8px; overflow: hidden; padding: 14px; background: #f7f9fa; }
 .linked-page-main > .linked-workbench-shell:first-child { grid-row: 1 / -1; }
+.linked-page-main :deep(.linked-workbench-shell) { overflow: hidden; border: 1px solid #dfe6ea; border-radius: 10px; background: #fff; box-shadow: none; }
+.linked-page-main :deep([data-testid="agent-check-button"]) { display: none; }
+.linked-page-main :deep(.linked-canvas) { grid-template-columns: minmax(320px, .96fr) 54px minmax(360px, 1.04fr); }
+.linked-page-main :deep(.linked-pane-header), .linked-page-main :deep(.document-pane-header) { min-height: 56px; padding: 10px 16px; }
+.linked-page-main :deep(.linked-pane-header strong), .linked-page-main :deep(.document-pane-header strong) { color: #151d23; font-size: 15px; }
+.linked-page-main :deep(.code-range-overlay.is-active) { border-color: rgba(24, 209, 255, .3); border-left-color: #18d1ff; background: rgba(226, 249, 253, .74); }
+.linked-page-main :deep(.anchor-rail) { border-color: #e1e7ea; background: linear-gradient(90deg, #fafcfc, #fff, #fafcfc); }
+.linked-page-main :deep(.rail-line) { width: 1px; background: #dce4e7; }
+.linked-page-main :deep(.rail-node) { border-color: #cdd7dc; color: #7c8a93; }
+.linked-page-main :deep(.rail-node.is-active) { border-color: #18d1ff; background: #0b1116; color: #fff; box-shadow: 0 0 0 4px rgba(24, 209, 255, .13); }
+.linked-page-main :deep(.paragraph-block.is-compact-reading.is-linked-active) { border-color: rgba(24, 209, 255, .35); background: #f1fbfc; }
+.linked-page-main :deep(.paragraph-block.is-compact-reading.is-linked-active::before) { background: #18d1ff; }
+.agent-check-dialog { display: grid; gap: 14px; }
+.agent-check-dialog p { margin: 0; color: #596772; font-size: 13px; }
 .project-scan-panel { display: grid; gap: 16px; }
 .project-scan-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
 .project-scan-stats div { padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }
@@ -1229,5 +1330,8 @@ function flattenDocumentTree(nodes: DocumentTreeNode[], depth = 0): LinkedDocume
 .project-scan-units { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .project-scan-units li { display: grid; gap: 3px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; }
 .project-scan-units span, .project-scan-hint { color: #64748b; font-size: 13px; }
-@media (max-width: 760px) { .linked-page-shell { height: auto; min-height: 100vh; overflow: visible; } .linked-page-main { min-height: 100vh; } }
+@media (max-width: 1180px) { .collaboration-topbar { grid-template-columns: auto 1fr auto; padding: 0 18px; } .collaboration-brand-name, .collaboration-beta { display: none; } .collaboration-navigation-item { min-width: 0; padding-inline: 12px; } .collaboration-workspace-body { grid-template-columns: 220px minmax(0, 1fr); } .workspace-check-actions :deep(.el-button) { padding-inline: 12px; } }
+@media (max-width: 820px) { .linked-page-shell { height: auto; min-height: 100vh; overflow: visible; } .collaboration-page { grid-template-rows: auto auto; } .collaboration-topbar { grid-template-columns: auto auto; gap: 12px; padding: 12px 14px; } .collaboration-navigation { grid-column: 1 / -1; grid-row: 2; overflow-x: auto; justify-self: stretch; } .collaboration-navigation-item { flex: 1 0 auto; } .collaboration-stage { overflow: visible; padding: 10px; } .collaboration-workspace-grid { height: auto; } .collaboration-workspace-header { align-items: flex-start; flex-direction: column; } .workspace-check-actions { width: 100%; overflow-x: auto; } .collaboration-workspace-body { grid-template-columns: 1fr; } .collaboration-tree-panel { max-height: 320px; border-right: 0; border-bottom: 1px solid #e1e7eb; } .linked-page-main { min-height: 720px; } }
+@media (orientation: portrait) and (max-width: 1024px) { .collaboration-workspace-header { align-items: flex-start; flex-direction: column; } .collaboration-workspace-body { grid-template-columns: 1fr; } .collaboration-tree-panel { max-height: 340px; border-right: 0; border-bottom: 1px solid #e1e7eb; } }
+@media (prefers-reduced-motion: reduce) { .collaboration-navigation-item, .linked-page-main :deep(.el-button) { transition: none !important; } }
 </style>

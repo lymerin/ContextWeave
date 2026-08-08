@@ -54,7 +54,7 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { onMounted, reactive, ref } from 'vue';
+import { onMounted, reactive, ref, watch } from 'vue';
 
 import {
   createCodeBinding,
@@ -66,7 +66,11 @@ import {
 } from '@/api/git';
 import { readableError } from '@/utils/error';
 
-const props = defineProps<{ workspaceId: string; documentId: string }>();
+const props = defineProps<{
+  workspaceId: string;
+  documentId: string;
+  refreshToken?: number;
+}>();
 const repositories = ref<GitRepository[]>([]);
 const bindings = ref<CodeDocumentBinding[]>([]);
 const loading = ref(false);
@@ -75,6 +79,17 @@ const dialogVisible = ref(false);
 const form = reactive({ repositoryId: '', pathPattern: '', blockId: '' });
 
 onMounted(() => void load());
+
+// 内容块被删除会级联删除其绑定（DB ON DELETE CASCADE）：
+// 父组件在块删除后 bump refreshToken，这里重新拉取，避免残留已删块的旧关联。
+watch(
+  () => props.refreshToken,
+  () => {
+    if (props.refreshToken) {
+      void load();
+    }
+  },
+);
 
 async function load() {
   loading.value = true;

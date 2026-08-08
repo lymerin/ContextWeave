@@ -14,6 +14,11 @@
   box-sizing: border-box;
 }
 
+html {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
 body {
   min-width: 320px;
   min-height: 100vh;
@@ -349,7 +354,9 @@ body.is-resizing-sidebar .app-shell {
 }
 
 .topbar {
+  position: relative;
   display: flex;
+  min-height: 72px;
   align-items: center;
   justify-content: space-between;
   gap: 18px;

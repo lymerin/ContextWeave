@@ -141,7 +141,7 @@ describe('HomeView workspace deletion', () => {
 
     expect(wrapper.find('.workspace-selection-page').exists()).toBe(true);
     expect(wrapper.find('.app-shell').exists()).toBe(false);
-    expect(wrapper.get('.workspace-selection-nav-item.is-active').text())
+    expect(wrapper.get('.platform-navigation .is-active').text())
       .toContain('协作空间');
     expect(wrapper.text()).not.toContain('文档总览');
     expect(wrapper.get('.workspace-card-stats').text()).toContain('1 篇文档');

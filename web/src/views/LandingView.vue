@@ -16,20 +16,7 @@
         <span class="landing-beta">BETA</span>
       </button>
 
-      <nav class="landing-navigation" aria-label="主导航">
-        <button
-          v-for="item in navigationItems"
-          :key="item.label"
-          class="landing-nav-item"
-          :class="{ 'is-active': item.target === null }"
-          type="button"
-          :aria-current="item.target === null ? 'page' : undefined"
-          @click="item.target ? enterProtected(item.target) : scrollToTop()"
-        >
-          {{ item.label }}
-          <span v-if="item.target === null" aria-hidden="true" />
-        </button>
-      </nav>
+      <PlatformNavigation active="home" />
 
       <div class="landing-account">
         <span
@@ -82,10 +69,11 @@
             :key="metric.label"
             class="landing-metric"
             type="button"
+            :disabled="metric.icon === 'reviews'"
             :title="metric.icon === 'reviews' && authStore.isAuthenticated
               ? '待处理审阅来自现有工作区'
               : `${metric.label}为演示数据，登录后查看实际状态`"
-            @click="enterProtected(metric.target)"
+            @click="metric.icon !== 'reviews' && enterProtected(metric.target)"
           >
             <span
               class="landing-metric-icon"
@@ -221,12 +209,9 @@ import { listDocumentTree, type DocumentTreeNode } from '@/api/document';
 import { getPendingDocumentChangeCount } from '@/api/documentChange';
 import { listWorkspaces, type Workspace } from '@/api/workspace';
 import { useAuthStore } from '@/stores/auth';
+import PlatformNavigation from '@/components/layout/PlatformNavigation.vue';
 import { orderWorkspacesByRecent, recordWorkspaceVisit } from '@/utils/workspaceRecent';
 
-interface NavigationItem {
-  label: string;
-  target: string | null;
-}
 
 interface LandingMetric {
   label: string;
@@ -249,13 +234,6 @@ const router = useRouter();
 const workspaceLoading = ref(false);
 const workspaceLoadFailed = ref(false);
 
-const navigationItems: NavigationItem[] = [
-  { label: '总览', target: null },
-  { label: '协作空间', target: '/workspaces' },
-  { label: '审阅中心', target: '/workspaces?section=reviews' },
-  { label: '工作流', target: '/workspaces?section=workflows' },
-  { label: '运行记录', target: '/workspaces?section=runs' },
-];
 
 const metrics = ref<LandingMetric[]>([
   {
@@ -811,6 +789,14 @@ function scrollToTop() {
     0 7px 13px -11px rgb(24 201 239 / 42%);
   transform: translateY(0);
   transition-duration: 80ms;
+}
+.landing-metric:disabled {
+  cursor: default;
+}
+.landing-metric:disabled:hover {
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
 }
 
 .landing-metric-icon {

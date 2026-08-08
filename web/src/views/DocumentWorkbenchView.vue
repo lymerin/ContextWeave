@@ -15,6 +15,11 @@
           <p class="eyebrow">Document Workbench</p>
           <h1>{{ document?.title || '文档工作台' }}</h1>
         </div>
+        <WorkspaceContextNavigation
+          :workspace-id="workspaceId"
+          :document-id="documentId"
+          active="documents"
+        />
         <div class="topbar-actions">
           <NotificationCenter />
           <el-button :icon="Back" @click="router.push(`/workspaces/${workspaceId}`)">
@@ -59,6 +64,7 @@
               :save-via-collaboration="saveBlockViaCollaboration"
               @editing-start="startEditing"
               @editing-stop="stopEditing"
+              @block-deleted="handleBlockDeleted"
             />
           </template>
 
@@ -184,6 +190,7 @@
                 v-if="document"
                 :workspace-id="workspaceId"
                 :document-id="document.id"
+                :refresh-token="bindingRefreshToken"
               />
             </el-tab-pane>
           </el-tabs>
@@ -222,6 +229,7 @@ import ReviewIssuePanel from '@/components/document/ReviewIssuePanel.vue';
 import CodeBindingPanel from '@/components/document/CodeBindingPanel.vue';
 import VersionHistoryPanel from '@/components/document/VersionHistoryPanel.vue';
 import BlockEditor from '@/components/editor/BlockEditor.vue';
+import WorkspaceContextNavigation from '@/components/layout/WorkspaceContextNavigation.vue';
 import { readableError } from '@/utils/error';
 import { useDocumentCollaboration } from '@/composables/useDocumentCollaboration';
 
@@ -240,6 +248,8 @@ const errorMessage = ref('');
 const busyAction = ref<'submit' | 'approve' | 'reject' | 'deprecate' | null>(null);
 const rightTab = ref<'timeline' | 'issues' | 'versions' | 'collaboration' | 'code'>('timeline');
 const focusBlockId = ref<string | null>(null);
+// 块被删除后 +1：代码关联面板据此重新拉取（删除块会级联删除其绑定）
+const bindingRefreshToken = ref(0);
 const sidebarCollapsed = ref(
   localStorage.getItem('devcollab.sidebar.collapsed') === 'true',
 );
@@ -344,6 +354,10 @@ function openDocument(nextDocumentId: string) {
       documentId: nextDocumentId,
     },
   });
+}
+
+function handleBlockDeleted(_blockId: string) {
+  bindingRefreshToken.value += 1;
 }
 
 async function saveBlockViaCollaboration(

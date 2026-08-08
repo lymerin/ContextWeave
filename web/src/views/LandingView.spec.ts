@@ -57,15 +57,13 @@ describe('LandingView protected entry points', () => {
 
   it('returns a guest to the homepage after login from public navigation', async () => {
     const wrapper = mount(LandingView);
-    const documents = wrapper.findAll('.landing-nav-item')
+    const documents = wrapper.findAll('.platform-navigation button')
       .find(button => button.text().includes('协作空间'))!;
 
     await documents.trigger('click');
+    await new Promise(resolve => setTimeout(resolve, 220));
 
-    expect(mocks.routerPush).toHaveBeenCalledWith({
-      name: 'login',
-      query: { redirect: '/' },
-    });
+    expect(mocks.routerPush).toHaveBeenCalledWith('/workspaces');
   });
 
   it('sends the avatar to login for guests', async () => {

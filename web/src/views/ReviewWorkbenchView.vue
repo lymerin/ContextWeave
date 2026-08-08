@@ -1,21 +1,29 @@
 <template>
-  <main class="app-shell review-page-shell" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
-    <AppSidebar
-      v-model="sidebarCollapsed"
-      active="code"
-      :workspace-id="workspaceId"
-      linked-navigation-active="review"
-      :linked-count="0"
-      :review-count="backgroundActivity.pendingReviewCount"
-      :review-status="routeStatus"
-      :review-status-counts="statusCounts"
-      :drift-count="0"
-      @open-linked="openLinkedWorkbench"
-      @open-review="openStatus('pending')"
-      @open-review-status="openStatus"
-      @open-drift="openLinkedWorkbench"
-    >
-    </AppSidebar>
+  <main
+    class="review-page-shell"
+    data-ark-theme="ark"
+    data-ark-depth="moderate"
+  >
+    <header class="review-topbar">
+      <button
+        class="review-brand"
+        type="button"
+        aria-label="返回 ContextWeave 首页"
+        @click="navigatePrimary('/')"
+      >
+        <span class="review-brand-logo" aria-hidden="true"><span /></span>
+        <span class="review-brand-name">ContextWeave</span>
+        <span class="review-brand-beta">BETA</span>
+      </button>
+
+      <WorkspaceContextNavigation :workspace-id="workspaceId" active="reviews" />
+
+      <div class="review-account">
+        <span class="review-avatar" :aria-label="`当前用户：${currentUserName}`">
+          {{ currentUserInitial }}
+        </span>
+      </div>
+    </header>
 
     <section class="review-page-main">
       <el-alert
@@ -32,10 +40,10 @@
 
       <section v-if="!requestId" class="review-list-shell">
         <header class="review-list-header">
-          <div>
-            <p>Code ↔ Doc Linked Workspace · 待我评审</p>
-            <h1>{{ statusHeading }}</h1>
-            <span>{{ workspace?.name || '工作区' }} · {{ pageData.totalElements }} 条变更请求</span>
+          <div class="review-list-heading">
+            <p>DOCUMENT REVIEW / QUEUE</p>
+            <h1>文档审查</h1>
+            <span>{{ workspace?.name || '工作区' }} · 当前状态 {{ pageData.totalElements }} 条真实请求</span>
           </div>
           <div class="review-list-tools">
             <el-input
@@ -51,18 +59,31 @@
           </div>
         </header>
 
-        <el-skeleton v-if="loading" :rows="9" animated />
-        <el-empty
-          v-else-if="filteredItems.length === 0"
-          :description="`${statusHeading}暂无文档变更请求`"
-        />
-        <div v-else class="review-request-list">
+        <nav class="review-status-tabs" aria-label="审查状态">
           <button
+            v-for="status in reviewStatuses"
+            :key="status"
+            type="button"
+            :class="{ 'is-active': routeStatus === status }"
+            :aria-current="routeStatus === status ? 'page' : undefined"
+            @click="openStatus(status)"
+          >
+            <span>{{ reviewRouteLabels[status] }}</span>
+            <strong>{{ statusCounts[status] }}</strong>
+          </button>
+        </nav>
+
+        <div class="review-list-body">
+          <el-skeleton v-if="loading" :rows="9" animated />
+          <el-empty
+            v-else-if="filteredItems.length === 0"
+            :description="`${statusHeading}暂无文档变更请求`"
+          />
+          <div v-else class="review-request-list">
+          <article
             v-for="item in filteredItems"
             :key="item.id"
-            type="button"
             class="review-request-item"
-            @click="openRequest(item.id)"
           >
             <div class="request-state">
               <span :class="`is-${item.status.toLowerCase()}`">{{ reviewStatusLabels[item.status] }}</span>
@@ -71,15 +92,23 @@
               <strong>{{ item.summary }}</strong>
               <p>{{ item.affectedDocumentTitles.join('、') || '未命名文档变更' }}</p>
               <small>
-                {{ item.submittedByDisplayName }} · {{ formatDate(item.createdAt) }}
+                {{ item.submittedByDisplayName }} · {{ formatDate(item.createdAt) }} · {{ item.sourceType }} 提交
               </small>
             </div>
             <dl>
               <div><dt>Operations</dt><dd>{{ item.operationCount }}</dd></div>
               <div><dt>Evidence</dt><dd>{{ item.evidenceCount }}</dd></div>
             </dl>
-            <span class="request-arrow">›</span>
-          </button>
+            <button
+              class="review-enter-button"
+              type="button"
+              :aria-label="`进入审查：${item.summary}`"
+              @click="openRequest(item.id)"
+            >
+              进入审查 <span aria-hidden="true">↗</span>
+            </button>
+          </article>
+          </div>
         </div>
 
         <el-pagination
@@ -95,55 +124,52 @@
 
       <section v-else class="review-detail-shell">
         <header class="review-detail-header">
-          <div>
-            <button type="button" @click="openStatus(routeStatus)">待我评审</button>
-            <span>/</span>
-            <strong>{{ detail?.request.summary || '加载评审请求' }}</strong>
-          </div>
-          <p>
-            {{ workspace?.name || '工作区' }} ·
-            {{ activeRepository?.name || '未选择仓库' }} ·
-            {{ activeRepository?.defaultBranch || '-' }} ·
-            {{ shortCommit }}
-          </p>
-        </header>
-
-        <section
-          v-if="detail?.request.status === 'APPLIED'"
-          class="review-apply-result"
-          data-test="review-apply-result"
-        >
-          <div>
-            <strong>文档变更已应用</strong>
-            <span>阅读现场不会自动切换；请选择需要查看的应用结果。</span>
-          </div>
-          <el-skeleton v-if="appliedTargetsLoading" :rows="1" animated />
-          <div v-else-if="appliedNavigationTargets.length" class="review-apply-targets">
-            <div
-              v-for="target in appliedNavigationTargets"
-              :key="`${target.repositoryId}:${target.documentId}`"
-              class="review-apply-target"
-            >
-              <span>
-                <strong>{{ target.documentTitle || target.documentId }}</strong>
-                <small v-if="target.filePath">{{ target.filePath }}</small>
-                <small v-else>该文档暂无可定位的正式代码 Binding</small>
+          <div class="review-detail-heading">
+            <p>REVIEW / {{ routeStatus.toUpperCase() }} / {{ activeOperationIndexLabel }}</p>
+            <div class="review-detail-titleline">
+              <h1>{{ detail?.request.summary || '加载评审请求' }}</h1>
+              <span v-if="detail" class="review-detail-status">
+                {{ reviewStatusLabels[detail.request.status] }}
               </span>
-              <el-button
-                size="small"
-                type="primary"
-                plain
-                :disabled="!target.filePath"
-                @click="viewAppliedTarget(target)"
-              >
-                查看应用结果
-              </el-button>
             </div>
+            <span class="review-detail-meta">
+              {{ workspace?.name || '工作区' }} ·
+              {{ operationDocumentTitleLabel }} ·
+              commit {{ shortCommit }} ·
+              {{ detail?.operations.length || 0 }} 项变更
+            </span>
           </div>
-          <span v-else class="review-apply-empty">
-            应用响应中暂无可确认的真实文档与 Binding，不会猜测跳转目标。
-          </span>
-        </section>
+          <div class="review-detail-context">
+            <button type="button" class="review-detail-linked" @click="openLinkedWorkbench">
+              返回工作台 <span aria-hidden="true">↗</span>
+            </button>
+            <button
+              v-if="detail?.request.status === 'PENDING'"
+              type="button"
+              class="review-detail-action"
+              :disabled="decisionLoading"
+              @click="openRejectDialog"
+            >退回修改</button>
+            <button
+              v-if="detail?.request.status === 'PENDING'"
+              type="button"
+              class="review-detail-action is-primary"
+              :disabled="decisionLoading || hasOperationConflict"
+              @click="confirmApply"
+            >通过审查 <span aria-hidden="true">↗</span></button>
+            <button
+              v-for="target in detail?.request.status === 'APPLIED' ? appliedNavigationTargets : []"
+              :key="`${target.repositoryId}:${target.documentId}`"
+              type="button"
+              class="review-detail-action is-primary"
+              :title="target.filePath || '暂无可定位的代码绑定'"
+              :disabled="!target.filePath"
+              @click="viewAppliedTarget(target)"
+            >
+              查看应用结果 <span aria-hidden="true">↗</span>
+            </button>
+          </div>
+        </header>
 
         <el-skeleton v-if="detailViewState === 'loading'" :rows="12" animated />
         <el-empty
@@ -212,16 +238,22 @@
         >
           <ReviewCodeEvidencePane
             :evidence="activeEvidence"
-            :source-content="manualSource?.content"
-            :source-path="manualSource?.path"
-            :source-commit="manualSource?.commitSha"
-            :source-repository="activeRepository?.name"
+            :binding="activeBinding"
+            :loading="bindingLoading"
+            :source-content="boundSource?.content"
+            :source-path="boundSource?.path"
+            :source-commit="boundSource?.commitSha"
+            :source-repository="boundRepositoryName"
+            :source-mode="boundCodeSourceMode"
           />
           <ReviewDocumentPane
             :operation="activeOperation"
+            :operations="detail.operations"
+            :active-operation-id="activeOperation.operationId"
             :request-status="detail.request.status"
             :blocks="documentBlocks"
             :loading="documentLoading"
+            @select-operation="selectOperation"
           />
           <ReviewInspector
             :detail="detail"
@@ -229,6 +261,7 @@
             :active-evidence-id="activeEvidence?.id || null"
             :open="inspectorOpen"
             :decision-loading="decisionLoading"
+            :has-code-context="Boolean(activeBinding || boundSource || activeEvidence)"
             @toggle="inspectorOpen = !inspectorOpen"
             @select-operation="selectOperation"
             @select-evidence="selectEvidence"
@@ -241,17 +274,41 @@
 
     <el-dialog
       v-model="applyDialogOpen"
-      title="批准并应用文档变更"
-      width="460px"
+      width="520px"
       append-to-body
+      class="review-apply-dialog"
     >
-      <p>将以单个数据库事务应用 {{ detail?.operations.length || 0 }} 个 Operation。</p>
-      <p>应用前会再次校验目标 Block 版本；发生冲突时不会覆盖人工修改。</p>
+      <template #header>
+        <div class="review-dialog-heading">
+          <small>REVIEW / APPLY</small>
+          <h2>批准并应用文档变更</h2>
+          <p>确认后将一次性写入本次审查通过的变更</p>
+        </div>
+      </template>
+
+      <div class="review-dialog-summary">
+        <div>
+          <small>OPERATIONS</small>
+          <strong>{{ detail?.operations.length || 0 }}</strong>
+          <span>项变更</span>
+        </div>
+        <div>
+          <small>APPLY MODE</small>
+          <strong>单事务</strong>
+          <span>全部成功后生效</span>
+        </div>
+      </div>
+
+      <div class="review-dialog-safety">
+        <span aria-hidden="true">✓</span>
+        <p><strong>版本与冲突保护</strong>应用前会重新校验目标 Block 版本；如检测到冲突，不会覆盖人工修改。</p>
+      </div>
       <template #footer>
-        <el-button @click="applyDialogOpen = false">取消</el-button>
-        <el-button type="primary" :loading="decisionLoading" @click="applyRequest">
-          确认批准并应用
-        </el-button>
+        <button class="review-dialog-cancel" type="button" @click="applyDialogOpen = false">取消</button>
+        <button class="review-dialog-confirm" type="button" :disabled="decisionLoading" @click="applyRequest">
+          {{ decisionLoading ? '正在应用' : '批准并应用' }}
+          <span aria-hidden="true">↗</span>
+        </button>
       </template>
     </el-dialog>
 
@@ -304,18 +361,20 @@ import {
 } from '@/api/documentChange';
 import {
   getGitRepositorySource,
+  listCodeBindingsContext,
   listGitRepositories,
   listGitRepositoryFiles,
   queryCodeBindings,
   type GitRepository,
   type GitRepositoryFile,
   type GitRepositorySource,
+  type CodeBindingContextItem,
 } from '@/api/git';
 import { getWorkspace, type Workspace } from '@/api/workspace';
-import AppSidebar from '@/components/layout/AppSidebar.vue';
 import ReviewCodeEvidencePane from '@/components/review/ReviewCodeEvidencePane.vue';
 import ReviewDocumentPane from '@/components/review/ReviewDocumentPane.vue';
 import ReviewInspector from '@/components/review/ReviewInspector.vue';
+import WorkspaceContextNavigation from '@/components/layout/WorkspaceContextNavigation.vue';
 import {
   createLinkedWorkbenchSnapshot,
   useLinkedWorkbenchNavigation,
@@ -330,6 +389,7 @@ import {
   type AppliedReviewNavigationTarget,
 } from '@/utils/linkedReviewNavigation';
 import { useBackgroundActivityStore } from '@/stores/backgroundActivity';
+import { useAuthStore } from '@/stores/auth';
 
 type ReviewRouteStatus = 'pending' | 'applied' | 'rejected' | 'stale';
 type ReviewDetailViewState =
@@ -342,6 +402,7 @@ type ReviewDetailViewState =
 const route = useRoute();
 const router = useRouter();
 const backgroundActivity = useBackgroundActivityStore();
+const authStore = useAuthStore();
 const workspaceId = computed(() => String(route.params.workspaceId || ''));
 const requestId = computed(() => String(route.params.requestId || ''));
 const routeStatus = computed<ReviewRouteStatus>(() => (
@@ -357,6 +418,10 @@ const selectedRepositoryId = ref('');
 const files = ref<GitRepositoryFile[]>([]);
 const selectedFilePath = ref('');
 const manualSource = ref<GitRepositorySource | null>(null);
+const boundSource = ref<GitRepositorySource | null>(null);
+const activeBinding = ref<CodeBindingContextItem | null>(null);
+const bindingLoading = ref(false);
+const boundCodeSourceMode = ref<'binding' | 'evidence' | 'repository-default' | null>(null);
 const loading = ref(false);
 const detailLoading = ref(Boolean(requestId.value));
 const detailNotFound = ref(false);
@@ -375,7 +440,13 @@ const rejectDialogOpen = ref(false);
 const rejectReason = ref('');
 const appliedNavigationTargets = ref<AppliedReviewNavigationTarget[]>([]);
 const appliedTargetsLoading = ref(false);
-const sidebarCollapsed = ref(localStorage.getItem('devcollab.sidebar.collapsed') === 'true');
+const reviewStatuses: ReviewRouteStatus[] = ['pending', 'applied', 'rejected', 'stale'];
+const reviewRouteLabels: Record<ReviewRouteStatus, string> = {
+  pending: '待审查',
+  applied: '已应用',
+  rejected: '已拒绝',
+  stale: '已失效',
+};
 const statusCounts = ref<Record<ReviewRouteStatus, number>>({
   pending: 0,
   applied: 0,
@@ -393,6 +464,7 @@ const pageData = ref<DocumentChangePage>({
 let detailRequestGeneration = 0;
 let operationDocumentGeneration = 0;
 let appliedTargetGeneration = 0;
+let bindingRequestGeneration = 0;
 const linkedNavigation = useLinkedWorkbenchNavigation(() => null);
 const globalReviewRefreshVersion = computed(() => (
   backgroundActivity.reviewRefreshVersion(workspaceId.value)
@@ -411,6 +483,24 @@ const activeEvidence = computed<DocumentChangeEvidence | null>(() =>
     detail.value?.requestEvidence ?? [],
     typeof route.query.evidenceId === 'string' ? route.query.evidenceId : null,
   ));
+const activeOperationIndexLabel = computed(() => {
+  const operations = detail.value?.operations ?? [];
+  const index = activeOperation.value
+    ? operations.findIndex(item => item.operationId === activeOperation.value?.operationId)
+    : -1;
+  return String(Math.max(1, index + 1)).padStart(2, '0');
+});
+const operationDocumentTitleLabel = computed(() => activeOperation.value
+  ? activeOperation.value.target.documentTitle
+    || activeOperation.value.proposal?.documentTitle
+    || '待创建文档'
+  : '未选择文档');
+const hasOperationConflict = computed(() => detail.value?.operations.some(
+  item => item.conflict?.conflicted,
+) ?? false);
+const boundRepositoryName = computed(() => repositories.value.find(
+  item => item.id === (activeBinding.value?.repositoryId || activeEvidence.value?.repository.id),
+)?.name || activeEvidence.value?.repository.name || '仓库代码');
 const filteredItems = computed(() => {
   const keyword = searchText.value.trim().toLocaleLowerCase();
   if (!keyword) return pageData.value.items;
@@ -433,6 +523,12 @@ const shortCommit = computed(() => (
   || activeRepository.value?.lastSyncedCommit
   || '尚无 Commit'
 ).slice(0, 10));
+const currentUserName = computed(() => (
+  authStore.currentUser?.displayName
+  || authStore.currentUser?.username
+  || '用户'
+));
+const currentUserInitial = computed(() => currentUserName.value.trim().slice(0, 1) || '用');
 
 onMounted(() => {
   backgroundActivity.setActiveWorkspace(workspaceId.value);
@@ -489,7 +585,10 @@ watch(
   },
 );
 
-watch(activeOperation, () => void loadOperationDocument(), { flush: 'post' });
+watch(activeOperation, () => {
+  void loadOperationDocument();
+  void loadBoundCode();
+}, { flush: 'post' });
 watch(sort, () => {
   if (!requestId.value) {
     page.value = 0;
@@ -636,6 +735,74 @@ async function normalizeDetailSelection() {
     selectedFilePath.value = '';
   }
   await loadOperationDocument();
+  await loadBoundCode();
+}
+
+async function loadBoundCode() {
+  const operation = activeOperation.value;
+  const generation = ++bindingRequestGeneration;
+  activeBinding.value = null;
+  boundSource.value = null;
+  boundCodeSourceMode.value = null;
+  if (!operation) return;
+
+  bindingLoading.value = true;
+  const documentId = operation.target.documentId;
+  if (documentId) {
+    try {
+      const bindings = await listCodeBindingsContext(documentId, {
+        revision: activeEvidence.value?.commitHash || undefined,
+        includeLegacy: true,
+      });
+      if (generation !== bindingRequestGeneration) return;
+      activeBinding.value = bindings.find(item => (
+        item.blockId === operation.target.blockId && item.bindingRole === 'PRIMARY'
+      )) || bindings.find(item => item.blockId === operation.target.blockId)
+        || bindings.find(item => item.bindingRole === 'PRIMARY')
+        || bindings[0]
+        || null;
+      if (activeBinding.value) boundCodeSourceMode.value = 'binding';
+    } catch {
+      if (generation !== bindingRequestGeneration) return;
+      activeBinding.value = null;
+    }
+  }
+
+  try {
+    const binding = activeBinding.value;
+    const evidence = activeEvidence.value;
+    const proposal = detail.value?.bindingProposals.find(item => (
+      item.documentTarget.blockId === operation.target.blockId
+      || item.documentTarget.documentId === operation.target.documentId
+    ));
+    let repositoryId = binding?.repositoryId || evidence?.repository.id || proposal?.repository.id;
+    let path = binding?.matchedFilePath || evidence?.filePath || proposal?.filePath;
+    if (!repositoryId || !path) {
+      const fallbackRepository = repositories.value.find(item => item.id === selectedRepositoryId.value)
+        || repositories.value[0];
+      if (fallbackRepository && selectedRepositoryId.value !== fallbackRepository.id) {
+        selectedRepositoryId.value = fallbackRepository.id;
+        await loadRepositoryFiles();
+      }
+      const fallbackFile = files.value.find(file => file.readable) || files.value[0];
+      repositoryId = fallbackRepository?.id;
+      path = fallbackFile?.path;
+      if (repositoryId && path) boundCodeSourceMode.value = 'repository-default';
+    } else if (!binding) {
+      boundCodeSourceMode.value = evidence ? 'evidence' : 'repository-default';
+    }
+    if (!repositoryId || !path) return;
+
+    selectedRepositoryId.value = repositoryId;
+    selectedFilePath.value = path;
+    const source = await getGitRepositorySource(workspaceId.value, repositoryId, path);
+    if (generation === bindingRequestGeneration) boundSource.value = source;
+  } catch {
+    // The saved Evidence excerpt remains visible when repository source is unavailable.
+    boundSource.value = null;
+  } finally {
+    if (generation === bindingRequestGeneration) bindingLoading.value = false;
+  }
 }
 
 async function loadOperationDocument() {
@@ -767,6 +934,10 @@ function openStatus(status: ReviewRouteStatus) {
       repositoryId: selectedRepositoryId.value || undefined,
     },
   });
+}
+
+function navigatePrimary(target: string) {
+  void router.push(target);
 }
 
 function openRequest(id: string) {
@@ -901,102 +1072,349 @@ function formatDate(value: string) {
 
 <style scoped>
 .review-page-shell {
-  height: 100vh;
+  --review-ink: #090c0e;
+  --review-paper: #f5f7f7;
+  --review-signal: #18c9ef;
+  --review-muted: #6d787d;
+  min-height: 100svh;
+  height: 100svh;
+  display: grid;
+  grid-template-rows: 72px minmax(0, 1fr);
   overflow: hidden;
+  color: var(--review-ink);
+  background:
+    radial-gradient(circle at 12% 8%, rgb(24 201 239 / 9%), transparent 26%),
+    radial-gradient(circle at 80% 90%, rgb(112 157 255 / 8%), transparent 28%),
+    radial-gradient(circle, rgb(40 76 89 / 10%) 1px, transparent 1.15px),
+    var(--review-paper);
+  background-size: auto, auto, 18px 18px, auto;
+}
+
+.review-topbar {
+  position: relative;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(250px, 1fr) auto minmax(190px, 1fr);
+  align-items: center;
+  gap: 24px;
+  padding: 0 36px;
+  border-bottom: 1px solid rgb(15 26 31 / 8%);
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 10px 32px rgb(38 56 67 / 6%);
+}
+
+.review-brand,
+.review-navigation,
+.review-navigation-item,
+.review-account,
+.review-enter-button {
+  display: flex;
+  align-items: center;
+}
+
+.review-brand {
+  width: max-content;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.review-brand-logo {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--review-ink);
+}
+
+.review-brand-logo::before,
+.review-brand-logo::after,
+.review-brand-logo span {
+  position: absolute;
+  left: 9px;
+  width: 20px;
+  height: 2px;
+  content: "";
+  background: var(--review-signal);
+  transform: skewX(-28deg);
+}
+
+.review-brand-logo::before { top: 11px; }
+.review-brand-logo span { top: 18px; width: 13px; }
+.review-brand-logo::after { top: 25px; }
+
+.review-brand-name {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.review-brand-beta,
+.review-list-heading p,
+.request-state span,
+.review-request-item dt {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  letter-spacing: 0.1em;
+}
+
+.review-brand-beta {
+  padding: 3px 7px;
+  border: 1px solid #e2e8eb;
+  border-radius: 4px;
+  background: #f0f3f5;
+  color: #566066;
+  font-size: 10px;
+}
+
+.review-navigation {
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid #e4e9ec;
+  border-radius: 999px;
+  background: #eef1f3;
+}
+
+.review-navigation-item {
+  min-height: 36px;
+  gap: 7px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #6d777c;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: color 180ms ease, background 180ms ease, transform 180ms ease;
+}
+
+.review-navigation-item:hover:not(:disabled) { color: var(--review-ink); }
+.review-navigation-item:active:not(:disabled) { transform: translateY(1px); }
+.review-navigation-item:disabled { cursor: not-allowed; opacity: 0.62; }
+
+.review-navigation-item.is-active {
+  background: var(--review-ink);
+  box-shadow: 0 5px 16px rgb(9 12 14 / 20%);
+  color: #fff;
+  cursor: default;
+  opacity: 1;
+}
+
+.review-navigation-item.is-active span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--review-signal);
+}
+
+.review-account {
+  justify-content: flex-end;
+  gap: 11px;
+}
+
+.review-avatar {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--review-ink);
+  color: #fff;
+  font-weight: 650;
 }
 
 .review-page-main {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   overflow: hidden;
-  padding: 12px 14px 0;
-  background: #f2f5f9;
+  padding: 30px max(24px, calc((100vw - 1760px) / 2)) 34px;
 }
 
 .review-list-shell,
 .review-detail-shell {
   min-width: 0;
   min-height: 0;
-  border: 1px solid #dfe6f0;
-  border-radius: 10px 10px 0 0;
-  background: #fff;
+  flex: 1;
+  border: 1px solid rgb(255 255 255 / 84%);
+  border-radius: 22px;
+  background: rgb(255 255 255 / 76%);
+  box-shadow: 0 18px 52px rgb(39 59 70 / 6%);
+  backdrop-filter: blur(20px);
   overflow: hidden;
 }
 
 .review-list-shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  padding-bottom: 18px;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  padding: 34px 38px 22px;
 }
 
 .review-list-header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 24px 26px 18px;
-  border-bottom: 1px solid #e4e9f1;
+  padding: 0 0 24px;
 }
 
 .review-list-header p,
 .review-detail-header p {
   margin: 0;
-  color: #667085;
-  font-size: 11px;
+  color: #76909a;
+  font-size: 9px;
 }
 
 .review-list-header h1 {
-  margin: 4px 0;
-  color: #101828;
-  font-size: 26px;
+  margin: 8px 0 10px;
+  color: var(--review-ink);
+  font-size: clamp(34px, 4vw, 46px);
+  letter-spacing: -0.055em;
+  line-height: 1;
 }
 
 .review-list-header span {
-  color: #667085;
-  font-size: 12px;
+  color: var(--review-muted);
+  font-size: 13px;
 }
 
 .review-list-tools {
   display: grid;
-  width: min(560px, 52%);
-  grid-template-columns: minmax(180px, 1fr) 130px auto;
+  width: min(580px, 54%);
+  grid-template-columns: minmax(210px, 1fr) 136px 72px;
   gap: 8px;
 }
 
-.review-request-list {
+.review-list-tools :deep(.el-input__wrapper),
+.review-list-tools :deep(.el-select__wrapper),
+.review-list-tools :deep(.el-button) {
+  min-height: 42px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px #dfe6e9 inset;
+}
+
+.review-list-tools :deep(.el-input__wrapper.is-focus),
+.review-list-tools :deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 1px var(--review-signal) inset;
+}
+
+.review-status-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid #e4e9ec;
+  border-radius: 12px;
+  background: #f0f3f4;
+}
+
+.review-status-tabs button {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #657177;
+  cursor: pointer;
+  transition: color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+
+.review-status-tabs strong {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgb(9 12 14 / 6%);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-status-tabs button:hover { color: var(--review-ink); }
+.review-status-tabs button.is-active {
+  background: #fff;
+  box-shadow: 0 5px 15px rgb(40 58 66 / 8%);
+  color: var(--review-ink);
+  font-weight: 650;
+}
+
+.review-status-tabs button.is-active::before {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--review-signal);
+  content: "";
+}
+
+.review-list-body {
   min-height: 0;
   overflow: auto;
-  padding: 14px 22px;
+  margin: 18px -8px 0;
+  padding: 0 8px 14px;
+}
+
+.review-request-list {
+  display: grid;
+  gap: 10px;
 }
 
 .review-request-item {
+  position: relative;
   display: grid;
   width: 100%;
-  grid-template-columns: 94px minmax(0, 1fr) 210px 28px;
+  grid-template-columns: 94px minmax(0, 1fr) 210px auto;
   align-items: center;
   gap: 16px;
-  margin-bottom: 9px;
-  border: 1px solid #e1e7ef;
-  border-radius: 9px;
-  padding: 15px 16px;
-  background: #fff;
+  overflow: hidden;
+  border: 1px solid #e5eaec;
+  border-radius: 12px;
+  padding: 15px 16px 15px 22px;
+  background:
+    linear-gradient(135deg, transparent 0 82%, rgb(24 201 239 / 2.8%) 82% 100%),
+    #f6f8f8;
   color: #344054;
   text-align: left;
-  cursor: pointer;
+  transition: border-color 180ms ease, box-shadow 220ms ease, transform 180ms ease;
 }
 
-.review-request-item:hover {
-  border-color: #b8ccff;
-  background: #fbfdff;
-  box-shadow: 0 5px 18px rgb(16 24 40 / 6%);
+.review-request-item::before {
+  position: absolute;
+  top: 19px;
+  bottom: 19px;
+  left: 7px;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgb(24 201 239 / 18%), var(--review-signal), rgb(24 201 239 / 22%));
+  box-shadow: 0 0 10px rgb(24 201 239 / 30%);
+  content: "";
+  opacity: 0;
+  transform: scaleY(0.62);
+  transition: opacity 180ms ease, transform 220ms ease;
+}
+
+.review-request-item:hover,
+.review-request-item:focus-within {
+  border-color: rgb(24 201 239 / 22%);
+  box-shadow:
+    7px 7px 15px -13px rgb(24 201 239 / 72%),
+    0 12px 22px -19px rgb(24 201 239 / 68%);
+  transform: translateY(-1px);
+}
+
+.review-request-item:hover::before,
+.review-request-item:focus-within::before {
+  opacity: 1;
+  transform: scaleY(1);
 }
 
 .request-state span {
   display: inline-flex;
-  border-radius: 5px;
+  border-radius: 4px;
   padding: 4px 8px;
   background: #edf3ff;
   color: #175cd3;
@@ -1063,14 +1481,44 @@ function formatDate(value: string) {
   font-weight: 700;
 }
 
-.request-arrow {
-  color: #98a2b3;
-  font-size: 25px;
+.review-enter-button {
+  min-height: 42px;
+  justify-content: center;
+  padding: 0 15px;
+  border: 1px solid #dfe6e9;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--review-ink);
+  cursor: pointer;
+  font-weight: 600;
+  transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease;
+}
+
+.review-enter-button span {
+  margin-left: 11px;
+  color: var(--review-signal);
+  transition: transform 180ms ease;
+}
+
+.review-enter-button:hover,
+.review-enter-button:focus-visible {
+  border-color: rgb(24 201 239 / 18%);
+  box-shadow:
+    7px 7px 14px -9px rgb(24 201 239 / 68%),
+    13px 12px 24px -17px rgb(24 201 239 / 58%),
+    0 10px 18px -13px rgb(24 201 239 / 54%);
+  outline: none;
+  transform: translateY(-2px);
+}
+
+.review-enter-button:hover span,
+.review-enter-button:focus-visible span {
+  transform: translateX(2px);
 }
 
 .review-list-shell > .el-pagination {
   justify-self: center;
-  padding-top: 12px;
+  padding-top: 10px;
 }
 
 .review-detail-shell {
@@ -1080,12 +1528,26 @@ function formatDate(value: string) {
 
 .review-detail-header {
   display: flex;
-  min-height: 58px;
+  min-height: 112px;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 9px 14px;
+  padding: 14px 20px 14px 24px;
   border-bottom: 1px solid #e1e7ef;
+  background: #fff;
+  position: relative;
+}
+
+.review-detail-header::before {
+  position: absolute;
+  top: 22px;
+  bottom: 22px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(180deg, rgb(24 201 239 / 12%), var(--review-signal) 34%, var(--review-signal) 72%, rgb(24 201 239 / 12%));
+  box-shadow: 0 0 10px rgb(24 201 239 / 30%);
+  content: "";
 }
 
 .review-detail-header > div {
@@ -1095,11 +1557,46 @@ function formatDate(value: string) {
   gap: 6px;
 }
 
+.review-detail-header > .review-detail-heading {
+  display: grid;
+  gap: 7px;
+}
+
+.review-detail-heading > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.review-detail-titleline h1 {
+  overflow: hidden;
+  margin: 0;
+  color: var(--review-ink);
+  font-size: clamp(22px, 1.7vw, 31px);
+  font-weight: 650;
+  letter-spacing: -.035em;
+  line-height: 1.08;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-detail-meta {
+  color: #87949a;
+  font: 10px/1.4 "IBM Plex Mono", Consolas, monospace;
+}
+
+.review-detail-heading > p {
+  color: #168ba5;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  letter-spacing: .14em;
+}
+
 .review-detail-header button {
   border: 0;
   padding: 0;
   background: transparent;
-  color: #2454d6;
+  color: #168ba5;
   cursor: pointer;
 }
 
@@ -1109,62 +1606,72 @@ function formatDate(value: string) {
   white-space: nowrap;
 }
 
-.review-apply-result {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 9px 14px;
-  border-bottom: 1px solid #dbe4f0;
-  background: #f5f9ff;
-}
-
-.review-apply-result > div:first-child {
-  display: grid;
-  gap: 2px;
-}
-
-.review-apply-result span,
-.review-apply-result small {
-  color: #667085;
-  font-size: 12px;
-}
-
-.review-apply-targets {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.review-apply-target {
-  display: flex;
-  min-width: 220px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border: 1px solid #d0dcf7;
-  border-radius: 8px;
-  padding: 6px 8px;
-  background: #fff;
-}
-
-.review-apply-target > span {
-  display: grid;
-  min-width: 0;
-}
-
-.review-apply-target strong,
-.review-apply-target small {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.review-detail-status {
+  border: 1px solid #cdeee5;
+  border-radius: 4px;
+  padding: 3px 7px;
+  background: #eaf9f4;
+  color: #167b63;
+  font-size: 10px;
   white-space: nowrap;
 }
 
-.review-apply-empty {
-  text-align: right;
+.review-detail-context {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.review-detail-linked,
+.review-detail-action {
+  position: relative;
+  min-height: 48px;
+  border: 1px solid #dfe6e9 !important;
+  border-radius: 9px;
+  padding: 0 18px !important;
+  background: #fff !important;
+  color: var(--review-ink) !important;
+  white-space: nowrap;
+  font-weight: 600;
+  transition: border-color 180ms ease, box-shadow 220ms ease, transform 180ms ease;
+}
+
+.review-detail-linked span,
+.review-detail-action span {
+  margin-left: 8px;
+  color: var(--review-signal);
+  transition: transform 180ms ease;
+}
+
+.review-detail-action.is-primary {
+  border-color: var(--review-ink) !important;
+  background: var(--review-ink) !important;
+  color: #fff !important;
+}
+
+.review-detail-linked:hover,
+.review-detail-linked:focus-visible,
+.review-detail-action:hover:not(:disabled),
+.review-detail-action:focus-visible:not(:disabled) {
+  border-color: rgb(24 201 239 / 18%) !important;
+  box-shadow:
+    7px 7px 14px -9px rgb(24 201 239 / 72%),
+    13px 12px 24px -17px rgb(24 201 239 / 60%),
+    0 10px 18px -13px rgb(24 201 239 / 56%);
+  outline: none;
+  transform: translateY(-2px);
+}
+
+.review-detail-linked:hover span,
+.review-detail-linked:focus-visible span,
+.review-detail-action:hover span,
+.review-detail-action:focus-visible span {
+  transform: translate(2px, -1px);
+}
+
+.review-detail-action:disabled {
+  cursor: not-allowed;
+  opacity: .48;
 }
 
 .review-empty-operations {
@@ -1255,9 +1762,9 @@ function formatDate(value: string) {
   min-width: 0;
   min-height: 0;
   grid-template-columns:
-    minmax(290px, .82fr)
-    minmax(420px, 1.38fr)
-    minmax(320px, 360px);
+    minmax(360px, 31fr)
+    minmax(520px, 45fr)
+    minmax(320px, 24fr);
   overflow: hidden;
 }
 
@@ -1269,6 +1776,20 @@ function formatDate(value: string) {
 }
 
 @media (max-width: 1100px) {
+  .review-topbar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 14px;
+    padding: 0 22px;
+  }
+
+  .review-brand-beta {
+    display: none;
+  }
+
+  .review-navigation-item {
+    padding: 0 12px;
+  }
+
   .review-list-header {
     align-items: stretch;
     flex-direction: column;
@@ -1283,7 +1804,320 @@ function formatDate(value: string) {
   }
 
   .review-four-area {
-    grid-template-columns: minmax(260px, .8fr) minmax(390px, 1.2fr) 320px;
+    grid-template-columns: minmax(300px, .9fr) minmax(430px, 1.3fr) 300px;
+  }
+}
+
+@media (max-width: 820px), (orientation: portrait) {
+  .review-page-shell {
+    min-height: 100svh;
+    height: auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: visible;
+  }
+
+  .review-topbar {
+    grid-template-columns: 1fr auto;
+    min-height: 68px;
+    padding: 0 18px;
+  }
+
+  .review-navigation {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: calc(100vw - 36px);
+    overflow-x: auto;
+    margin-bottom: 10px;
+  }
+
+  .review-navigation-item {
+    flex: 1 0 auto;
+  }
+
+  .review-account {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .review-page-main {
+    padding: 24px 14px 30px;
+    overflow: visible;
+  }
+
+  .review-list-shell {
+    padding: 26px 18px 18px;
+  }
+
+  .review-list-tools {
+    grid-template-columns: 1fr;
+  }
+
+  .review-status-tabs {
+    overflow-x: auto;
+  }
+
+  .review-status-tabs button {
+    flex: 1 0 auto;
+    padding: 0 13px;
+  }
+
+  .review-list-body {
+    overflow: visible;
+  }
+
+  .review-request-item {
+    grid-template-columns: 1fr auto;
+    gap: 13px;
+  }
+
+  .request-state,
+  .request-summary {
+    grid-column: 1;
+  }
+
+  .review-request-item dl {
+    grid-column: 1;
+    width: min(230px, 100%);
+  }
+
+  .review-enter-button {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+  }
+
+  .review-detail-shell {
+    min-height: 720px;
+  }
+
+  .review-detail-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .review-detail-context {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .review-four-area,
+  .review-four-area.is-inspector-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+}
+
+.review-page-shell button:focus-visible,
+.review-page-shell a:focus-visible,
+.review-page-shell input:focus-visible,
+.review-page-shell textarea:focus-visible {
+  outline: 2px solid var(--review-signal);
+  outline-offset: 2px;
+}
+
+:global(.review-apply-dialog) {
+  overflow: hidden;
+  border: 1px solid #dfe7e9;
+  border-radius: 12px;
+  box-shadow: 0 28px 70px rgb(12 29 36 / 22%);
+}
+
+:global(.review-apply-dialog::before) {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  width: 3px;
+  height: 48px;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(180deg, rgb(24 201 239 / 20%), #18c9ef 48%, rgb(24 201 239 / 24%));
+  box-shadow: 4px 0 14px rgb(24 201 239 / 26%);
+  content: '';
+}
+
+:global(.review-apply-dialog .el-dialog__header) {
+  margin: 0;
+  padding: 27px 30px 22px;
+  border-bottom: 1px solid #e5ebed;
+}
+
+:global(.review-apply-dialog .el-dialog__headerbtn) {
+  top: 22px;
+  right: 22px;
+}
+
+:global(.review-apply-dialog .el-dialog__headerbtn:hover .el-dialog__close) {
+  color: #090c0e;
+}
+
+:global(.review-dialog-heading small) {
+  display: block;
+  margin-bottom: 8px;
+  color: #168ba5;
+  font: 600 9px Consolas, monospace;
+  letter-spacing: .14em;
+}
+
+:global(.review-dialog-heading h2) {
+  margin: 0;
+  color: #10191d;
+  font-size: 21px;
+  line-height: 1.25;
+}
+
+:global(.review-dialog-heading p) {
+  margin: 7px 0 0;
+  color: #7a878c;
+  font-size: 12px;
+}
+
+:global(.review-apply-dialog .el-dialog__body) {
+  padding: 22px 30px 24px;
+}
+
+:global(.review-dialog-summary) {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid #e1e8ea;
+  border-radius: 8px;
+  background: #f7f9f9;
+}
+
+:global(.review-dialog-summary > div) {
+  display: grid;
+  min-height: 88px;
+  align-content: center;
+  grid-template-columns: auto 1fr;
+  column-gap: 9px;
+  padding: 14px 18px;
+}
+
+:global(.review-dialog-summary > div + div) {
+  border-left: 1px solid #e1e8ea;
+}
+
+:global(.review-dialog-summary small) {
+  grid-column: 1 / -1;
+  margin-bottom: 5px;
+  color: #859298;
+  font: 600 9px Consolas, monospace;
+  letter-spacing: .1em;
+}
+
+:global(.review-dialog-summary strong) {
+  color: #10191d;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+:global(.review-dialog-summary span) {
+  align-self: end;
+  color: #77848a;
+  font-size: 11px;
+}
+
+:global(.review-dialog-safety) {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+  border-left: 2px solid #18c9ef;
+  padding: 12px 14px;
+  background: #f0fafc;
+}
+
+:global(.review-dialog-safety > span) {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  background: #dff7f1;
+  color: #168060;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+:global(.review-dialog-safety p) {
+  margin: 0;
+  color: #647178;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+:global(.review-dialog-safety strong) {
+  display: block;
+  margin-bottom: 2px;
+  color: #172126;
+  font-size: 12px;
+}
+
+:global(.review-apply-dialog .el-dialog__footer) {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 30px 28px;
+}
+
+:global(.review-dialog-cancel),
+:global(.review-dialog-confirm) {
+  min-height: 46px;
+  border-radius: 8px;
+  padding: 0 20px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: border-color 180ms ease, box-shadow 220ms ease, color 180ms ease, transform 180ms ease;
+}
+
+:global(.review-dialog-cancel) {
+  border: 1px solid #dfe7e9;
+  background: #fff;
+  color: #69767c;
+}
+
+:global(.review-dialog-confirm) {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #090c0e;
+  background: #090c0e;
+  color: #fff;
+}
+
+:global(.review-dialog-confirm > span) {
+  color: #18c9ef;
+  font-size: 15px;
+  transition: transform 180ms ease;
+}
+
+:global(.review-dialog-cancel:hover),
+:global(.review-dialog-cancel:focus-visible),
+:global(.review-dialog-confirm:hover),
+:global(.review-dialog-confirm:focus-visible) {
+  border-color: rgb(24 201 239 / 24%);
+  box-shadow: 7px 7px 14px -9px rgb(24 201 239 / 78%), 13px 12px 24px -17px rgb(24 201 239 / 64%);
+  outline: none;
+  transform: translateY(-2px);
+}
+
+:global(.review-dialog-confirm:hover > span),
+:global(.review-dialog-confirm:focus-visible > span) {
+  transform: translate(2px, -1px);
+}
+
+:global(.review-dialog-confirm:disabled) {
+  cursor: wait;
+  opacity: .6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review-navigation-item,
+  .review-request-item,
+  .review-request-item::before,
+  .review-enter-button,
+  .review-enter-button span,
+  .review-detail-linked,
+  .review-detail-linked span {
+    transition: none;
   }
 }
 </style>

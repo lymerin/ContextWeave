@@ -45,6 +45,6 @@ describe('linked workbench interactions', () => {
       global: { stubs: { LinkedWorkbenchCanvas: true, LinkedInspector: true } },
     });
     expect(wrapper.get('.linked-content').classes()).not.toContain('has-inspector');
-    expect(wrapper.findComponent({ name: 'LinkedInspector' }).isVisible()).toBe(false);
+    expect(wrapper.findComponent({ name: 'LinkedInspector' }).exists()).toBe(false);
   });
 });
