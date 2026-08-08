@@ -1,8 +1,12 @@
 """文档目标解析与 reconcile——PlannedSection[] → SectionTarget[]。
 
 决策规则（确定性）:
-  1. 无候选文档 → CREATE_DOC + ADD_BLOCK（新建文档）。
-  2. 有候选文档 → 匹配现有 Block：
+  1. 候选文档必须带 DIRECT_BINDING 证据（existing_binding_count > 0）才允许复用
+     ——模块文档归属只认显式绑定，不认标题/路径/块文本的模糊猜测。
+     否则会把所有模块都写进 workspace 里第一个文档（模块隔离破坏）。
+     a. 无绑定证据候选 → CREATE_DOC + ADD_BLOCK（新建模块文档）。
+     b. 多候选 → 取绑定证据最强的（existing_binding_count 最大）。
+  2. 复用候选文档 → 匹配现有 Block：
      a. 绑定重叠优先——section 的 primary/informed symbol_key 与 Block 的
         已有绑定 symbol_key 有交集即视为同一区块（跨 revision 稳定身份）；
      b. 无绑定证据时用 target_kind 标题提示兜底。
@@ -49,8 +53,17 @@ def resolve_targets(
     target_doc_id: UUID | None = None
     create_doc_id: str | None = None
 
-    if candidates:
-        target_doc_id = candidates[0].document_id
+    # 模块文档隔离：只有 DIRECT_BINDING 证据（该模块文件集与文档有显式绑定）
+    # 的候选才允许复用。模糊匹配出来的候选（标题/路径/块文本 15-60 分）没有
+    # 归属证据——复用它们会把不同模块的内容写进同一文档（9b447c86 黑洞事故）。
+    binding_candidates = [
+        c for c in candidates if c.existing_binding_count > 0
+    ]
+    if binding_candidates:
+        target_doc_id = max(
+            binding_candidates,
+            key=lambda c: (c.existing_binding_count, str(c.title or "")),
+        ).document_id
     else:
         create_doc_id = f"create_doc_{_uuid.uuid4().hex[:12]}"
 

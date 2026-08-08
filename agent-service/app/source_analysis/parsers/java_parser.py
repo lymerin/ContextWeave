@@ -30,7 +30,6 @@ from app.source_analysis.import_resolver import FileImportScope
 from app.source_analysis.parsers import hash_id, symbol_key
 
 _LANGUAGE = Language(tree_sitter_java.language())
-_PARSER = Parser(_LANGUAGE)
 
 # 类型容器声明 → SymbolKind（嵌套类型递归下钻）
 _TYPE_KINDS: dict[str, str] = {
@@ -116,9 +115,15 @@ class JavaParser:
         return module, tuple(symbols)
 
     def parse_source(self, source: str) -> Any:
-        """源码 → 解析树；解析失败返回 None（不抛异常）。"""
+        """源码 → 解析树；解析失败返回 None（不抛异常）。
+
+        注意：每次调用新建 Parser 实例，绝不共享。共享 Parser 时 tree-sitter
+        增量解析复用旧树节点内存，跨调用保存的 Node 引用（_collect_comments
+        的注释节点列表）会悬垂 → 访问 .text 触发 SIGSEGV 崩溃循环。
+        每文件独立 Parser 成本微秒级，同时消除协程并发调用风险。
+        """
         try:
-            return _PARSER.parse(source.encode("utf-8"))
+            return Parser(_LANGUAGE).parse(source.encode("utf-8"))
         except Exception:  # tree-sitter 对任意字节序列都不应抛错，防御性兜底
             return None
 

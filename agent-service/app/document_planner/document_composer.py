@@ -6,7 +6,10 @@
 
 from app.schemas.document_planner.plan import PlannedSection
 from app.schemas.document_planner.skeleton import SkeletonSlot
-from app.schemas.semantic.analysis_result import SemanticAnalysisResult
+from app.schemas.semantic.analysis_result import (
+    SemanticAnalysisResult,
+    SemanticGroup,
+)
 
 
 def compose_document(
@@ -64,10 +67,27 @@ def compose_slot_sections(
     interpretations = {
         m.atom_id: m for m in semantic.member_interpretations if m.atom_id
     }
-    group_by_atom: dict[str, object] = {}
+    # 槽位归属：primary 精确匹配优先（"这段正文主要讲谁"），informed 兜底。
+    # 不能只用合并映射 + setdefault：模块总览 group 的 primary/informed
+    # 覆盖全部模块符号（第一入口同时是总览和流程的 primary），会让所有
+    # FLOW 槽位误命中总览 group → 重复块缺陷（同一批次提交 N 份相同正文）。
+    # 按槽位类型区分：FLOW 槽位优先非总览 group，OVERVIEW 槽位优先总览 group。
+    primary_groups_by_atom: dict[str, list[SemanticGroup]] = {}
+    informed_groups_by_atom: dict[str, list[SemanticGroup]] = {}
     for g in semantic.semantic_groups:
-        for aid in (*g.primary_atom_ids, *g.informed_by_atom_ids):
-            group_by_atom.setdefault(aid, g)
+        for aid in g.primary_atom_ids:
+            primary_groups_by_atom.setdefault(aid, []).append(g)
+        for aid in g.informed_by_atom_ids:
+            informed_groups_by_atom.setdefault(aid, []).append(g)
+
+    def _pick_group(
+        candidates: list[SemanticGroup] | None, want_overview: bool
+    ) -> SemanticGroup | None:
+        """从候选 group 中挑选：优先类型匹配（总览/非总览），缺失则退回。"""
+        if not candidates:
+            return None
+        matched = [g for g in candidates if ("总览" in (g.title or "")) == want_overview]
+        return matched[0] if matched else candidates[0]
 
     sections: list[PlannedSection] = []
     for slot in slots:
@@ -81,7 +101,14 @@ def compose_slot_sections(
             content = interp.content_markdown or interp.responsibility
             primary_ids = (interp.atom_id,)
         else:  # FLOW / OVERVIEW
-            group = group_by_atom.get(atom_id)
+            want_overview = slot.slot_type == "OVERVIEW"
+            group = _pick_group(
+                primary_groups_by_atom.get(atom_id), want_overview
+            )
+            if group is None:
+                group = _pick_group(
+                    informed_groups_by_atom.get(atom_id), want_overview
+                )
             if group is None:
                 continue
             content = group.content_markdown or group.summary

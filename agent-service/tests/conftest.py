@@ -345,6 +345,9 @@ class MemoryAgentJobRepository:
         unit = self.units[unit_id]
         if unit["worker_id"] != worker_id:
             return
+        if error_code == "SKELETON_REVIEW_PENDING" and unit["attempt"] > 0:
+            # 与 Postgres 仓库一致：骨架 review 未审批等待不消耗 attempt
+            unit["attempt"] -= 1
         unit.update(
             status="RETRY_WAITING" if retry_at else "FAILED",
             next_attempt_at=retry_at,
