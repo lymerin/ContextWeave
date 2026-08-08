@@ -22,7 +22,6 @@ vi.mock('@/api/documentChange');
 vi.mock('@/api/block');
 vi.mock('@/api/git');
 vi.mock('@/api/workspace');
-vi.mock('@/components/layout/AppSidebar.vue', () => ({ default: { template: '<div>Sidebar</div>' } }));
 vi.mock('@/components/linked-workbench/LinkedRepositoryContext.vue', () => ({ default: { template: '<div>Context</div>' } }));
 vi.mock('@/components/review/ReviewCodeEvidencePane.vue', () => ({ default: { template: '<div>CodePane</div>', props: ['evidence'] } }));
 vi.mock('@/components/review/ReviewDocumentPane.vue', () => ({ default: { template: '<div>DocPane</div>', props: ['blocks'] } }));
@@ -51,6 +50,7 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
     vi.mocked(workspaceApi.getWorkspace).mockResolvedValue({ id: 'w1', name: 'Workspace 1' } as any);
     vi.mocked(gitApi.listGitRepositories).mockResolvedValue([]);
     vi.mocked(gitApi.listGitRepositoryFiles).mockResolvedValue([]);
+    vi.mocked(gitApi.listCodeBindingsContext).mockResolvedValue([]);
     vi.mocked(documentChangeApi.listDocumentChanges).mockResolvedValue({ items: [], totalElements: 0, page: 0, size: 20, totalPages: 0 });
     vi.mocked(documentChangeApi.getPendingDocumentChangeCount).mockResolvedValue(0);
     pinia = createPinia();
@@ -87,7 +87,6 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
       global: {
         plugins: [router, pinia, ElementPlus],
         stubs: {
-          AppSidebar: true,
           LinkedRepositoryContext: true,
           ReviewCodeEvidencePane: true,
           ReviewDocumentPane: true,
@@ -213,7 +212,15 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
     );
     const wrapper = await mountView('/workspaces/w1/reviews/pending');
 
-    await wrapper.get('.review-request-item').trigger('click');
+    expect(wrapper.find('.review-topbar').exists()).toBe(true);
+    expect(wrapper.find('.platform-navigation .is-active').exists()).toBe(false);
+    expect(wrapper.find('.workspace-context-navigation .is-active').text()).toContain('审阅中心');
+    expect(wrapper.text()).toContain('List request');
+    expect(wrapper.text()).toContain('Reviewer');
+    expect(wrapper.text()).toContain('MCP 提交');
+    expect(wrapper.text()).toContain('Evidence');
+
+    await wrapper.get('.review-enter-button').trigger('click');
     await flushPromises();
 
     expect(router.currentRoute.value.params.requestId).toBe('request-from-list');
@@ -345,6 +352,74 @@ describe('ReviewWorkbenchView asynchronous state and race conditions', () => {
     expect((wrapper.vm as any).selectedRepositoryId).toBe('');
     expect(gitApi.getGitRepositorySource).not.toHaveBeenCalled();
     expect(gitApi.listGitRepositoryFiles).toHaveBeenCalledTimes(0);
+  });
+
+  it('automatically reuses the formal Block binding before falling back to Evidence', async () => {
+    const operation = {
+      operationId: 'op-bound',
+      clientOperationId: 'client-bound',
+      sequenceNumber: 1,
+      operationType: 'UPDATE_BLOCK',
+      target: { documentId: 'doc-bound', blockId: 'block-bound', documentTitle: 'Bound doc' },
+      baseSnapshot: null,
+      proposal: {},
+      conflict: { conflicted: false },
+      evidence: [],
+    };
+    vi.mocked(gitApi.listGitRepositories).mockResolvedValue([{
+      id: 'repo-bound',
+      name: 'Bound repo',
+      defaultBranch: 'main',
+      lastSyncedCommit: 'abcdef123456',
+    }] as any);
+    vi.mocked(documentChangeApi.getDocumentChange).mockResolvedValue(
+      mockRequestDetail('request-bound', [operation]) as any,
+    );
+    vi.mocked(gitApi.listCodeBindingsContext).mockResolvedValue([{
+      bindingId: 'binding-1',
+      workspaceId: 'w1',
+      repositoryId: 'repo-bound',
+      revision: 'abcdef123456',
+      anchorKind: 'RANGE',
+      symbolKey: null,
+      startLine: 10,
+      endLine: 20,
+      bindingRole: 'PRIMARY',
+      bindingOrdinal: 1,
+      documentId: 'doc-bound',
+      blockId: 'block-bound',
+      targetKey: 'BLOCK',
+      pathPattern: 'src/Bound.java',
+      documentTitle: 'Bound doc',
+      matchedFilePath: 'src/Bound.java',
+      blockExists: true,
+      matchingFilePaths: ['src/Bound.java'],
+    }]);
+    vi.mocked(gitApi.getGitRepositorySource).mockResolvedValue({
+      repositoryId: 'repo-bound',
+      commitSha: 'abcdef123456',
+      path: 'src/Bound.java',
+      blobSha: 'blob-1',
+      sizeBytes: 24,
+      language: 'Java',
+      readable: true,
+      content: 'class Bound {}',
+      symbols: [],
+    });
+
+    const wrapper = await mountView('/workspaces/w1/reviews/pending/request-bound');
+
+    expect(gitApi.listCodeBindingsContext).toHaveBeenCalledWith('doc-bound', {
+      revision: undefined,
+      includeLegacy: true,
+    });
+    expect(gitApi.getGitRepositorySource).toHaveBeenCalledWith(
+      'w1',
+      'repo-bound',
+      'src/Bound.java',
+    );
+    expect((wrapper.vm as any).activeBinding.bindingId).toBe('binding-1');
+    expect((wrapper.vm as any).boundSource.path).toBe('src/Bound.java');
   });
 
   it('6. 快速连续切换: Select Op1, Op2, Op3, Op3 should win', async () => {

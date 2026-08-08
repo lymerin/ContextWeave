@@ -165,6 +165,7 @@ const emit = defineEmits<{
   'editing-stop': [blockId: string];
   'select-block': [blockId: string];
   'blocks-loaded': [blocks: DocumentBlock[]];
+  'block-deleted': [blockId: string];
 }>();
 
 const blocks = ref<DocumentBlock[]>([]);
@@ -279,8 +280,10 @@ watch(
   },
 );
 
-async function loadBlocks() {
-  loading.value = true;
+async function loadBlocks(silent = false) {
+  if (!silent) {
+    loading.value = true;
+  }
   conflictMessage.value = '';
   errorMessage.value = '';
   try {
@@ -544,10 +547,12 @@ async function handleDelete(block: DocumentBlock) {
   busyBlockId.value = block.id;
   try {
     await deleteBlock(props.documentId, block.id);
-    blocks.value = blocks.value
-      .filter((item) => item.id !== block.id)
-      .map((item, index) => ({ ...item, sortOrder: index }));
+    // 后端删除时已对剩余块重排 sort_order（被重排块 version + 1），
+    // 这里静默重新拉取权威列表：序号、version 与后端完全同步，
+    // 避免本地 map 造成乐观锁版本错位和序号漂移。
+    await loadBlocks(true);
     ElMessage.success('内容块已删除');
+    emit('block-deleted', block.id);
   } catch (error) {
     ElMessage.error(readableError(error, '内容块删除失败'));
   } finally {

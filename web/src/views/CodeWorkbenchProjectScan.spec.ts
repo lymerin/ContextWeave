@@ -4,6 +4,7 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  createAgentRun,
   createAgentJob,
   getAgentJob,
   listAgentJobUnits,
@@ -27,6 +28,7 @@ vi.mock('@/api/agent', async importOriginal => {
   const original = await importOriginal<typeof import('@/api/agent')>();
   return {
     ...original,
+    createAgentRun: vi.fn(),
     createAgentJob: vi.fn(),
     getAgentJob: vi.fn(),
     listAgentJobUnits: vi.fn(),
@@ -88,6 +90,7 @@ describe('CodeWorkbenchView project scan', () => {
       status: 'QUEUED',
       createdAt: '2026-07-28T00:00:00Z',
     });
+    vi.mocked(createAgentRun).mockResolvedValue({ runId: 'run-1', status: 'QUEUED' });
     vi.mocked(getAgentJob).mockResolvedValue(readyJob());
     vi.mocked(listAgentJobUnits).mockResolvedValue({
       jobId: 'job-1',
@@ -152,6 +155,31 @@ describe('CodeWorkbenchView project scan', () => {
 
     expect(getAgentJob).toHaveBeenCalledWith('restored-job');
     expect(listAgentJobUnits).toHaveBeenCalledWith('restored-job', 0, 20);
+    wrapper.unmount();
+  });
+
+  it('keeps module and Agent checks on separate real API contracts', async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    (wrapper.vm as unknown as { selectedFilePath: string }).selectedFilePath = 'src/App.java';
+    await wrapper.find('[data-test="module-scan"]').trigger('click');
+    await flushPromises();
+
+    expect(createAgentJob).toHaveBeenLastCalledWith({
+      workspaceId: 'workspace-1',
+      repositoryId: 'repository-1',
+      scope: { type: 'CURRENT_FILE', filePath: 'src/App.java' },
+      userInstruction: null,
+    });
+
+    (wrapper.vm as unknown as { agentInstruction: string }).agentInstruction = '重点核对文档关联';
+    await (wrapper.vm as unknown as { startAgentCheck: () => Promise<void> }).startAgentCheck();
+    expect(createAgentRun).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
+      repositoryId: 'repository-1',
+      selectedPaths: ['src/App.java'],
+      userInstruction: '重点核对文档关联',
+    });
     wrapper.unmount();
   });
 });

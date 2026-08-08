@@ -1,15 +1,5 @@
 <template>
   <section class="linked-workbench-shell">
-    <LinkedWorkbenchHeader
-      :workspace-name="workspaceName"
-      :repository-name="repositoryName"
-      :branch="branch"
-      :commit-sha="commitSha"
-      :mode="mode"
-      :inspector-open="inspectorOpen"
-      @set-mode="emit('set-mode', $event)"
-      @toggle-inspector="emit('toggle-inspector')"
-    ><template #actions><slot name="header-actions" /></template></LinkedWorkbenchHeader>
     <LinkedWorkbenchContent
       ref="contentRef"
       v-bind="contentProps"
@@ -24,7 +14,6 @@
       @request-agent-check="emit('request-agent-check')"
       @close-inspector="emit('toggle-inspector')"
     />
-    <LinkedWorkbenchStatusBar v-bind="statusProps" />
   </section>
 </template>
 
@@ -33,8 +22,6 @@ import { computed, ref } from 'vue';
 import type { DocumentBlock, DocumentBlockContent } from '@/api/block';
 import type { DocumentSummary, DocumentVersion } from '@/api/document';
 import LinkedWorkbenchContent from './LinkedWorkbenchContent.vue';
-import LinkedWorkbenchHeader from './LinkedWorkbenchHeader.vue';
-import LinkedWorkbenchStatusBar from './LinkedWorkbenchStatusBar.vue';
 import type { EditingState } from '@/composables/useDocumentCollaboration';
 import type { CodeAnchor, CodeDocumentLink, EngineeringIssue, LinkedEvidence, WorkbenchMode } from '@/types/linkedWorkbench';
 
@@ -60,8 +47,6 @@ const emit = defineEmits<{
 }>();
 const contentRef = ref<InstanceType<typeof LinkedWorkbenchContent> | null>(null);
 const contentProps = computed(() => ({ ...props }));
-const statusProps = computed(() => ({ collaborationConnected: props.collaborationConnected,
-  membersCount: props.membersCount, linksCount: props.links.length, activeAnchor: props.activeAnchor }));
 function focusAnchor(anchorId: string) { contentRef.value?.focusAnchor(anchorId); }
 function focusBlock(blockId: string) { contentRef.value?.focusBlock(blockId); }
 function clearBlockFocus() { contentRef.value?.clearBlockFocus(); }
@@ -72,5 +57,5 @@ defineExpose({ focusAnchor, focusBlock, clearBlockFocus, confirmDocumentLeave })
 </script>
 
 <style scoped>
-.linked-workbench-shell { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; border: 1px solid #dfe6f0; border-radius: 10px 10px 0 0; background: #fff; box-shadow: 0 8px 24px rgb(16 24 40 / 5%); }
+.linked-workbench-shell { display: grid; min-width: 0; min-height: 0; grid-template-rows: minmax(0, 1fr); overflow: hidden; border: 1px solid #dfe6f0; border-radius: 10px; background: #fff; }
 </style>

@@ -16,20 +16,7 @@
         <span class="workspace-selection-beta">BETA</span>
       </button>
 
-      <nav class="workspace-selection-navigation" aria-label="主导航">
-        <button
-          v-for="item in navigationItems"
-          :key="item.label"
-          class="workspace-selection-nav-item"
-          :class="{ 'is-active': item.key === 'spaces' }"
-          type="button"
-          :aria-current="item.key === 'spaces' ? 'page' : undefined"
-          @click="navigatePrimary(item.target)"
-        >
-          {{ item.label }}
-          <span v-if="item.key === 'spaces'" aria-hidden="true" />
-        </button>
-      </nav>
+      <PlatformNavigation active="spaces" />
 
       <div class="workspace-selection-account">
         <span class="workspace-selection-online" title="演示数据，待接入实时在线接口">
@@ -209,6 +196,7 @@ import {
 } from '@/api/workspace';
 import { orderWorkspacesByRecent, recordWorkspaceVisit } from '@/utils/workspaceRecent';
 import WorkspaceCreateDialog from '@/components/workspace/WorkspaceCreateDialog.vue';
+import PlatformNavigation from '@/components/layout/PlatformNavigation.vue';
 import WorkspaceDeleteDialog from '@/components/workspace/WorkspaceDeleteDialog.vue';
 import WorkspaceRenameDialog from '@/components/workspace/WorkspaceRenameDialog.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -220,11 +208,6 @@ interface WorkspaceCreatePayload {
   branch: string;
 }
 
-interface WorkspaceNavigationItem {
-  key: 'overview' | 'spaces' | 'reviews' | 'workflows' | 'runs';
-  label: string;
-  target: string;
-}
 
 const authStore = useAuthStore();
 const route = useRoute();
@@ -245,13 +228,6 @@ const deletingWorkspace = ref(false);
 const workspacePendingDelete = ref<Workspace | null>(null);
 const errorMessage = ref('');
 
-const navigationItems: WorkspaceNavigationItem[] = [
-  { key: 'overview', label: '总览', target: '/' },
-  { key: 'spaces', label: '协作空间', target: '/workspaces' },
-  { key: 'reviews', label: '审阅中心', target: '/workspaces?section=reviews' },
-  { key: 'workflows', label: '工作流', target: '/workspaces?section=workflows' },
-  { key: 'runs', label: '运行记录', target: '/workspaces?section=runs' },
-];
 
 const currentUserName = computed(() => (
   authStore.currentUser?.displayName

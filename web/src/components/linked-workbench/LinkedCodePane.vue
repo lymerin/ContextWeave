@@ -25,7 +25,7 @@
           :loading="isAgentRunning"
           @click="openAgentDialog"
         >
-          {{ isAgentRunning ? agentStatusLabel : 'Agent 检查' }}
+          {{ isAgentRunning ? agentStatusLabel : '模块检查' }}
         </el-button>
         <el-tag v-if="rangeWarning" size="small" type="warning" effect="plain">
           {{ rangeWarning }}
@@ -80,7 +80,7 @@
     </div>
     <el-dialog
       v-model="agentDialogOpen"
-      title="Agent 项目检查"
+      title="模块检查"
       width="440px"
       append-to-body
       destroy-on-close
@@ -193,10 +193,10 @@ const statusLabels: Record<AgentJobStatus, string> = {
   QUEUED: '排队中',
   RUNNING: 'Agent 正在处理',
   READY_FOR_ANALYSIS: '项目结构分析完成',
-  COMPLETED: 'Agent 检查完成',
-  PARTIALLY_COMPLETED: 'Agent 部分完成',
-  FAILED: 'Agent 检查失败',
-  CANCELLED: 'Agent 检查已取消',
+  COMPLETED: '模块检查完成',
+  PARTIALLY_COMPLETED: '模块检查部分完成',
+  FAILED: '模块检查失败',
+  CANCELLED: '模块检查已取消',
 };
 const phaseLabels: Record<AgentJobPhase, string> = {
   LOADING_CONTEXT: '正在读取代码和关联文档',
@@ -371,12 +371,10 @@ async function startAgentCheck() {
   if (!canInspect.value || creatingRun.value) return;
   creatingRun.value = true;
   try {
-    // 单文件分析入口已废弃：Agent 检查统一走完整模块流水线，
-    // 由 worker 扫描仓库、按语义模块生成并隔离文档。
     const queued = await createAgentJob({
       workspaceId: props.workspaceId,
       repositoryId: props.repositoryId,
-      scope: { type: 'PROJECT_INITIALIZATION' },
+      scope: { type: 'CURRENT_FILE', filePath: props.path },
       userInstruction: userInstruction.value.trim() || null,
     });
     jobId.value = queued.jobId;
@@ -384,15 +382,15 @@ async function startAgentCheck() {
       jobId: queued.jobId,
       workspaceId: props.workspaceId,
       repositoryId: props.repositoryId,
-      label: `项目检查 ${props.repositoryId.slice(0, 8)}`,
-      filePath: null,
+      label: `模块检查 ${props.path}`,
+      filePath: props.path,
       createdAt: queued.createdAt,
       lastKnownStatus: queued.status,
     });
     agentDialogOpen.value = false;
-    ElMessage.success('Agent 已在后台开始处理，可以关闭当前窗口。');
+    ElMessage.success('模块检查已在后台开始处理，可以关闭当前窗口。');
   } catch (error) {
-    ElMessage.error(readableAgentError(error, 'Agent 检查启动失败'));
+    ElMessage.error(readableAgentError(error, '模块检查启动失败'));
   } finally {
     creatingRun.value = false;
   }
@@ -401,11 +399,10 @@ async function startAgentCheck() {
 function restoreAgentJob() {
   agentDialogOpen.value = false;
   resetAgentDialog();
-  // Agent 检查统一为仓库级完整模块流水线（filePath 为 null），
-  // 按仓库匹配即可恢复状态，不再按单文件匹配。
   jobId.value = backgroundActivity.findActiveJob({
     workspaceId: props.workspaceId,
     repositoryId: props.repositoryId,
+    filePath: props.path,
   })?.jobId ?? null;
 }
 

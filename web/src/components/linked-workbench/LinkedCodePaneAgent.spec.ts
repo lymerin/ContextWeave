@@ -103,7 +103,7 @@ async function startCheck(wrapper: ReturnType<typeof mountPane>) {
   await flushPromises();
 }
 
-describe('LinkedCodePane Agent check', () => {
+describe('LinkedCodePane module check', () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
@@ -128,7 +128,7 @@ describe('LinkedCodePane Agent check', () => {
     vi.useRealTimers();
   });
 
-  it('disables Agent check until a real source file is loaded', () => {
+  it('disables module check until a real source file is loaded', () => {
     const wrapper = mountPane({
       path: '',
       content: '',
@@ -138,7 +138,7 @@ describe('LinkedCodePane Agent check', () => {
     expect(wrapper.get('[data-testid="agent-check-button"]').attributes('disabled')).toBeDefined();
   });
 
-  it('submits a full project pipeline (single-file analysis deprecated) and stops polling on NO_CHANGE', async () => {
+  it('submits CURRENT_FILE for the selected module and stops polling on NO_CHANGE', async () => {
     vi.mocked(getAgentJob)
       .mockResolvedValueOnce({
         ...agentJob('RUNNING'),
@@ -158,7 +158,7 @@ describe('LinkedCodePane Agent check', () => {
     expect(createAgentJob).toHaveBeenCalledWith({
       workspaceId: 'workspace-1',
       repositoryId: 'repository-1',
-      scope: { type: 'PROJECT_INITIALIZATION' },
+      scope: { type: 'CURRENT_FILE', filePath: 'src/Example.java' },
       userInstruction: '核对接口说明',
     });
     expect(getAgentJob).toHaveBeenCalledTimes(1);
@@ -170,7 +170,7 @@ describe('LinkedCodePane Agent check', () => {
     expect(getAgentJob).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(4000);
     expect(getAgentJob).toHaveBeenCalledTimes(2);
-    expect(wrapper.get('[data-testid="agent-check-button"]').text()).toContain('Agent 检查');
+    expect(wrapper.get('[data-testid="agent-check-button"]').text()).toContain('模块检查');
   });
 
   it('stops polling and exposes the existing review navigation on REVIEW_SUBMITTED', async () => {
@@ -182,9 +182,9 @@ describe('LinkedCodePane Agent check', () => {
     const wrapper = mountPane();
 
     await startCheck(wrapper);
-
+    const terminalPollCount = vi.mocked(getAgentJob).mock.calls.length;
     await vi.advanceTimersByTimeAsync(4000);
-    expect(getAgentJob).toHaveBeenCalledTimes(1);
+    expect(getAgentJob).toHaveBeenCalledTimes(terminalPollCount);
     expect(wrapper.get('[data-testid="agent-review-button"]').text()).toContain('查看评审');
     await wrapper.get('[data-testid="agent-review-button"]').trigger('click');
     expect(wrapper.emitted('open-agent-review')).toEqual([['change-1']]);
@@ -226,8 +226,8 @@ function agentJob(status: AgentJobStatus) {
   return {
     jobId: 'job-1',
     status,
-    scopeType: 'PROJECT_INITIALIZATION' as const,
-    scopePayload: { type: 'PROJECT_INITIALIZATION' as const },
+    scopeType: 'CURRENT_FILE' as const,
+    scopePayload: { type: 'CURRENT_FILE' as const, filePath: 'src/Example.java' },
     result: null,
     phase: null,
     revision: 'abc',

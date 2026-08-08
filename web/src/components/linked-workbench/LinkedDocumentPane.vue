@@ -15,7 +15,7 @@
     >
       <span>此段落未关联代码</span>
       <button type="button" class="unbound-agent-link" @click="emit('request-agent-check')">
-        Agent 分析
+        模块检查
       </button>
     </div>
     <div class="document-editor-scroll">

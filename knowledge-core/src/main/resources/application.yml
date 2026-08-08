@@ -87,7 +87,11 @@ devcollab:
       git-topic: ${DEVCOLLAB_KAFKA_GIT_TOPIC:devcollab.git.events}
   worker:
     outbox:
-      enabled: ${DEVCOLLAB_OUTBOX_WORKER_ENABLED:false}
+      # 默认启用：outbox 事件（仓库同步/删除等）依赖它发布到 Kafka。
+      # 若默认关闭，手动启动 knowledge-core 时忘记设置
+      # DEVCOLLAB_OUTBOX_WORKER_ENABLED=true 会让所有事件卡 PENDING（同步黑洞）。
+      # 测试配置显式关闭（测试不需要 Kafka 发布）。
+      enabled: ${DEVCOLLAB_OUTBOX_WORKER_ENABLED:true}
       batch-size: ${DEVCOLLAB_OUTBOX_WORKER_BATCH_SIZE:500}
       max-retry-count: ${DEVCOLLAB_OUTBOX_WORKER_MAX_RETRY_COUNT:3}
       fixed-delay-ms: ${DEVCOLLAB_OUTBOX_WORKER_FIXED_DELAY_MS:1000}

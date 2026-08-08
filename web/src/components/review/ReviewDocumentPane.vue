@@ -1,15 +1,24 @@
 <template>
-  <section class="review-document-pane">
-    <header>
-      <div>
-        <strong>{{ documentTitle }}</strong>
-        <span>当前正式文档 · {{ operationLabel }}</span>
-      </div>
-      <el-tag size="small" effect="plain">{{ statusLabel }}</el-tag>
-    </header>
+  <section
+    class="review-document-pane"
+    :class="{ 'has-operation-switcher': operations.length > 1 }"
+  >
+    <nav v-if="operations.length > 1" class="operation-strip" aria-label="评审变更列表">
+      <button
+        v-for="item in operations"
+        :key="item.operationId"
+        type="button"
+        :class="{ 'is-active': item.operationId === activeOperationId }"
+        @click="emit('select-operation', item.operationId)"
+      >
+        {{ operationLabels[item.operationType] }}
+        <span aria-hidden="true">↗</span>
+      </button>
+      <small>{{ activeOperationIndex + 1 }} / {{ operations.length }}</small>
+    </nav>
 
     <div class="review-document-scroll">
-      <el-skeleton v-if="loading" :rows="10" animated />
+      <el-skeleton v-if="loading" :rows="8" animated />
       <template v-else>
         <el-alert
           v-if="operation.conflict.conflicted"
@@ -19,35 +28,14 @@
           show-icon
         />
 
-        <div v-if="operation.operationType === 'CREATE_DOCUMENT'" class="create-preview">
-          <span class="proposal-badge">建议创建</span>
-          <h2>{{ operation.proposal.documentTitle }}</h2>
-          <p>{{ operation.proposal.documentType || 'REQUIREMENT' }}</p>
-        </div>
-
-        <template v-else>
-          <section class="document-context">
-            <p class="section-kicker">CURRENT DOCUMENT</p>
+        <header class="change-header">
+          <p>CHANGE DIFF / {{ operation.operationType }}</p>
+          <div>
             <h2>{{ documentTitle }}</h2>
-            <article
-              v-for="block in contextualBlocks"
-              :key="block.id"
-              class="document-block"
-              :class="{ 'is-target': block.id === operation.target.blockId }"
-            >
-              <small>Block {{ block.sortOrder + 1 }} · V{{ block.version }}</small>
-              <StructuredBlockPreview
-                :type="block.type"
-                :text="block.content.text"
-                :document="block.content.document"
-              />
-            </article>
-            <el-empty
-              v-if="contextualBlocks.length === 0"
-              description="当前文档没有可显示的正式 Block"
-            />
-          </section>
-        </template>
+            <el-tag size="small" effect="plain">{{ statusLabel }}</el-tag>
+          </div>
+          <span>{{ changeContext }}</span>
+        </header>
 
         <section class="inline-diff" :class="`is-${operation.operationType.toLowerCase()}`">
           <div class="diff-heading">
@@ -56,13 +44,26 @@
           </div>
           <div v-if="showsBefore" class="diff-row is-before">
             <span>当前</span>
-            <p>{{ beforeText || '（空内容）' }}</p>
+            <div class="diff-copy">
+              <p>{{ beforeText || targetBlock?.content.text || '（空内容）' }}</p>
+            </div>
           </div>
           <div v-if="showsAfter" class="diff-row is-after">
             <span>建议</span>
-            <p>{{ afterText || '（空内容）' }}</p>
+            <div class="diff-copy">
+              <p>{{ afterPreview || '（空内容）' }}</p>
+              <details v-if="hasLongSuggestion" class="full-suggestion">
+                <summary>展开完整建议</summary>
+                <p>{{ afterText }}</p>
+              </details>
+            </div>
           </div>
         </section>
+
+        <div class="diff-owner-note">
+          <span>01</span>
+          修改建议仅在此处呈现，审查上下文不再重复正文
+        </div>
       </template>
     </div>
   </section>
@@ -76,7 +77,6 @@ import type {
   DocumentChangeOperation,
   DocumentChangeStatus,
 } from '@/api/documentChange';
-import StructuredBlockPreview from '@/components/document/StructuredBlockPreview.vue';
 import {
   currentText,
   operationDocumentTitle,
@@ -87,9 +87,15 @@ import {
 
 const props = defineProps<{
   operation: DocumentChangeOperation;
+  operations: DocumentChangeOperation[];
+  activeOperationId: string;
   requestStatus: DocumentChangeStatus;
   blocks: DocumentBlock[];
   loading?: boolean;
+}>();
+
+const emit = defineEmits<{
+  'select-operation': [operationId: string];
 }>();
 
 const documentTitle = computed(() => operationDocumentTitle(props.operation));
@@ -98,17 +104,24 @@ const statusLabel = computed(() => reviewStatusLabels[props.requestStatus]);
 const beforeText = computed(() => currentText(props.operation));
 const afterText = computed(() => proposalText(props.operation));
 const shortBlockId = computed(() => props.operation.target.blockId?.slice(0, 8) ?? '');
+const targetBlock = computed(() => props.blocks.find(item => item.id === props.operation.target.blockId) ?? null);
+const hasLongSuggestion = computed(() => afterText.value.length > 320);
+const afterPreview = computed(() => hasLongSuggestion.value
+  ? `${afterText.value.slice(0, 300).trim()}…`
+  : afterText.value);
+const activeOperationIndex = computed(() => Math.max(0, props.operations.findIndex(
+  item => item.operationId === props.activeOperationId,
+)));
+const changeContext = computed(() => {
+  if (props.operation.operationType === 'CREATE_DOCUMENT') return '新文档建议 · 创建前预览';
+  const version = props.operation.baseSnapshot?.blockVersion;
+  return `${version == null ? '当前 Block' : `Block V${version}`} → 建议版本 · 与左侧绑定代码联动`;
+});
 const showsBefore = computed(() => (
   props.operation.operationType === 'UPDATE_BLOCK'
   || props.operation.operationType === 'DELETE_BLOCK'
 ));
 const showsAfter = computed(() => props.operation.operationType !== 'DELETE_BLOCK');
-const contextualBlocks = computed(() => {
-  if (!props.operation.target.blockId) return props.blocks;
-  const targetIndex = props.blocks.findIndex(item => item.id === props.operation.target.blockId);
-  if (targetIndex < 0) return props.blocks.slice(0, 4);
-  return props.blocks.slice(Math.max(0, targetIndex - 1), targetIndex + 2);
-});
 </script>
 
 <style scoped>
@@ -116,136 +129,84 @@ const contextualBlocks = computed(() => {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: 64px minmax(0, 1fr);
+  border-right: 1px solid #e3eaec;
   background: #fff;
 }
-
-header {
+.review-document-pane:not(.has-operation-switcher) {
+  grid-template-rows: minmax(0, 1fr);
+}
+.operation-strip {
   display: flex;
   min-width: 0;
-  min-height: 64px;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
-  border-bottom: 1px solid #e4e9f1;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e3eaec;
 }
-
-header div {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-
-header strong {
-  overflow: hidden;
-  font-size: 15px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-header span {
-  color: #667085;
-  font-size: 11px;
-}
-
-.review-document-scroll {
-  min-width: 0;
-  overflow: auto;
-  padding: 22px 28px 36px;
-}
-
-.section-kicker {
-  margin: 0 0 5px;
-  color: #667085;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .08em;
-}
-
-.document-context h2,
-.create-preview h2 {
-  margin: 0 0 20px;
-  color: #101828;
-  font-size: 24px;
-}
-
-.document-block {
-  margin: 0 0 14px;
-  border-left: 3px solid transparent;
-  padding: 12px 15px;
-  color: #344054;
-}
-
-.document-block.is-target {
-  border-color: #3566f0;
-  border-radius: 8px;
-  background: #f5f8ff;
-}
-
-.document-block small {
-  color: #667085;
-  font-size: 10px;
-}
-
-.inline-diff {
-  margin-top: 24px;
-  border: 1px solid #dbe3ef;
-  border-radius: 9px;
-  overflow: hidden;
-}
-
-.diff-heading {
-  display: flex;
-  justify-content: space-between;
-  padding: 9px 12px;
-  background: #f8fafc;
-  color: #475467;
-  font-size: 11px;
-}
-
-.diff-row {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
-  border-top: 1px solid #e6ebf2;
-  padding: 10px 12px;
-}
-
-.diff-row > span {
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.diff-row p {
-  margin: 0;
-  line-height: 1.65;
-  white-space: pre-wrap;
-}
-
-.diff-row.is-before {
-  background: #fff5f5;
-}
-
-.diff-row.is-before > span {
-  color: #b42318;
-}
-
-.diff-row.is-after {
-  background: #f0fdf4;
-}
-
-.diff-row.is-after > span {
-  color: #027a48;
-}
-
-.proposal-badge {
+.operation-strip button {
   display: inline-flex;
-  margin-bottom: 10px;
-  border-radius: 5px;
-  padding: 4px 8px;
-  background: #e8f0ff;
-  color: #155eef;
-  font-size: 11px;
-  font-weight: 700;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #dfe7e9;
+  border-radius: 7px;
+  padding: 0 22px;
+  background: #fff;
+  color: #6f7c82;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 220ms ease, color 180ms ease, transform 180ms ease;
 }
+.operation-strip button > span {
+  color: #18c9ef;
+  font-size: 15px;
+  line-height: 1;
+  transition: transform 180ms ease;
+}
+.operation-strip button.is-active {
+  border-color: #090c0e;
+  background: #090c0e;
+  box-shadow: none;
+  color: #fff;
+}
+.operation-strip button:hover,
+.operation-strip button:focus-visible {
+  border-color: rgb(24 201 239 / 20%);
+  box-shadow:
+    7px 7px 14px -9px rgb(24 201 239 / 78%),
+    13px 12px 24px -17px rgb(24 201 239 / 64%),
+    0 10px 18px -13px rgb(24 201 239 / 58%);
+  outline: none;
+  transform: translateY(-2px);
+}
+.operation-strip button:hover > span,
+.operation-strip button:focus-visible > span {
+  transform: translate(2px, -1px);
+}
+.operation-strip small { margin-left: auto; color: #8b979c; font: 10px Consolas, monospace; white-space: nowrap; }
+.review-document-scroll { min-width: 0; overflow: auto; padding: 19px 20px 32px; }
+.change-header { margin-bottom: 15px; }
+.change-header p { margin: 0 0 7px; color: #168ba5; font: 600 9px Consolas, monospace; letter-spacing: .13em; }
+.change-header > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.change-header h2 { margin: 0; color: #111a1f; font-size: 18px; font-weight: 650; }
+.change-header > span { display: block; margin-top: 6px; color: #7b878d; font-size: 10px; }
+.inline-diff { border: 1px solid #dfe7e9; border-radius: 9px; overflow: hidden; }
+.diff-heading { display: flex; justify-content: space-between; padding: 10px 13px; background: #f7f9f9; color: #4c5960; font-size: 10px; }
+.diff-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); min-height: 118px; border-top: 1px solid #e3e9eb; }
+.diff-row > span { padding: 14px 10px; font: 600 10px Consolas, monospace; }
+.diff-copy { min-width: 0; padding: 14px 16px; color: #334047; line-height: 1.75; }
+.diff-copy p { margin: 0; white-space: pre-wrap; }
+.full-suggestion { margin-top: 12px; border-top: 1px solid rgb(22 128 96 / 14%); padding-top: 9px; }
+.full-suggestion summary { width: max-content; color: #16785d; cursor: pointer; font-size: 10px; font-weight: 600; }
+.full-suggestion p { margin-top: 10px; }
+.diff-row.is-before { background: #fff5f5; }
+.diff-row.is-before > span { color: #b44242; }
+.diff-row.is-after { background: #f0fbf6; }
+.diff-row.is-after > span { color: #168060; }
+.diff-owner-note { display: flex; align-items: center; gap: 9px; margin-top: 13px; color: #7c898e; font-size: 10px; }
+.diff-owner-note span { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: #090c0e; box-shadow: 0 0 0 2px #18c9ef; color: #fff; font: 600 9px Consolas, monospace; }
 </style>
