@@ -204,6 +204,8 @@ services:
       DEVCOLLAB_MEMORY_PROFILE_RUN_ID: ${DEVCOLLAB_MEMORY_PROFILE_RUN_ID:-}
       DEVCOLLAB_MEMORY_PROFILE_OUTPUT_DIR: /app/.data/memory-profile
       DEVCOLLAB_MEMORY_PROFILE_INTERVAL_MS: ${DEVCOLLAB_MEMORY_PROFILE_INTERVAL_MS:-1000}
+      # SIGSEGV/崩溃时输出 Python 栈，便于定位 C 扩展段错误
+      PYTHONFAULTHANDLER: "1"
     volumes:
       - ./.data:/app/.data
     command: ["python", "-m", "app.worker"]

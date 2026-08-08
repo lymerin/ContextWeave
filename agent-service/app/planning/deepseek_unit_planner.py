@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -20,6 +21,7 @@ class DeepSeekUnitPlanner:
         max_files_per_unit: int,
         max_units: int,
         on_phase: Callable[[str], Awaitable[None]] | None = None,
+        batch_concurrency: int = 2,
     ) -> None:
         self._provider = provider
         self._validator = UnitPlanValidator(
@@ -28,6 +30,7 @@ class DeepSeekUnitPlanner:
         )
         self._on_phase = on_phase
         self._repair_used = False
+        self._batch_concurrency = max(1, batch_concurrency)
 
     async def plan(
         self,
@@ -45,6 +48,33 @@ class DeepSeekUnitPlanner:
                 raise ValueError("A validation index is required for batched planning")
             return await self._plan_batches(project_index, validation_index)
         return await self._plan_once(project_index)
+
+    async def _plan_candidate(
+        self,
+        batch: dict[str, Any],
+        semaphore: asyncio.Semaphore,
+    ) -> dict[str, Any] | None:
+        async with semaphore:
+            try:
+                candidate = await self._provider.plan_project_units(batch)
+            except ModelProviderError as exc:
+                # Candidate plans are non-persistent consolidation hints. A malformed
+                # candidate cannot safely contribute to the final plan, but it must
+                # not consume the one repair reserved for the repository-wide plan.
+                if exc.code == "MODEL_INVALID_RESPONSE":
+                    return None
+                raise
+            candidate_issues: list[dict[str, str]] = []
+            try:
+                self._validator.validate(candidate, batch)
+            except UnitPlanValidationError as exc:
+                candidate_issues = exc.safe_details()
+            return {
+                "batch": batch.get("batch"),
+                "topLevelModules": batch.get("topLevelModules", []),
+                "unitPlan": candidate.model_dump(mode="json"),
+                "validationIssues": candidate_issues,
+            }
 
     async def _plan_once(self, project_index: dict[str, Any]) -> UnitPlan:
         try:
@@ -79,30 +109,13 @@ class DeepSeekUnitPlanner:
         batches: list[dict[str, Any]],
         validation_index: dict[str, Any],
     ) -> UnitPlan:
-        candidate_plans: list[dict[str, Any]] = []
-        for batch in batches:
-            try:
-                candidate = await self._provider.plan_project_units(batch)
-            except ModelProviderError as exc:
-                # Candidate plans are non-persistent consolidation hints. A malformed
-                # candidate cannot safely contribute to the final plan, but it must
-                # not consume the one repair reserved for the repository-wide plan.
-                if exc.code == "MODEL_INVALID_RESPONSE":
-                    continue
-                raise
-            candidate_issues: list[dict[str, str]] = []
-            try:
-                self._validator.validate(candidate, batch)
-            except UnitPlanValidationError as exc:
-                candidate_issues = exc.safe_details()
-            candidate_plans.append(
-                {
-                    "batch": batch.get("batch"),
-                    "topLevelModules": batch.get("topLevelModules", []),
-                    "unitPlan": candidate.model_dump(mode="json"),
-                    "validationIssues": candidate_issues,
-                }
-            )
+        # 候选 batch 并发规划（batch_concurrency 控并发、防 DeepSeek 限流），
+        # 结果按原顺序收集——consolidation 依赖 batch 顺序展示给模型。
+        semaphore = asyncio.Semaphore(self._batch_concurrency)
+        candidates = await asyncio.gather(
+            *(self._plan_candidate(batch, semaphore) for batch in batches)
+        )
+        candidate_plans = [c for c in candidates if c is not None]
         if not candidate_plans:
             raise UnitPlanValidationError(
                 [

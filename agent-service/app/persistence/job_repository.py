@@ -786,6 +786,12 @@ class PostgresAgentJobRepository:
                 UPDATE agent_service.agent_units
                 SET status = $3::varchar, next_attempt_at = $4, lease_expires_at = NULL,
                     error_code = $5, error_message = $6, updated_at = now(),
+                    -- 骨架 review 未审批不算执行失败：claim 时 +1 在这里减回，
+                    -- 等待不消耗重试预算（审批无论多晚，单元都有完整 attempt）。
+                    attempt = CASE
+                        WHEN $5 = 'SKELETON_REVIEW_PENDING' THEN GREATEST(attempt - 1, 0)
+                        ELSE attempt
+                    END,
                     completed_at = CASE
                         WHEN $3::varchar = 'FAILED' THEN now()
                         ELSE NULL

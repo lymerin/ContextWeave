@@ -79,6 +79,10 @@ class DocumentReader:
             DocumentCandidate(
                 document_id=UUID(c["documentId"]),
                 title=str(c.get("title", "")),
+                existing_binding_count=int(c.get("existingBindingCount") or 0),
+                matched_block_ids=[
+                    UUID(b) for b in (c.get("matchedBlockIds") or [])
+                ],
             )
             for c in result.get("candidates", [])
             if c.get("documentId")

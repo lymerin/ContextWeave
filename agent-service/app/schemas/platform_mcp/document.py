@@ -29,8 +29,15 @@ class DocumentStructure(BaseModel):
 
 
 class DocumentCandidate(BaseModel):
-    """候选文档——document.find_candidates 返回。"""
+    """候选文档——document.find_candidates 返回。
+
+    existing_binding_count：当前文件集与该文档的 DIRECT_BINDING 命中数。
+    只有 >0 才允许复用该文档（模块文档归属必须靠显式绑定，不靠标题/路径猜测）
+    ——否则 resolve_targets 会把所有模块都写进 workspace 第一个文档。
+    """
     model_config = ConfigDict(extra="forbid", strict=True)
 
     document_id: UUID
     title: str = ""
+    existing_binding_count: int = 0
+    matched_block_ids: list[UUID] = []

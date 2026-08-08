@@ -419,6 +419,7 @@ class AgentWorker:
                 max_files_per_unit=self._settings.agent_max_total_files_per_unit,
                 max_units=planner_limit,
                 on_phase=on_phase,
+                batch_concurrency=self._settings.agent_plan_batch_concurrency,
             )
             with self._profile_stage(
                 "PLANNER", job, job_id, unit_id
@@ -544,7 +545,12 @@ class AgentWorker:
             max_attempts = int(unit["max_attempts"])
             retry_at = None
             if code in RETRYABLE_ERRORS and attempt < max_attempts:
-                delay = 60 if attempt == 1 else 300
+                # 骨架 review 未审批：固定 5 分钟长退避，避免批次单元高频
+                # 撞墙轮询（审批前 N 个单元 × 每次 DB+HTTP）；attempt 已由
+                # fail_unit 减回，等待不消耗重试预算，审批后再正常执行。
+                delay = 300 if code == "SKELETON_REVIEW_PENDING" else (
+                    60 if attempt == 1 else 300
+                )
                 retry_at = datetime.now(UTC) + timedelta(seconds=delay)
             await self._repository.fail_unit(
                 unit_id, self._worker_id, code, message, retry_at

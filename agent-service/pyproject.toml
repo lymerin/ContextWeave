@@ -18,7 +18,9 @@ dependencies = [
   "asyncpg>=0.30,<1",
   "psutil>=6.1,<8",
   "jsonschema>=4,<5",
-  "tree-sitter>=0.26,<1",
+  # 0.26.0 binding 有 Node 生命周期回归（解析多文件后 Node.text 访问悬垂内存
+  # → SIGSEGV 崩溃循环）。锁定 0.25.2：479 文件压力测试连续通过。
+  "tree-sitter==0.25.2",
   "tree-sitter-java>=0.23,<1",
 ]
 
