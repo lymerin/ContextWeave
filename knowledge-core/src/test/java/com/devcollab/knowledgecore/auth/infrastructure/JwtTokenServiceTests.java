@@ -34,6 +34,7 @@ class JwtTokenServiceTests {
         assertEquals("alice", claims.username());
         assertTrue(claims.tokenId() != null && !claims.tokenId().isBlank());
         assertTrue(claims.expiresAt().isAfter(Instant.now()));
+        assertEquals(JwtTokenService.TOKEN_TYPE_ACCESS, claims.tokenType());
         assertEquals(1800, tokenService.expiresInSeconds());
     }
 
@@ -52,6 +53,19 @@ class JwtTokenServiceTests {
         assertThrows(
                 JWTVerificationException.class,
                 () -> verifier.verify(token)
+        );
+    }
+
+    @Test
+    void shouldRejectDefaultPlaceholderSecret() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new JwtProperties(
+                        "devcollab-knowledge-core-test",
+                        "devcollab-web-test",
+                        "devcollab-local-development-secret-change-me",
+                        Duration.ofMinutes(30)
+                )
         );
     }
 

@@ -6,6 +6,7 @@ import com.devcollab.protocol.core.v1.DocumentOperationType;
 import com.devcollab.protocol.core.v1.KnowledgeCoreCollaborationServiceGrpc;
 import com.devcollab.protocol.core.v1.ListDocumentOperationsRequest;
 import com.devcollab.protocol.core.v1.VerifyDocumentAccessRequest;
+import com.devcollab.knowledgecore.auth.infrastructure.JwtTokenService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.grpc.ManagedChannel;
@@ -29,11 +30,14 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -58,6 +62,9 @@ class KnowledgeCoreGrpcIntegrationTests {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private JwtTokenService jwtTokenService;
 
     private Server server;
     private ManagedChannel channel;
@@ -163,9 +170,25 @@ class KnowledgeCoreGrpcIntegrationTests {
     }
 
     @Test
+    void accessTokenIsRejectedByGrpcTransport() throws Exception {
+        String accessToken = registerAndGetAccessToken();
+
+        assertThatThrownBy(() -> authenticatedStub(accessToken)
+                .verifyDocumentAccess(
+                        VerifyDocumentAccessRequest.newBuilder()
+                                .setDocumentId(UUID.randomUUID().toString())
+                                .build()
+                )).isInstanceOfSatisfying(
+                StatusRuntimeException.class,
+                exception -> assertThat(exception.getStatus().getCode())
+                        .isEqualTo(Status.Code.UNAUTHENTICATED)
+        );
+    }
+
+    @Test
     void nonMemberIsPermissionDeniedWithStableErrorCode() throws Exception {
         Fixture fixture = fixture();
-        String outsiderToken = registerAndGetAccessToken();
+        String outsiderToken = delegationTokenFor(registerAndGetAccessToken());
 
         assertThatThrownBy(() -> authenticatedStub(outsiderToken)
                 .verifyDocumentAccess(
@@ -187,7 +210,7 @@ class KnowledgeCoreGrpcIntegrationTests {
 
     @Test
     void invalidUuidIsInvalidArgumentWithStableErrorCode() throws Exception {
-        String token = registerAndGetAccessToken();
+        String token = delegationTokenFor(registerAndGetAccessToken());
 
         assertThatThrownBy(() -> authenticatedStub(token).verifyDocumentAccess(
                 VerifyDocumentAccessRequest.newBuilder()
@@ -252,7 +275,44 @@ class KnowledgeCoreGrpcIntegrationTests {
                                 """))
                 .andExpect(status().isCreated())
                 .andReturn()).get("id").asText();
-        return new Fixture(token, workspaceId, documentId, blockId);
+        String delegationToken = jwtTokenService.issueAgentDelegationToken(
+                UUID.fromString(responseJson(mockMvc.perform(
+                                get("/api/v1/auth/me")
+                                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        )
+                        .andExpect(status().isOk())
+                        .andReturn()).get("userId").asText()),
+                UUID.randomUUID(),
+                UUID.fromString(workspaceId),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "abc1234",
+                List.of("devcollab.grpc.collaboration"),
+                Duration.ofMinutes(5)
+        );
+        return new Fixture(delegationToken, workspaceId, documentId, blockId);
+    }
+
+    private String delegationTokenFor(String accessToken) throws Exception {
+        return jwtTokenService.issueAgentDelegationToken(
+                currentUserId(accessToken),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "abc1234",
+                List.of("devcollab.grpc.collaboration"),
+                Duration.ofMinutes(5)
+        );
+    }
+
+    private UUID currentUserId(String accessToken) throws Exception {
+        return UUID.fromString(responseJson(mockMvc.perform(
+                        get("/api/v1/auth/me")
+                                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                )
+                .andExpect(status().isOk())
+                .andReturn()).get("userId").asText());
     }
 
     private String registerAndGetAccessToken() throws Exception {
