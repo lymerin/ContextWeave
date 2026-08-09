@@ -116,6 +116,12 @@ powershell -ExecutionPolicy Bypass -File tools\local-demo.ps1 stop -KeepInfrastr
 ```powershell
 Copy-Item .env.example .env
 docker compose up -d
+docker exec devcollab-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic devcollab.document.events --partitions 1 --replication-factor 1
+docker exec devcollab-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic devcollab.cache.events --partitions 1 --replication-factor 1
+docker exec devcollab-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic devcollab.review.events --partitions 1 --replication-factor 1
+docker exec devcollab-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic devcollab.notification.events --partitions 1 --replication-factor 1
+docker exec devcollab-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic devcollab.git.events --partitions 1 --replication-factor 1
+docker exec devcollab-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic devcollab.dead-letter --partitions 1 --replication-factor 1
 ```
 
 ### 2. Core
@@ -143,7 +149,7 @@ docker compose up -d
 ```powershell
 cd agent-service
 pip install -e .
-uvicorn app.main:app --port 8091
+uvicorn app.main:app --port 8092
 python app/worker.py
 ```
 
