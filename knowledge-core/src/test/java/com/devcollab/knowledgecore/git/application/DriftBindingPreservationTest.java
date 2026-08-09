@@ -64,13 +64,13 @@ class DriftBindingPreservationTest {
     }
 
     private void stubCreateResult(UUID requestId, Status status) {
-        when(documentChangeService.create(any(), any(), any()))
+        when(documentChangeService.createDrift(any(), any(), any()))
                 .thenReturn(new CreateResult(requestId, status, Instant.now(), false));
     }
 
     private List<CreateBindingProposalCommand> captureProposals() {
         ArgumentCaptor<CreateCommand> captor = ArgumentCaptor.forClass(CreateCommand.class);
-        verify(documentChangeService).create(eq(WORKSPACE_ID), eq(USER_ID), captor.capture());
+        verify(documentChangeService).createDrift(eq(WORKSPACE_ID), eq(USER_ID), captor.capture());
         return captor.getValue().bindingProposals();
     }
 
@@ -100,9 +100,11 @@ class DriftBindingPreservationTest {
         // 修复前：只有 moved 生成 proposal（1 条）→ apply 时 healthy 被 wipe 掉
         assertThat(proposals).hasSize(2);
 
-        // 漂移绑定 → UPSERT 到新位置
+        // 漂移绑定 → UPSERT 到新位置，且必须携带旧绑定 id（REPLACE 语义：
+        // 修复前 bindingId=null → 应用侧只新建不删旧 → 旧位置僵尸绑定永存）
         assertThat(proposals).anySatisfy(p -> {
             assertThat(p.action()).isEqualTo(BindingAction.UPSERT_BINDING);
+            assertThat(p.bindingId()).isEqualTo(moved.id());
             assertThat(p.symbolKey()).isEqualTo("PYTHON:src/b.py:Foo.bar:METHOD");
             assertThat(p.documentId()).isEqualTo(DOC_ID);
             assertThat(p.blockId()).isEqualTo(BLOCK_ID);
@@ -111,6 +113,34 @@ class DriftBindingPreservationTest {
         // 未漂移绑定 → 保留项必须引用现有绑定 id（不能是 null/新 id）
         assertThat(proposals).anySatisfy(p ->
                 assertThat(p.bindingId()).isEqualTo(healthy.id()));
+    }
+
+    @Test
+    void lineShiftedBinding_getsReplaceProposal_carriesExistingId() {
+        // 行号偏移（COSMETIC）：符号仍在原文件只是位置移动。
+        // REPLACE 语义 = UPSERT 携带旧绑定 id + 新行号；修复前 bindingId=null
+        // → 应用侧只新建不删旧 → 同符号两条绑定（旧行号僵尸 + 新行号）永存。
+        var binding = makeBinding("PYTHON:src/a.py:Foo.baz:METHOD");
+        var symbol = makeSymbol(
+                "PYTHON:src/a.py:Foo.baz:METHOD", "Foo.baz",
+                "def baz(self) -> None", 5, 25);
+
+        when(gitRepository.findBindingsByRepositoryId(REPO_ID))
+                .thenReturn(List.of(binding));
+        when(gitRepository.findSymbolsByRepositoryId(REPO_ID, null))
+                .thenReturn(List.of(symbol));
+        when(gitRepository.findFilesByRepositoryId(REPO_ID))
+                .thenReturn(List.of(makeFile("src/a.py")));
+        stubCreateResult(UUID.randomUUID(), Status.APPLIED);
+
+        service.detectAndSubmit(WORKSPACE_ID, REPO_ID, "abc1234", USER_ID);
+
+        var proposals = captureProposals();
+        assertThat(proposals).hasSize(1);
+        assertThat(proposals.get(0).action()).isEqualTo(BindingAction.UPSERT_BINDING);
+        assertThat(proposals.get(0).bindingId()).isEqualTo(binding.id());
+        assertThat(proposals.get(0).startLine()).isEqualTo(5);
+        assertThat(proposals.get(0).endLine()).isEqualTo(25);
     }
 
     @Test

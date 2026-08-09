@@ -198,7 +198,7 @@ public class DriftDetectionService {
         );
 
         // Step 1: Create the change request
-        var result = documentChangeService.create(workspaceId, currentUserId, command);
+        var result = documentChangeService.createDrift(workspaceId, currentUserId, command);
 
         // Step 2: When there are document-block operations the create() returns
         // PENDING.  Auto-apply to keep the silent pipeline truly silent.
