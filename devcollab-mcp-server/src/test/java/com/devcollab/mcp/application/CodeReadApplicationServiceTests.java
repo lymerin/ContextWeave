@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class CodeReadApplicationServiceTests {
@@ -75,6 +76,70 @@ class CodeReadApplicationServiceTests {
         assertThat(((String) result.get("content")).length()).isLessThanOrEqualTo(40_000);
         assertThat((int) result.get("omittedLineCount")).isGreaterThan(0);
         assertThat((int) result.get("omittedCharacterCount")).isGreaterThan(0);
+    }
+
+    @Test
+    void readBatchAcceptsEmptyPathsWithoutCallingCore() {
+        CodeReadApplicationService service = service(400, 40_000);
+
+        Map<String, Object> result = service.readBatch(
+                workspaceId, repositoryId, List.of(), "abc", identity
+        );
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> files = (Map<String, Object>) result.get("files");
+        assertThat(files).isEmpty();
+        assertThat(result.get("truncated")).isEqualTo(false);
+        verifyNoInteractions(gateway);
+    }
+
+    @Test
+    void readBatchTruncatesAtTotalByteLimitBoundary() {
+        String exact = "a".repeat(200 * 1024);
+        when(gateway.readRepositorySource(eq(workspaceId), eq(repositoryId), eq("A.java"), any()))
+                .thenReturn(new KnowledgeCoreGateway.RepositorySource(
+                        repositoryId, "abc", "A.java", exact.length(), "Java", true, exact
+                ));
+        CodeReadApplicationService service = service(400, 40_000);
+
+        Map<String, Object> exactResult = service.readBatch(
+                workspaceId, repositoryId, List.of("A.java"), "abc", identity
+        );
+
+        assertThat(exactResult.get("truncated")).isEqualTo(false);
+        @SuppressWarnings("unchecked")
+        Map<String, Map<String, Object>> exactFiles =
+                (Map<String, Map<String, Object>>) exactResult.get("files");
+        assertThat(exactFiles.get("A.java").get("content")).isEqualTo(exact);
+
+        when(gateway.readRepositorySource(eq(workspaceId), eq(repositoryId), eq("B.java"), any()))
+                .thenReturn(new KnowledgeCoreGateway.RepositorySource(
+                        repositoryId, "abc", "B.java", exact.length() + 1, "Java",
+                        true, exact + "b"
+                ));
+        Map<String, Object> truncatedResult = service.readBatch(
+                workspaceId, repositoryId, List.of("B.java"), "abc", identity
+        );
+
+        assertThat(truncatedResult.get("truncated")).isEqualTo(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Map<String, Object>> truncatedFiles =
+                (Map<String, Map<String, Object>>) truncatedResult.get("files");
+        assertThat((String) truncatedFiles.get("B.java").get("content")).hasSize(200 * 1024);
+        assertThat(truncatedFiles.get("B.java").get("truncated")).isEqualTo(true);
+    }
+
+    @Test
+    void readBatchRejectsTooManyPaths() {
+        CodeReadApplicationService service = service(400, 40_000);
+        List<String> paths = java.util.stream.IntStream.range(0, 101)
+                .mapToObj(index -> "src/File" + index + ".java")
+                .toList();
+
+        assertThatThrownBy(() -> service.readBatch(
+                workspaceId, repositoryId, paths, "abc", identity
+        )).isInstanceOfSatisfying(McpToolException.class,
+                error -> assertThat(error.code()).isEqualTo(McpToolErrorCode.INVALID_ARGUMENT));
     }
 
     private CodeReadApplicationService service(int lines, int characters) {

@@ -44,7 +44,7 @@ class McpServerProtocolTests {
     private KnowledgeCoreGateway coreGateway;
 
     @Test
-    void officialSdkCanInitializeAndListTenTools() {
+    void officialSdkCanInitializeAndListRegisteredTools() {
         try (McpSyncClient client = client()) {
             assertThat(client.initialize().serverInfo().name()).isEqualTo("devcollab-context-server");
             List<McpSchema.Tool> tools = client.listTools().tools();
@@ -53,9 +53,12 @@ class McpServerProtocolTests {
                     .containsExactlyInAnyOrder(
                             "devcollab.workspace.get_context",
                             "devcollab.code.read",
+                            "devcollab.code.read_batch",
                             "devcollab.document.get_structure",
+                            "devcollab.document.get_structure_batch",
                             "devcollab.binding.list",
                             "devcollab.document.find_candidates",
+                            "devcollab.document.find_candidates_batch",
                             "devcollab.repository.list_files",
                             "devcollab.repository.list_changes",
                             "devcollab.binding.list_batch",

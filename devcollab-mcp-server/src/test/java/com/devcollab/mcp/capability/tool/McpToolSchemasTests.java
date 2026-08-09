@@ -38,10 +38,13 @@ class McpToolSchemasTests {
         for (String tool : new String[]{
                 "devcollab.workspace.get_context",
                 "devcollab.code.read",
+                "devcollab.code.read_batch",
                 "devcollab.binding.list",
                 "devcollab.binding.list_batch",
                 "devcollab.document.get_structure",
+                "devcollab.document.get_structure_batch",
                 "devcollab.document.find_candidates",
+                "devcollab.document.find_candidates_batch",
                 "devcollab.repository.list_files",
                 "devcollab.repository.list_changes",
                 "devcollab.repository.inspect_code_metadata",

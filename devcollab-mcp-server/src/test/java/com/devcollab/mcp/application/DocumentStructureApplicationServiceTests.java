@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.devcollab.mcp.client.KnowledgeCoreGateway;
@@ -186,6 +187,52 @@ class DocumentStructureApplicationServiceTests {
 
         assertThat(result.get("workspaceId")).isEqualTo(workspaceId);
         assertThat(result.get("documentId")).isEqualTo(documentId);
+    }
+
+    @Test
+    void batchAcceptsEmptyDocumentIdsWithoutCallingCore() {
+        UUID workspaceId = UUID.randomUUID();
+
+        Map<String, Object> result = service.getDocumentStructures(
+                workspaceId, List.of(), true, null, null, identity
+        );
+
+        assertThat(result.get("includeBlockContent")).isEqualTo(true);
+        assertThat((List<?>) result.get("structures")).isEmpty();
+        verifyNoInteractions(gateway);
+    }
+
+    @Test
+    void batchPreservesIncludeBlockContentSemantics() {
+        UUID workspaceId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+        when(gateway.getDocumentStructure(eq(workspaceId), eq(documentId), eq(true), any(Integer.class), any(Integer.class), any()))
+                .thenReturn(structure(documentId, workspaceId, false, false, List.of(
+                        block("included", null, false)
+                ), 0, 0));
+
+        Map<String, Object> result = service.getDocumentStructures(
+                workspaceId, List.of(documentId), true, null, null, identity
+        );
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> structures = (List<Map<String, Object>>) result.get("structures");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> blocks = (List<Map<String, Object>>) structures.get(0).get("blocks");
+        assertThat(blocks.get(0).get("plainText")).isEqualTo("included");
+    }
+
+    @Test
+    void batchRejectsTooManyDocumentIds() {
+        UUID workspaceId = UUID.randomUUID();
+        List<UUID> ids = java.util.stream.IntStream.range(0, 101)
+                .mapToObj(_index -> UUID.randomUUID())
+                .toList();
+
+        assertThatThrownBy(() -> service.getDocumentStructures(
+                workspaceId, ids, false, null, null, identity
+        )).isInstanceOfSatisfying(McpToolException.class,
+                error -> assertThat(error.code()).isEqualTo(McpToolErrorCode.INVALID_ARGUMENT));
     }
 
     private KnowledgeCoreGateway.DocumentStructure structure(

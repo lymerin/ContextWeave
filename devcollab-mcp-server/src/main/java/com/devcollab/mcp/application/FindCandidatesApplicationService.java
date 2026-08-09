@@ -13,6 +13,8 @@ import java.util.*;
 @Service
 public class FindCandidatesApplicationService {
 
+    private static final int MAX_BATCH_PATHS = 100;
+
     private final KnowledgeCoreGateway knowledgeCoreGateway;
     private final McpProperties properties;
     private final ContextBudgetPolicy budgetPolicy;
@@ -51,6 +53,32 @@ public class FindCandidatesApplicationService {
         result.put("truncated", coreResult.truncated());
         result.put("omittedCandidateCount", coreResult.omittedCandidateCount());
         return result;
+    }
+
+    public Map<String, Object> findCandidatesBatch(
+            UUID workspaceId,
+            UUID repositoryId,
+            List<String> paths,
+            Integer requestedLimit,
+            McpUserIdentity identity
+    ) {
+        if (paths.size() > MAX_BATCH_PATHS) {
+            throw invalidQuery("paths exceeds the configured batch limit");
+        }
+
+        Map<String, Object> byPath = new LinkedHashMap<>();
+        for (String path : paths) {
+            Map<String, Object> result = findCandidates(
+                    workspaceId, repositoryId, path, null, requestedLimit, identity
+            );
+            byPath.put(path.replace('\\', '/'), result.get("candidates"));
+        }
+
+        Map<String, Object> batch = new LinkedHashMap<>();
+        batch.put("workspaceId", workspaceId);
+        batch.put("repositoryId", repositoryId);
+        batch.put("candidatesByPath", byPath);
+        return batch;
     }
 
     private Map<String, Object> candidateMap(KnowledgeCoreGateway.DocumentCandidate candidate) {

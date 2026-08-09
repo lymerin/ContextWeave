@@ -168,6 +168,55 @@ class FindCandidatesApplicationServiceTests {
         )).extracting("code").isEqualTo(McpToolErrorCode.CORE_UNAVAILABLE);
     }
 
+    @Test
+    void batchAcceptsEmptyPathsWithoutCallingCore() {
+        Map<String, Object> result = service.findCandidatesBatch(
+                workspaceId, repositoryId, List.of(), null, identity
+        );
+
+        assertThat(result.get("workspaceId")).isEqualTo(workspaceId);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> candidatesByPath = (Map<String, Object>) result.get("candidatesByPath");
+        assertThat(candidatesByPath).isEmpty();
+        verifyNoInteractions(gateway);
+    }
+
+    @Test
+    void batchReturnsCandidatesByPath() {
+        UUID documentId = UUID.randomUUID();
+        when(gateway.findDocumentCandidates(
+                workspaceId, repositoryId, "src/App.java", null, 20, identity
+        )).thenReturn(new KnowledgeCoreGateway.DocumentCandidateResult(
+                workspaceId, repositoryId, "src/App.java", null,
+                List.of(new KnowledgeCoreGateway.DocumentCandidate(
+                        documentId, "App", 100, List.of(), List.of(), 0
+                )),
+                false, 0
+        ));
+
+        Map<String, Object> result = service.findCandidatesBatch(
+                workspaceId, repositoryId, List.of("src\\App.java"), null, identity
+        );
+
+        @SuppressWarnings("unchecked")
+        Map<String, List<Map<String, Object>>> candidatesByPath =
+                (Map<String, List<Map<String, Object>>>) result.get("candidatesByPath");
+        assertThat(candidatesByPath).containsOnlyKeys("src/App.java");
+        assertThat(candidatesByPath.get("src/App.java")).singleElement()
+                .satisfies(candidate -> assertThat(candidate.get("documentId")).isEqualTo(documentId));
+    }
+
+    @Test
+    void batchRejectsTooManyPaths() {
+        List<String> paths = java.util.stream.IntStream.range(0, 101)
+                .mapToObj(index -> "src/File" + index + ".java")
+                .toList();
+
+        assertInvalid(() -> service.findCandidatesBatch(
+                workspaceId, repositoryId, paths, null, identity
+        ));
+    }
+
     private KnowledgeCoreGateway.DocumentCandidateResult emptyResult(
             UUID repository, String filePath, String query
     ) {

@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workspaceId",
+    "includeBlockContent",
+    "structures"
+  ],
+  "properties": {
+    "workspaceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "includeBlockContent": {
+      "type": "boolean"
+    },
+    "structures": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}

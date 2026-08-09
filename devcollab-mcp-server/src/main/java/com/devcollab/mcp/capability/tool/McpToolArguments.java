@@ -95,4 +95,20 @@ final class McpToolArguments {
             return text;
         }).toList();
     }
+
+    static List<String> stringList(Map<String, Object> arguments, String name) {
+        Object value = arguments.get(name);
+        if (!(value instanceof List<?> values)) {
+            throw new McpToolException(McpToolErrorCode.INVALID_ARGUMENT, name + " is required");
+        }
+        return values.stream().map(item -> {
+            if (!(item instanceof String text) || text.isBlank()) {
+                throw new McpToolException(
+                        McpToolErrorCode.INVALID_ARGUMENT,
+                        name + " must contain non-blank strings"
+                );
+            }
+            return text;
+        }).toList();
+    }
 }

@@ -2,10 +2,13 @@ package com.devcollab.mcp.application;
 
 import com.devcollab.mcp.client.KnowledgeCoreGateway;
 import com.devcollab.mcp.config.McpProperties;
+import com.devcollab.mcp.error.McpToolErrorCode;
+import com.devcollab.mcp.error.McpToolException;
 import com.devcollab.mcp.security.McpUserIdentity;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -13,6 +16,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class DocumentStructureApplicationService {
+
+    private static final int MAX_BATCH_DOCUMENTS = 100;
 
     private final KnowledgeCoreGateway knowledgeCoreGateway;
     private final McpProperties mcpProperties;
@@ -74,6 +79,37 @@ public class DocumentStructureApplicationService {
         result.put("truncated", structure.isTruncated());
         result.put("omittedBlockCount", structure.omittedBlockCount());
         result.put("omittedCharacterCount", structure.omittedCharacterCount());
+        return result;
+    }
+
+    public Map<String, Object> getDocumentStructures(
+            UUID workspaceId,
+            List<UUID> documentIds,
+            boolean includeBlockContent,
+            Integer maxBlocksArg,
+            Integer maxContentCharsArg,
+            McpUserIdentity identity
+    ) {
+        if (documentIds.size() > MAX_BATCH_DOCUMENTS) {
+            throw new McpToolException(
+                    McpToolErrorCode.INVALID_ARGUMENT,
+                    "documentIds exceeds the configured batch limit"
+            );
+        }
+        List<Map<String, Object>> structures = documentIds.stream()
+                .map(documentId -> getDocumentStructure(
+                        workspaceId,
+                        documentId,
+                        includeBlockContent,
+                        maxBlocksArg,
+                        maxContentCharsArg,
+                        identity
+                ))
+                .toList();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("workspaceId", workspaceId);
+        result.put("includeBlockContent", includeBlockContent);
+        result.put("structures", structures);
         return result;
     }
 }
