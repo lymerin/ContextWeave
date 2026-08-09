@@ -34,7 +34,7 @@ $env:DEVCOLLAB_REDIS_HOST="localhost"
 $env:DEVCOLLAB_REDIS_PORT="6379"
 $env:DEVCOLLAB_JWT_ISSUER="devcollab-knowledge-core"
 $env:DEVCOLLAB_JWT_AUDIENCE="devcollab-web"
-$env:DEVCOLLAB_JWT_SECRET="devcollab-local-development-secret-change-me"
+$env:DEVCOLLAB_JWT_SECRET="devcollab-local-dev-jwt-secret-8f3a2c9e7b1d4f6a"
 
 .\mvnw.cmd -pl collaboration-gateway spring-boot:run
 ```
