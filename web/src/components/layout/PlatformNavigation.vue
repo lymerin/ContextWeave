@@ -66,6 +66,7 @@ button.is-active,button.is-active:hover { color:#fff; }
 button.is-active span { display:inline-block; width:6px; height:6px; margin-left:7px; border-radius:50%; background:#18c9ef; vertical-align:2px; }
 button:disabled { cursor:not-allowed; opacity:.42; }
 button:focus-visible { outline:2px solid #18c9ef; outline-offset:2px; }
-@media(max-width:820px){.platform-navigation{--item-width:96px;position:static;grid-column:1/-1;grid-row:2;max-width:100%;overflow-x:auto;transform:none}.platform-navigation button{font-size:12px;padding-inline:8px}}
+@media(min-width:821px) and (orientation:landscape){.platform-navigation{display:none}}
+@media(max-width:820px),(orientation:portrait){.platform-navigation{--item-width:96px;position:static;grid-column:1/-1;grid-row:2;max-width:100%;overflow-x:auto;transform:none}.platform-navigation button{font-size:12px;padding-inline:8px}}
 @media(prefers-reduced-motion:reduce){button,.platform-navigation-indicator{transition:none}}
 </style>

@@ -1,4 +1,5 @@
 <template>
+  <MorphingNavigation />
   <RouterView />
 </template>
 
@@ -6,6 +7,7 @@
 import { onBeforeUnmount, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
+import MorphingNavigation from '@/components/layout/MorphingNavigation.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useBackgroundActivityStore } from '@/stores/backgroundActivity';
 

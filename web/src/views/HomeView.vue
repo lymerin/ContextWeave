@@ -667,6 +667,7 @@ function formatTime(value: string) {
 }
 
 .workspace-selection-account {
+  grid-column: 3;
   justify-content: flex-end;
   gap: 12px;
 }

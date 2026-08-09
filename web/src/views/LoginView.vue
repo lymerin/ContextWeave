@@ -338,6 +338,7 @@ async function submit() {
 }
 
 .login-topbar-status {
+  grid-column: 3;
   justify-content: flex-end;
   gap: 12px;
   color: #6d777c;

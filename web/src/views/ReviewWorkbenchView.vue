@@ -18,11 +18,13 @@
 
       <WorkspaceContextNavigation :workspace-id="workspaceId" active="reviews" />
 
-      <div class="review-account">
-        <span class="review-avatar" :aria-label="`当前用户：${currentUserName}`">
-          {{ currentUserInitial }}
-        </span>
-      </div>
+      <Teleport to="body">
+        <div class="review-account">
+          <span class="review-avatar" :aria-label="`当前用户：${currentUserName}`">
+            {{ currentUserInitial }}
+          </span>
+        </div>
+      </Teleport>
     </header>
 
     <section class="review-page-main">
@@ -529,7 +531,6 @@ const currentUserName = computed(() => (
   || '用户'
 ));
 const currentUserInitial = computed(() => currentUserName.value.trim().slice(0, 1) || '用');
-
 onMounted(() => {
   backgroundActivity.setActiveWorkspace(workspaceId.value);
   void backgroundActivity.refreshPendingReviewCount(workspaceId.value);
@@ -1103,10 +1104,28 @@ function formatDate(value: string) {
   box-shadow: 0 10px 32px rgb(38 56 67 / 6%);
 }
 
+.review-account {
+  position: fixed;
+  top: 17px;
+  right: 36px;
+  z-index: 120;
+  display: flex;
+}
+
+.review-avatar {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--review-ink);
+  color: #fff;
+  font-weight: 650;
+}
+
 .review-brand,
 .review-navigation,
 .review-navigation-item,
-.review-account,
 .review-enter-button {
   display: flex;
   align-items: center;
@@ -1208,22 +1227,6 @@ function formatDate(value: string) {
   height: 5px;
   border-radius: 50%;
   background: var(--review-signal);
-}
-
-.review-account {
-  justify-content: flex-end;
-  gap: 11px;
-}
-
-.review-avatar {
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--review-ink);
-  color: #fff;
-  font-weight: 650;
 }
 
 .review-page-main {
@@ -1782,6 +1785,10 @@ function formatDate(value: string) {
     padding: 0 22px;
   }
 
+  .review-account {
+    right: 22px;
+  }
+
   .review-brand-beta {
     display: none;
   }
@@ -1822,6 +1829,11 @@ function formatDate(value: string) {
     padding: 0 18px;
   }
 
+  .review-account {
+    top: 15px;
+    right: 18px;
+  }
+
   .review-navigation {
     grid-column: 1 / -1;
     grid-row: 2;
@@ -1832,11 +1844,6 @@ function formatDate(value: string) {
 
   .review-navigation-item {
     flex: 1 0 auto;
-  }
-
-  .review-account {
-    grid-column: 2;
-    grid-row: 1;
   }
 
   .review-page-main {
