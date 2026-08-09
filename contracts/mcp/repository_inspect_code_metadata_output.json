@@ -24,12 +24,14 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
+          "required": [
           "filePath",
+          "blobSha",
           "language"
         ],
         "properties": {
           "filePath": { "type": "string" },
+          "blobSha": { "type": ["string", "null"] },
           "language": { "type": "string" },
           "packageName": { "type": ["string", "null"] },
           "moduleKey": { "type": ["string", "null"] },

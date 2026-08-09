@@ -377,7 +377,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
                     payload.workspaceId(), payload.repositoryId(), payload.revision(),
                     payload.files() == null ? List.of() : payload.files().stream()
                             .map(file -> new CodeMetadataInfo(
-                                    file.filePath(), file.language(), file.packageName(),
+                                    file.filePath(), file.blobSha(), file.language(), file.packageName(),
                                     file.moduleKey(), file.layerHint(), safe(file.imports()),
                                     safe(file.exportedSymbols()), safe(file.topLevelSymbols()),
                                     safe(file.annotations()), safe(file.routeHints()),
@@ -669,6 +669,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
 
     private record CodeMetadataPayload(
             String filePath,
+            String blobSha,
             String language,
             String packageName,
             String moduleKey,

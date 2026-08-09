@@ -63,6 +63,7 @@ public class RepositoryCodeMetadataApplicationService {
         result.put("files", batch.files().stream().map(file -> {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("filePath", file.filePath());
+            item.put("blobSha", file.blobSha());
             item.put("language", file.language());
             item.put("packageName", file.packageName());
             item.put("moduleKey", file.moduleKey());

@@ -169,4 +169,45 @@ class HttpKnowledgeCoreGatewayContractTests {
         });
         server.verify();
     }
+
+    @Test
+    void codeMetadataJsonDeserializesBlobSha() {
+        UUID workspaceId = UUID.randomUUID();
+        UUID repositoryId = UUID.randomUUID();
+        String json = """
+                {
+                  "workspaceId":"%s",
+                  "repositoryId":"%s",
+                  "revision":"abc123",
+                  "files":[{
+                    "filePath":"src/App.java",
+                    "blobSha":"blob-abc",
+                    "language":"Java",
+                    "packageName":"com.example",
+                    "moduleKey":"src",
+                    "layerHint":"CONTROLLER",
+                    "imports":[],
+                    "exportedSymbols":["App"],
+                    "topLevelSymbols":["App"],
+                    "annotations":[],
+                    "routeHints":[],
+                    "roleHints":[],
+                    "parseStatus":"PARSED",
+                    "errorCode":null
+                  }]
+                }
+                """.formatted(workspaceId, repositoryId);
+        server.expect(requestTo(org.hamcrest.Matchers.containsString(
+                        "/api/v1/workspaces/" + workspaceId + "/repositories/" + repositoryId + "/code-metadata/batch")))
+                .andExpect(header("Authorization", "Bearer access-token"))
+                .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
+
+        KnowledgeCoreGateway.CodeMetadataBatch result = gateway.inspectCodeMetadata(
+                workspaceId, repositoryId, "abc123", java.util.List.of("src/App.java"), identity
+        );
+
+        assertThat(result.files()).singleElement()
+                .satisfies(file -> assertThat(file.blobSha()).isEqualTo("blob-abc"));
+        server.verify();
+    }
 }

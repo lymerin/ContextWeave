@@ -256,6 +256,7 @@ public interface KnowledgeCoreGateway {
 
     record CodeMetadataInfo(
             String filePath,
+            String blobSha,
             String language,
             String packageName,
             String moduleKey,

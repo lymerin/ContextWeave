@@ -160,7 +160,7 @@ class RepositoryScopeApplicationServiceTests {
                 repositoryId,
                 "abc123",
                 List.of(new KnowledgeCoreGateway.CodeMetadataInfo(
-                        "src/App.java", "Java", "com.example", "src",
+                        "src/App.java", "blob-abc", "Java", "com.example", "src",
                         "CONTROLLER", List.of("com.example.Service"),
                         List.of(), List.of("App"), List.of("RestController"),
                         List.of("/app"), List.of("CONTROLLER"), "PARSED", null
@@ -176,6 +176,7 @@ class RepositoryScopeApplicationServiceTests {
 
         assertThat(result.get("revision")).isEqualTo("abc123");
         Map<?, ?> file = (Map<?, ?>) ((List<?>) result.get("files")).get(0);
+        assertThat(file.get("blobSha")).isEqualTo("blob-abc");
         assertThat(file.get("moduleName")).isEqualTo("src");
         assertThat(file.containsKey("content")).isFalse();
         assertThatThrownBy(() -> new RepositoryCodeMetadataApplicationService(
