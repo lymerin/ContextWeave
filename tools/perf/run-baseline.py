@@ -35,17 +35,48 @@ class ApiClient:
     def __init__(self, base_url: str, *, agent_prefix: str) -> None:
         self._base_url = base_url.rstrip("/")
         self._agent_prefix = "/" + agent_prefix.strip("/")
+        self._token: str | None = None
+        self._credentials: tuple[str, str] | None = None
+
+    def set_credentials(self, username: str, password: str) -> None:
+        self._credentials = (username, password)
+
+    def set_token(self, token: str) -> None:
+        self._token = token
 
     def core(self, path: str, *, method: str = "GET", token: str | None = None,
              body: dict[str, Any] | None = None) -> Any:
-        return self._request(path, method=method, token=token, body=body)
+        return self._request(path, method=method, token=token or self._token, body=body)
 
     def agent(self, path: str, *, method: str = "GET", token: str | None = None,
               body: dict[str, Any] | None = None) -> Any:
-        return self._request(f"{self._agent_prefix}{path}", method=method, token=token, body=body)
+        return self._request(f"{self._agent_prefix}{path}", method=method, token=token or self._token, body=body)
+
+    def _login(self) -> None:
+        """access token 过期后重新登录换发（TTL 30 分钟，实验轮次可能跨期）。"""
+        if not self._credentials:
+            raise RuntimeError("API credentials not set; cannot refresh token")
+        username, password = self._credentials
+        data = json.dumps({"username": username, "password": password}).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self._base_url}/api/v1/auth/login",
+            data=data,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            message = exc.read().decode("utf-8", errors="replace")[:300]
+            raise RuntimeError(f"login refresh failed: {exc.code} {message}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"login refresh failed: {exc.reason}") from exc
+        self._token = str(payload["accessToken"])
+        print(json.dumps({"event": "token_refreshed"}, ensure_ascii=False), file=sys.stderr, flush=True)
 
     def _request(self, path: str, *, method: str, token: str | None,
-                 body: dict[str, Any] | None) -> Any:
+                 body: dict[str, Any] | None, _refreshed: bool = False) -> Any:
         data = json.dumps(body).encode("utf-8") if body is not None else None
         request = urllib.request.Request(
             f"{self._base_url}{path}",
@@ -64,6 +95,12 @@ class ApiClient:
                 return json.loads(raw.decode("utf-8"))
         except urllib.error.HTTPError as exc:
             message = exc.read().decode("utf-8", errors="replace")[:300]
+            # token 过期（401）或授权失败（403）且可换发时，刷新后重试一次
+            if not _refreshed and token and exc.code in {401, 403}:
+                self._login()
+                return self._request(
+                    path, method=method, token=self._token, body=body, _refreshed=True
+                )
             raise RuntimeError(f"{method} {path} failed: {exc.code} {message}") from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"{method} {path} failed: {exc.reason}") from exc
@@ -127,8 +164,8 @@ def main() -> int:
         }
         measured_completed = 0
         try:
-            token, workspace_id, repository = prepare_repository(client, scenario)
-            file_count, first_path = list_files(client, token, workspace_id, repository["id"])
+            _token, workspace_id, repository = prepare_repository(client, scenario)
+            file_count, first_path = list_files(client, workspace_id, repository["id"])
             scope = scenario.scope
             if scope["type"] == "CURRENT_FILE" and scope.get("filePath") == "__FIRST_FILE__":
                 scope = {"type": "CURRENT_FILE", "filePath": first_path}
@@ -145,7 +182,6 @@ def main() -> int:
                 try:
                     record = run_round(
                         client,
-                        token,
                         workspace_id,
                         repository["id"],
                         scope,
@@ -252,16 +288,19 @@ def select_scenarios(scenarios: dict[str, Scenario], selected: str) -> list[Scen
 def prepare_repository(client: ApiClient, scenario: Scenario) -> tuple[str, str, dict[str, Any]]:
     suffix = f"{scenario.name[:4]}-{int(time.time())}-{uuid4().hex[:4]}"
     username = f"perf_{scenario.name[:4]}_{uuid4().hex[:10]}"
+    password = f"Perf-{uuid4().hex}!Aa1"
     auth = client.core(
         "/api/v1/auth/register",
         method="POST",
         body={
             "username": username,
             "displayName": f"Perf {scenario.name}",
-            "password": f"Perf-{uuid4().hex}!Aa1",
+            "password": password,
         },
     )
     token = str(auth["accessToken"])
+    client.set_credentials(username, password)
+    client.set_token(token)
     workspace = client.core(
         "/api/v1/workspaces",
         method="POST",
@@ -281,7 +320,7 @@ def prepare_repository(client: ApiClient, scenario: Scenario) -> tuple[str, str,
         },
     )
     ready = wait_for(
-        lambda: _ready_repository(client, token, workspace_id, str(repository["id"])),
+        lambda: _ready_repository(client, workspace_id, str(repository["id"])),
         timeout_seconds=300,
         interval_seconds=2,
     )
@@ -289,11 +328,10 @@ def prepare_repository(client: ApiClient, scenario: Scenario) -> tuple[str, str,
 
 
 def _ready_repository(
-    client: ApiClient, token: str, workspace_id: str, repository_id: str
+    client: ApiClient, workspace_id: str, repository_id: str
 ) -> dict[str, Any] | None:
     repositories = client.core(
         f"/api/v1/workspaces/{workspace_id}/git/repositories",
-        token=token,
     )
     for item in repositories:
         if str(item.get("id")) != repository_id:
@@ -306,11 +344,10 @@ def _ready_repository(
 
 
 def list_files(
-    client: ApiClient, token: str, workspace_id: str, repository_id: str
+    client: ApiClient, workspace_id: str, repository_id: str
 ) -> tuple[int, str]:
     files = client.core(
         f"/api/v1/workspaces/{workspace_id}/git/repositories/{repository_id}/files",
-        token=token,
     )
     if not isinstance(files, list) or not files:
         raise RuntimeError("Repository has no indexed files")
@@ -326,7 +363,6 @@ def list_files(
 
 def run_round(
     client: ApiClient,
-    token: str,
     workspace_id: str,
     repository_id: str,
     scope: dict[str, str],
@@ -348,7 +384,6 @@ def run_round(
         queued = client.agent(
             "/api/v1/agent-jobs",
             method="POST",
-            token=token,
             body={
                 "workspaceId": workspace_id,
                 "repositoryId": repository_id,
@@ -358,12 +393,12 @@ def run_round(
         )
         job_id = str(queued["jobId"])
         job = wait_for(
-            lambda: _terminal_job(client, token, job_id),
+            lambda: _terminal_job(client, job_id),
             timeout_seconds=timeout_seconds,
             interval_seconds=3,
         )
     metrics = client.agent(f"/api/v1/perf/metrics?jobId={job_id}")
-    units = client.agent(f"/api/v1/agent-jobs/{job_id}/units?offset=0&limit=100", token=token)
+    units = client.agent(f"/api/v1/agent-jobs/{job_id}/units?offset=0&limit=100")
 
     total_duration_s = time.perf_counter() - started
     queue_wait_s = _seconds_between(job.get("createdAt"), job.get("startedAt"))
@@ -435,8 +470,8 @@ def error_record(
     }
 
 
-def _terminal_job(client: ApiClient, token: str, job_id: str) -> dict[str, Any] | None:
-    job = client.agent(f"/api/v1/agent-jobs/{job_id}", token=token)
+def _terminal_job(client: ApiClient, job_id: str) -> dict[str, Any] | None:
+    job = client.agent(f"/api/v1/agent-jobs/{job_id}")
     return job if job.get("status") in TERMINAL_STATUSES else None
 
 
