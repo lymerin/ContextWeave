@@ -1,4 +1,4 @@
-# 11 DevCollab 编辑器验收基线 V0.1
+# 11 ContextWeave 编辑器验收基线 V0.1
 
 ## 1. 目标与范围
 

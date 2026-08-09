@@ -1,4 +1,4 @@
-# DevCollab 运行时内存剖析与链路监控
+# ContextWeave 运行时内存剖析与链路监控
 
 ## 用途与边界
 
@@ -56,7 +56,7 @@ python tools/memory-profile/profile_run.py collect \
   --interval-ms 1000
 ```
 
-保持这些环境变量后，用项目既有方式启动 DevCollab。Docker 中的 `agent-service` 和 `agent-worker` 已将宿主 `.data` 挂载到 `/app/.data`，因此与宿主采集器写入同一个 run 目录。Java 服务在宿主启动时直接读取相同变量。
+保持这些环境变量后，用项目既有方式启动 ContextWeave。Docker 中的 `agent-service` 和 `agent-worker` 已将宿主 `.data` 挂载到 `/app/.data`，因此与宿主采集器写入同一个 run 目录。Java 服务在宿主启动时直接读取相同变量。
 
 可使用 `--duration-seconds 300` 自动结束；未设置时按 `Ctrl+C` 优雅停止。Docker 不可用不会中止主机采样，错误只有限次写入 `collector-errors.jsonl`。
 
@@ -123,7 +123,7 @@ py tools/memory-profile/profile_run.py summarize `
 
 - 场景 A：冷启动后空闲 15 分钟；
 - 场景 B：浏览已有代码和文档 20 分钟；
-- 场景 C：对 DevCollab 自身执行冷缓存仓库扫描与索引；
+- 场景 C：对 ContextWeave 自身执行冷缓存仓库扫描与索引；
 - 场景 D：使用固定 Provider 执行完整 Agent 链路；
 - 场景 E：执行一次真实 DeepSeek 链路；
 - 场景 F：相同大型任务连续执行 3 次，比较每次开始前和结束后的基线。

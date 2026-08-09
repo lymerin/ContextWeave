@@ -1,9 +1,9 @@
-# DevCollab MCP Context Server 第一阶段施工计划
+# ContextWeave MCP Context Server 第一阶段施工计划
 
 - 文档编号：15
 - 文档版本：V0.1
 - 文档状态：待实施
-- 适用仓库：DevCollab
+- 适用仓库：ContextWeave
 - 实施范围：MCP 基础模块、可扩展能力注册、真实工作区上下文读取、真实代码区间读取
 - 后续阶段：文档结构与绑定查询、待审核文档变更、LangGraph + DeepSeek Agent
 - 编制日期：2026-07-23
@@ -12,7 +12,7 @@
 
 ## 1. 文档目的
 
-本计划用于指导 DevCollab 建立可长期扩展的 MCP Context Server，而不是实现一次性的 MCP 演示。
+本计划用于指导 ContextWeave 建立可长期扩展的 MCP Context Server，而不是实现一次性的 MCP 演示。
 
 第一阶段要打通以下真实链路：
 
@@ -77,7 +77,7 @@ io.modelcontextprotocol.sdk:mcp-json-jackson2
 
 ### 2.2 不采用 Spring AI 2.x MCP Starter
 
-当前 DevCollab 使用 Spring Boot 3.5.x。Spring AI 2.0 面向 Spring Boot 4.0/4.1 和 Spring Framework 7。
+当前 ContextWeave 使用 Spring Boot 3.5.x。Spring AI 2.0 面向 Spring Boot 4.0/4.1 和 Spring Framework 7。
 
 第一阶段不得为 MCP 功能升级整个项目的 Spring Boot 主版本。
 
@@ -264,7 +264,7 @@ docs/14-devcollab-code-document-authoring-design-v0.1.md
 加入 MCP 的产品定位：
 
 ```text
-DevCollab 通过标准 MCP 能力向 Agent 和外部 AI 客户端提供受权限控制的代码、文档和关联上下文。
+ContextWeave 通过标准 MCP 能力向 Agent 和外部 AI 客户端提供受权限控制的代码、文档和关联上下文。
 ```
 
 补充边界：
@@ -320,7 +320,7 @@ devcollab-mcp-server
 ```text
 LangGraph Agent
     ↓ MCP Client
-DevCollab MCP Server
+ContextWeave MCP Server
     ↓
 Knowledge Core
 ```
@@ -596,7 +596,7 @@ MCP Server 必须声明：
 
 ### 6.4 Phase 3：身份与权限
 
-第一阶段沿用 DevCollab 当前 Access Token：
+第一阶段沿用 ContextWeave 当前 Access Token：
 
 ```http
 Authorization: Bearer <access-token>
@@ -674,7 +674,7 @@ devcollab.workspace.get_context
 描述必须明确：
 
 ```text
-读取当前用户有权访问的一个 DevCollab 工作区及其 Git 仓库同步概况。
+读取当前用户有权访问的一个 ContextWeave 工作区及其 Git 仓库同步概况。
 只读，不修改任何数据。
 ```
 
@@ -737,7 +737,7 @@ devcollab.code.read
 描述必须明确：
 
 ```text
-从 DevCollab 已扫描的 Git 仓库投影中读取一个文本代码文件或指定行区间。
+从 ContextWeave 已扫描的 Git 仓库投影中读取一个文本代码文件或指定行区间。
 只读，不访问本地 clone 目录。
 ```
 
@@ -1115,7 +1115,7 @@ MCP Client
 ### 提交 2：MCP 基础模块
 
 ```text
-功能：建立 DevCollab MCP 服务基础模块
+功能：建立 ContextWeave MCP 服务基础模块
 ```
 
 内容：

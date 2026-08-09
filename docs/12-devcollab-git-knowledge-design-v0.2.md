@@ -1,4 +1,4 @@
-# DevCollab Git 工程知识设计 V0.2
+# ContextWeave Git 工程知识设计 V0.2
 
 ## 文档信息
 

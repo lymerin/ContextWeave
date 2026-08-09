@@ -1,4 +1,4 @@
-# DevCollab 文档变更待评审闭环设计 V0.1
+# ContextWeave 文档变更待评审闭环设计 V0.1
 
 ## 文档信息
 
@@ -489,7 +489,7 @@ reason 去除首尾空格后必填，1–2000 字符。成功 200；重复同理
 ```text
 name: devcollab.review.submit_document_change
 title: Submit document change for review
-description: Create a persistent PENDING DevCollab document change request from structured operations and code evidence. This tool never applies changes to formal documents.
+description: Create a persistent PENDING ContextWeave document change request from structured operations and code evidence. This tool never applies changes to formal documents.
 ```
 
 annotations：

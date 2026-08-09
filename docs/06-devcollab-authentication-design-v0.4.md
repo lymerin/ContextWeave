@@ -1,4 +1,4 @@
-# DevCollab 登录与会话设计 V0.4
+# ContextWeave 登录与会话设计 V0.4
 
 ## 文档信息
 
