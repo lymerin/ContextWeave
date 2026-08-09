@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "scenario": "incremental",
+  "expected_files": "1% changed files",
+  "repo_url": "https://github.com/XMU-Linjer/devcolab.git",
+  "branch": "main",
+  "scope": {
+    "type": "CURRENT_FILE",
+    "filePath": "README.md"
+  },
+  "code_commit": "df57e8f",
+  "agent_branch": "fix/perf-baseline",
+  "base_url": "http://localhost:8088",
+  "warmup_rounds": 0,
+  "requested_rounds": 1,
+  "started_at": "2026-08-09T17:37:38.257948+00:00",
+  "stop_reason": null,
+  "workspace_id": "4c85b950-9080-4000-a258-3fcb44e61464",
+  "repository_id": "bee51629-ee44-441d-b560-55d613ea50c9",
+  "target_revision": "e766c1ce1cac74ae8fa13906a8ca59afd6efae50",
+  "actual_file_count": 991,
+  "actual_scope": {
+    "type": "CURRENT_FILE",
+    "filePath": "README.md"
+  },
+  "completed_at": "2026-08-09T17:41:32.273153+00:00",
+  "records": [
+    {
+      "schema_version": 1,
+      "scenario": "incremental",
+      "phase": "measure",
+      "round": 1,
+      "job_id": "84c7063d-f1a0-4393-8ed5-cc2bcfb00a9e",
+      "status": "COMPLETED",
+      "result": "NO_CHANGE",
+      "code_commit": "df57e8f",
+      "job_revision": "e766c1ce1cac74ae8fa13906a8ca59afd6efae50",
+      "tool_calls": 1,
+      "session_init_count": 1,
+      "delegation_exchange_count": 1,
+      "mcp_p95_ms": 60.244,
+      "unit_throughput_per_s": 0.011858,
+      "queue_wait_s": 1.252,
+      "peak_rss_bytes": 174986362,
+      "total_duration_s": 84.33,
+      "output_bytes": 1306,
+      "rate_limit_429_count": 0,
+      "retry_count": 0,
+      "retry_backoff_ms_total": 0,
+      "total_units": 1,
+      "completed_units": 1,
+      "failed_units": 0,
+      "metrics": {
+        "schema_version": 1,
+        "started_at": "2026-08-09T17:41:11Z",
+        "generated_at": "2026-08-09T17:41:11Z",
+        "counters": {
+          "delegation_exchange_count": 1,
+          "session_initialize_count": 1,
+          "mcp_tool_calls": 1
+        },
+        "mcp": {
+          "tool_calls": 1,
+          "session_initialize_count": 1,
+          "duration_ms": {
+            "count": 1,
+            "p50": 60.244,
+            "p95": 60.244,
+            "p99": 60.244,
+            "mean": 60.244
+          },
+          "by_tool": {
+            "devcollab.workspace.get_context": {
+              "count": 1,
+              "duration_ms": {
+                "count": 1,
+                "p50": 60.244,
+                "p95": 60.244,
+                "p99": 60.244,
+                "mean": 60.244
+              }
+            }
+          }
+        },
+        "delegation": {
+          "exchange_count": 1
+        },
+        "retry": {
+          "rate_limit_429_count": 0,
+          "retry_count": 0,
+          "backoff_ms_total": 0
+        },
+        "stages": {
+          "read": {
+            "count": 1,
+            "p50": 119.904,
+            "p95": 119.904,
+            "p99": 119.904,
+            "mean": 119.904
+          },
+          "parse": {
+            "count": 1,
+            "p50": 0.145,
+            "p95": 0.145,
+            "p99": 0.145,
+            "mean": 0.145
+          }
+        }
+      }
+    }
+  ],
+  "summary": {
+    "tool_calls": {
+      "sample_count": 1,
+      "p50": 1.0,
+      "p95": 1.0,
+      "mean": 1.0
+    },
+    "session_init_count": {
+      "sample_count": 1,
+      "p50": 1.0,
+      "p95": 1.0,
+      "mean": 1.0
+    },
+    "delegation_exchange_count": {
+      "sample_count": 1,
+      "p50": 1.0,
+      "p95": 1.0,
+      "mean": 1.0
+    },
+    "mcp_p95_ms": {
+      "sample_count": 1,
+      "p50": 60.244,
+      "p95": 60.244,
+      "mean": 60.244
+    },
+    "unit_throughput_per_s": {
+      "sample_count": 1,
+      "p50": 0.012,
+      "p95": 0.012,
+      "mean": 0.012
+    },
+    "queue_wait_s": {
+      "sample_count": 1,
+      "p50": 1.252,
+      "p95": 1.252,
+      "mean": 1.252
+    },
+    "peak_rss_bytes": {
+      "sample_count": 1,
+      "p50": 174986362.0,
+      "p95": 174986362.0,
+      "mean": 174986362.0
+    },
+    "total_duration_s": {
+      "sample_count": 1,
+      "p50": 84.33,
+      "p95": 84.33,
+      "mean": 84.33
+    },
+    "output_bytes": {
+      "sample_count": 1,
+      "p50": 1306.0,
+      "p95": 1306.0,
+      "mean": 1306.0
+    },
+    "rate_limit_429_count": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "retry_count": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "retry_backoff_ms_total": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    }
+  }
+}

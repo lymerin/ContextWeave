@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "scenario": "small",
+  "expected_files": "<=20",
+  "repo_url": "https://github.com/octocat/Hello-World.git",
+  "branch": "master",
+  "scope": {
+    "type": "PROJECT_INITIALIZATION"
+  },
+  "code_commit": "df57e8f",
+  "agent_branch": "fix/perf-baseline",
+  "base_url": "http://localhost:8088",
+  "warmup_rounds": 0,
+  "requested_rounds": 1,
+  "started_at": "2026-08-09T17:42:05.689489+00:00",
+  "stop_reason": "GET /agent-api/api/v1/agent-jobs/dd08637e-0ae1-45a8-b40d-a2f2e868ce05 failed: 403 {\"detail\":{\"code\":\"MCP_PERMISSION_DENIED\",\"message\":\"Agent delegation is not authorized\"}}",
+  "workspace_id": "43726d21-2c14-4b2a-859b-283940d3578f",
+  "repository_id": "6db249d2-2137-448f-b12d-e4e1d35e1b2a",
+  "target_revision": "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d",
+  "actual_file_count": 1,
+  "actual_scope": {
+    "type": "PROJECT_INITIALIZATION"
+  },
+  "completed_at": "2026-08-09T18:12:36.905153+00:00",
+  "records": [
+    {
+      "schema_version": 1,
+      "scenario": "small",
+      "phase": "measure",
+      "round": 1,
+      "status": "ERROR",
+      "result": null,
+      "code_commit": "df57e8f",
+      "job_revision": null,
+      "tool_calls": 0,
+      "session_init_count": 0,
+      "delegation_exchange_count": 0,
+      "mcp_p95_ms": 0.0,
+      "unit_throughput_per_s": 0.0,
+      "queue_wait_s": 0.0,
+      "peak_rss_bytes": 0,
+      "total_duration_s": 0.0,
+      "output_bytes": 0,
+      "rate_limit_429_count": 0,
+      "retry_count": 0,
+      "retry_backoff_ms_total": 0,
+      "total_units": 0,
+      "completed_units": 0,
+      "failed_units": 0,
+      "error": "GET /agent-api/api/v1/agent-jobs/dd08637e-0ae1-45a8-b40d-a2f2e868ce05 failed: 403 {\"detail\":{\"code\":\"MCP_PERMISSION_DENIED\",\"message\":\"Agent delegation is not authorized\"}}"
+    }
+  ],
+  "summary": {
+    "tool_calls": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "session_init_count": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "delegation_exchange_count": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "mcp_p95_ms": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "unit_throughput_per_s": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "queue_wait_s": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "peak_rss_bytes": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "total_duration_s": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "output_bytes": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "rate_limit_429_count": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "retry_count": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    },
+    "retry_backoff_ms_total": {
+      "sample_count": 1,
+      "p50": 0.0,
+      "p95": 0.0,
+      "mean": 0.0
+    }
+  }
+}
