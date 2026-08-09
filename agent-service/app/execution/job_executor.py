@@ -20,6 +20,7 @@ from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
+from app import perf_metrics
 from app.document_planner.binding_resolver import resolve_bindings
 from app.document_planner.document_composer import compose_document, compose_slot_sections
 from app.document_planner.evidence_catalog_builder import build
@@ -111,23 +112,24 @@ class JobExecutor:
 
 
         # ── 1. 读取 + 粗筛 ──────────────────────────────────────
-        ctx = await self._ws.read_context(workspace_id, repository_id)
-        repo = ctx.repository(repository_id)
-        if repo is None:
-            return {"error": "REPOSITORY_NOT_FOUND"}
+        with perf_metrics.stage("read"):
+            ctx = await self._ws.read_context(workspace_id, repository_id)
+            repo = ctx.repository(repository_id)
+            if repo is None:
+                return {"error": "REPOSITORY_NOT_FOUND"}
 
-        batch = self._filter.filter(
-            repository_id, revision,
-            [{"filePath": p, "readable": True, "sizeBytes": 0} for p in selected_paths],
-        )
+            batch = self._filter.filter(
+                repository_id, revision,
+                [{"filePath": p, "readable": True, "sizeBytes": 0} for p in selected_paths],
+            )
 
-        selection = SelectedSourceFileBatch(
-            repository_id=str(repository_id),
-            revision=revision,
-            paths=tuple(f.file_path for f in batch.files),
-            total_count=batch.total_count,
-        )
-        sources = await self._src.read_batch(workspace_id, repository_id, selection)
+            selection = SelectedSourceFileBatch(
+                repository_id=str(repository_id),
+                revision=revision,
+                paths=tuple(f.file_path for f in batch.files),
+                total_count=batch.total_count,
+            )
+            sources = await self._src.read_batch(workspace_id, repository_id, selection)
 
         # ── 2. AST 解析 + 直接范围构造 ───────────────────────────
         def read_source(path: str) -> str | None:
@@ -136,12 +138,13 @@ class JobExecutor:
                     return f.content
             return None
 
-        catalog = parse_batch(sources, read_source)
+        with perf_metrics.stage("parse"):
+            catalog = parse_batch(sources, read_source)
 
-        # ── 2b. 范围构建（按单元类型分支）─────────────────────────
-        # 多文件单元（SEMANTIC_ANALYSIS）→ 整模块一个 scope，一次 DS 会话；
-        # 单文件单元（CURRENT_FILE_ANALYSIS）→ 维持每文件 scope。
-        scopes, graph = build_execution_scopes(catalog, read_source, selected_paths)
+            # ── 2b. 范围构建（按单元类型分支）─────────────────────────
+            # 多文件单元（SEMANTIC_ANALYSIS）→ 整模块一个 scope，一次 DS 会话；
+            # 单文件单元（CURRENT_FILE_ANALYSIS）→ 维持每文件 scope。
+            scopes, graph = build_execution_scopes(catalog, read_source, selected_paths)
 
         if not scopes:
             return {
@@ -286,12 +289,13 @@ class JobExecutor:
                     snapshot_hash=snap.snapshot_hash,
                     section_targets=targets,
                 )
-                submit_result = await self._write.submit(
-                    plan,
-                    workspace_id=str(workspace_id),
-                    repository_id=str(repository_id),
-                    run_id=run_id,
-                )
+                with perf_metrics.stage("submit"):
+                    submit_result = await self._write.submit(
+                        plan,
+                        workspace_id=str(workspace_id),
+                        repository_id=str(repository_id),
+                        run_id=run_id,
+                    )
 
                 # 提取 changeRequestId（MCP 返回驼峰，转为 snake_case 给 Worker）
                 review_id = (
@@ -429,21 +433,22 @@ class JobExecutor:
         selected_paths: list[str],
     ) -> tuple[AtomCatalog, ContextSnapshot, SemanticScope] | None:
         """读取源码 → 解析 → 范围 → 快照。返回 (catalog, snap, scope)。"""
-        ctx = await self._ws.read_context(workspace_id, repository_id)
-        repo = ctx.repository(repository_id)
-        if repo is None:
-            return None
-        batch = self._filter.filter(
-            repository_id, revision,
-            [{"filePath": p, "readable": True, "sizeBytes": 0} for p in selected_paths],
-        )
-        selection = SelectedSourceFileBatch(
-            repository_id=str(repository_id),
-            revision=revision,
-            paths=tuple(f.file_path for f in batch.files),
-            total_count=batch.total_count,
-        )
-        sources = await self._src.read_batch(workspace_id, repository_id, selection)
+        with perf_metrics.stage("read"):
+            ctx = await self._ws.read_context(workspace_id, repository_id)
+            repo = ctx.repository(repository_id)
+            if repo is None:
+                return None
+            batch = self._filter.filter(
+                repository_id, revision,
+                [{"filePath": p, "readable": True, "sizeBytes": 0} for p in selected_paths],
+            )
+            selection = SelectedSourceFileBatch(
+                repository_id=str(repository_id),
+                revision=revision,
+                paths=tuple(f.file_path for f in batch.files),
+                total_count=batch.total_count,
+            )
+            sources = await self._src.read_batch(workspace_id, repository_id, selection)
 
         def read_source(path: str) -> str | None:
             for f in sources.files:
@@ -451,8 +456,9 @@ class JobExecutor:
                     return f.content
             return None
 
-        catalog = parse_batch(sources, read_source)
-        scopes, graph = build_execution_scopes(catalog, read_source, selected_paths)
+        with perf_metrics.stage("parse"):
+            catalog = parse_batch(sources, read_source)
+            scopes, graph = build_execution_scopes(catalog, read_source, selected_paths)
         if not scopes:
             return None
         scope = scopes[0]

@@ -3,6 +3,8 @@ from uuid import UUID
 
 import httpx
 
+from app import perf_metrics
+
 
 class DelegationClientError(RuntimeError):
     def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
@@ -68,6 +70,7 @@ class KnowledgeCoreDelegationClient:
         )
 
     async def exchange(self, *, delegation_id: UUID, job_id: UUID) -> str:
+        perf_metrics.increment("delegation_exchange_count")
         response = await self._request(
             "POST",
             f"/api/v1/internal/agent-delegations/{delegation_id}/exchange",

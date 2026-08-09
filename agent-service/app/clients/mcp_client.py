@@ -1,10 +1,12 @@
 import json
+import time
 from typing import Any, Protocol
 
 import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
+from app import perf_metrics
 from app.schemas.plans import AgentPlan
 
 
@@ -106,7 +108,7 @@ class OfficialMcpClient:
                 "MCP_PROTOCOL_ERROR",
                 "MCP review result is missing changeRequestId",
             )
-        if result.get("status") not in {"PENDING", "APPLIED"}:
+        if result.get("status") != "PENDING":
             raise McpClientError(
                 "MCP_PROTOCOL_ERROR",
                 "MCP review result has an invalid status",
@@ -129,8 +131,13 @@ class OfficialMcpClient:
                     http_client=http_client,
                 ) as (read_stream, write_stream, _):
                     async with ClientSession(read_stream, write_stream) as session:
+                        perf_metrics.increment("session_initialize_count")
                         await session.initialize()
+                        started = time.perf_counter()
                         result = await session.call_tool(name, arguments)
+                        perf_metrics.record_mcp_tool(
+                            name, (time.perf_counter() - started) * 1000
+                        )
         except httpx.TimeoutException as exc:
             raise McpClientError("MCP_UNAVAILABLE", "MCP request timed out") from exc
         except McpClientError:

@@ -45,13 +45,6 @@ public class GrpcJwtAuthenticationInterceptor implements ServerInterceptor {
 
         try {
             var claims = tokenService.verify(authorization.substring(7));
-            if (!JwtTokenService.TOKEN_TYPE_AGENT_DELEGATION.equals(
-                    claims.tokenType()
-            ) || claims.allowedTools().isEmpty()) {
-                throw new IllegalArgumentException(
-                        "Agent delegation token is required"
-                );
-            }
             Context context = Context.current().withValue(
                     GrpcAuthenticationContext.TOKEN_CLAIMS,
                     claims

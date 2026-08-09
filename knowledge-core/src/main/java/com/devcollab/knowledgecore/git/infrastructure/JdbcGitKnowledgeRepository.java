@@ -403,38 +403,6 @@ public class JdbcGitKnowledgeRepository implements GitKnowledgeRepository {
     }
 
     @Override
-    public boolean updateBinding(CodeDocumentBinding binding) {
-        return jdbcTemplate.update("""
-                        UPDATE code_document_bindings
-                           SET repository_id = ?,
-                               path_pattern = ?,
-                               revision = ?,
-                               anchor_kind = ?,
-                               symbol_key = ?,
-                               start_line = ?,
-                               end_line = ?,
-                               revision_key = ?,
-                               symbol_key_identity = ?,
-                               start_line_key = ?,
-                               end_line_key = ?,
-                               binding_role = ?,
-                               binding_ordinal = ?,
-                               bound_signature = ?
-                         WHERE id = ?
-                        """,
-                binding.repositoryId(),
-                binding.pathPattern(), binding.revision(),
-                binding.anchorKind().name(), binding.symbolKey(),
-                binding.startLine(), binding.endLine(),
-                binding.revision() == null ? "" : binding.revision(),
-                binding.symbolKey() == null ? "" : binding.symbolKey(),
-                binding.startLine() == null ? 0 : binding.startLine(),
-                binding.endLine() == null ? 0 : binding.endLine(),
-                binding.bindingRole().name(), binding.bindingOrdinal(),
-                binding.boundSignature(), binding.id()) == 1;
-    }
-
-    @Override
     public Optional<CodeDocumentBinding> findBindingById(UUID bindingId) {
         return jdbcTemplate.query(
                 "SELECT * FROM code_document_bindings WHERE id = ?",

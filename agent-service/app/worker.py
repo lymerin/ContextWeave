@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 
 import asyncpg  # type: ignore[import-untyped]
 
+from app import perf_metrics
 from app.clients.delegation_client import (
     DelegationClient,
     DelegationClientError,
@@ -54,7 +55,6 @@ class SkeletonReviewPendingError(RuntimeError):
 
 RETRYABLE_ERRORS = {
     "MODEL_TIMEOUT",
-    "MODEL_RATE_LIMITED",
     "MODEL_UNAVAILABLE",
     "MCP_UNAVAILABLE",
     "DATABASE_UNAVAILABLE",
@@ -299,15 +299,12 @@ class AgentWorker:
                         delegation_id=UUID(str(job["delegation_id"])),
                         job_id=job_id,
                     )
-                    if review_status == "APPLIED":
-                        pass
-                    elif review_status in ("REJECTED", "STALE"):
-                        return {"status": "NO_CHANGE", "change_request_id": None}
-                    else:
+                    if review_status == "PENDING":
                         raise SkeletonReviewPendingError(
-                            f"skeleton review {skeleton_review_id} is "
-                            f"{review_status or 'MISSING'}"
+                            f"skeleton review {skeleton_review_id} is PENDING"
                         )
+                    if review_status in ("REJECTED", "STALE"):
+                        return {"status": "NO_CHANGE", "change_request_id": None}
             else:
                 selected_paths = [str(scope["filePath"])]
                 slot_scope = ()
@@ -331,7 +328,7 @@ class AgentWorker:
                     revision=str(job["revision"]),
                     selected_paths=selected_paths,
                     # 执行级幂等键：同一次执行内稳定，重跑随 attempt 变化
-                    run_id=str(unit_id),
+                    run_id=f"{unit_id}-{int(unit.get('attempt') or 0)}",
                     slot_scope=slot_scope,
                     batch_label=batch_label,
                 )
@@ -360,7 +357,7 @@ class AgentWorker:
                     repository_id=UUID(str(job["repository_id"])),
                     revision=str(job["revision"]),
                     selected_paths=selected_paths,
-                    run_id=str(unit_id),
+                    run_id=f"{unit_id}-{int(unit.get('attempt') or 0)}",
                     document_title=str(unit.get("display_name") or "代码模块"),
                 )
             if result.get("status") == "EMPTY_SCOPE":
@@ -548,15 +545,15 @@ class AgentWorker:
             attempt = int(unit["attempt"])
             max_attempts = int(unit["max_attempts"])
             retry_at = None
-            if code in RETRYABLE_ERRORS and (
-                code == "SKELETON_REVIEW_PENDING" or attempt < max_attempts
-            ):
+            if code in RETRYABLE_ERRORS and attempt < max_attempts:
                 # 骨架 review 未审批：固定 5 分钟长退避，避免批次单元高频
                 # 撞墙轮询（审批前 N 个单元 × 每次 DB+HTTP）；attempt 已由
                 # fail_unit 减回，等待不消耗重试预算，审批后再正常执行。
                 delay = 300 if code == "SKELETON_REVIEW_PENDING" else (
                     60 if attempt == 1 else 300
                 )
+                perf_metrics.increment("retry_count")
+                perf_metrics.add_backoff(delay)
                 retry_at = datetime.now(UTC) + timedelta(seconds=delay)
             await self._repository.fail_unit(
                 unit_id, self._worker_id, code, message, retry_at

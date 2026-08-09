@@ -1,5 +1,4 @@
 # Local execution and interview materials
-docs/9[0-9]-*
 docs/90-local-search-outbox-es-learning-v0.1.md
 docs/90-local-search-outbox-es-learning-v0.2.md
 docs/90-local-outbox-es-learning-v0.2.md
@@ -108,7 +107,6 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
-.pytest-tmp/
 .mypy_cache/
 .ruff_cache/
 

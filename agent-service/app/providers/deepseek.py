@@ -6,6 +6,7 @@ from typing import Any, cast
 import httpx
 from pydantic import ValidationError
 
+from app import perf_metrics
 from app.providers.base import ModelProviderError
 from app.schemas.unit_plans import UnitPlan
 
@@ -243,19 +244,21 @@ class DeepSeekProvider:
         if self._thinking:
             body["thinking"] = {"type": "enabled"}
         try:
-            async with httpx.AsyncClient(
-                timeout=self._timeout, transport=self._transport
-            ) as client:
-                response = await client.post(
-                    f"{self._base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {self._api_key}"},
-                    json=body,
-                )
+            with perf_metrics.stage("model_call"):
+                async with httpx.AsyncClient(
+                    timeout=self._timeout, transport=self._transport
+                ) as client:
+                    response = await client.post(
+                        f"{self._base_url}/chat/completions",
+                        headers={"Authorization": f"Bearer {self._api_key}"},
+                        json=body,
+                    )
         except httpx.TimeoutException as exc:
             raise ModelProviderError("MODEL_TIMEOUT", "Model request timed out") from exc
         except httpx.HTTPError as exc:
             raise ModelProviderError("MODEL_UNAVAILABLE", "Model request failed") from exc
         if response.status_code == 429:
+            perf_metrics.increment("rate_limit_429_count")
             raise ModelProviderError("MODEL_RATE_LIMITED", "Model rate limit exceeded")
         if response.status_code >= 500:
             raise ModelProviderError("MODEL_UNAVAILABLE", "Model service is unavailable")
@@ -337,19 +340,23 @@ class DeepSeekProvider:
         # 追加强制指令改变模型行为路径，最多变异 2 次。
         for _retry in range(3):
             try:
-                async with httpx.AsyncClient(
-                    timeout=self._timeout, transport=self._transport
-                ) as client:
-                    response = await client.post(
-                        f"{self._base_url}/chat/completions",
-                        headers={"Authorization": f"Bearer {self._api_key}"},
-                        json=body,
-                    )
+                with perf_metrics.stage("model_call"):
+                    async with httpx.AsyncClient(
+                        timeout=self._timeout, transport=self._transport
+                    ) as client:
+                        response = await client.post(
+                            f"{self._base_url}/chat/completions",
+                            headers={"Authorization": f"Bearer {self._api_key}"},
+                            json=body,
+                        )
             except httpx.TimeoutException as exc:
                 raise ModelProviderError("MODEL_TIMEOUT", "Batch analysis timed out") from exc
             except httpx.HTTPError as exc:
-                raise ModelProviderError("MODEL_UNAVAILABLE", "Batch analysis request failed") from exc
+                raise ModelProviderError(
+                    "MODEL_UNAVAILABLE", "Batch analysis request failed"
+                ) from exc
             if response.status_code == 429:
+                perf_metrics.increment("rate_limit_429_count")
                 raise ModelProviderError("MODEL_RATE_LIMITED", "Model rate limit exceeded")
             if response.status_code >= 500:
                 raise ModelProviderError("MODEL_UNAVAILABLE", "Model service is unavailable")
@@ -452,15 +459,16 @@ class DeepSeekProvider:
                 body["thinking"] = {"type": "enabled"}
 
             try:
-                async with httpx.AsyncClient(
-                    timeout=self._timeout,
-                    transport=self._transport,
-                ) as client:
-                    response = await client.post(
-                        f"{self._base_url}/chat/completions",
-                        headers={"Authorization": f"Bearer {self._api_key}"},
-                        json=body,
-                    )
+                with perf_metrics.stage("model_call"):
+                    async with httpx.AsyncClient(
+                        timeout=self._timeout,
+                        transport=self._transport,
+                    ) as client:
+                        response = await client.post(
+                            f"{self._base_url}/chat/completions",
+                            headers={"Authorization": f"Bearer {self._api_key}"},
+                            json=body,
+                        )
             except httpx.TimeoutException as exc:
                 raise ModelProviderError("MODEL_TIMEOUT", "Semantic analysis timed out") from exc
             except httpx.HTTPError as exc:
@@ -468,6 +476,9 @@ class DeepSeekProvider:
                     "MODEL_UNAVAILABLE", "Semantic analysis request failed"
                 ) from exc
 
+            if response.status_code == 429:
+                perf_metrics.increment("rate_limit_429_count")
+                raise ModelProviderError("MODEL_RATE_LIMITED", "Model rate limit exceeded")
             if response.status_code >= 400:
                 raise ModelProviderError(
                     "MODEL_UNAVAILABLE", f"Model returned {response.status_code}"

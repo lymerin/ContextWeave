@@ -138,22 +138,12 @@ public class DriftDetectionService {
         List<DocumentChangeApplicationService.CreateOperationCommand> operations =
                 new ArrayList<>();
 
-        Map<UUID, DriftResult> resultsByBindingId = new HashMap<>();
-        Set<String> touchedTargets = new HashSet<>();
-        for (CodeDocumentBinding binding : bindings) {
-            DriftResult result = reResolve(binding, bySymbolKey, byQualifiedName, currentFiles);
-            resultsByBindingId.put(binding.id(), result);
-            if (result.level != DriftLevel.NONE) {
-                touchedTargets.add(targetKey(binding));
-            }
-        }
-
         int seq = 0;
         for (CodeDocumentBinding binding : bindings) {
-            if (!touchedTargets.contains(targetKey(binding))) {
+            DriftResult result = reResolve(binding, bySymbolKey, byQualifiedName, currentFiles);
+            if (result.level == DriftLevel.NONE) {
                 continue;
             }
-            DriftResult result = resultsByBindingId.get(binding.id());
             seq++;
             proposals.add(toProposal(result, binding, newRevision, seq));
 
@@ -198,7 +188,7 @@ public class DriftDetectionService {
         );
 
         // Step 1: Create the change request
-        var result = documentChangeService.createDrift(workspaceId, currentUserId, command);
+        var result = documentChangeService.create(workspaceId, currentUserId, command);
 
         // Step 2: When there are document-block operations the create() returns
         // PENDING.  Auto-apply to keep the silent pipeline truly silent.
@@ -446,36 +436,30 @@ public class DriftDetectionService {
         }
 
         CodeSymbol newSymbol = resolveCurrentSymbol(binding);
-        boolean preserveExisting = result.level == DriftLevel.NONE;
 
         return new DocumentChangeApplicationService.CreateBindingProposalCommand(
                 "drift-" + sequenceNumber + "-" + binding.id().toString().substring(0, 8),
                 sequenceNumber,
                 BindingAction.UPSERT_BINDING,
                 binding.repositoryId(),
-                preserveExisting ? binding.revision() : newRevision,
-                preserveExisting ? binding.pathPattern()
-                        : newSymbol != null ? newSymbol.filePath() : effectiveFilePath(binding),
-                preserveExisting ? binding.anchorKind() : CodeAnchorKind.SYMBOL,
-                preserveExisting ? binding.symbolKey()
-                        : newSymbol != null ? newSymbol.symbolKey() : binding.symbolKey(),
-                preserveExisting ? binding.startLine()
-                        : newSymbol != null ? newSymbol.startLine() : binding.startLine(),
-                preserveExisting ? binding.endLine()
-                        : newSymbol != null ? newSymbol.endLine() : binding.endLine(),
+                newRevision,
+                newSymbol != null ? newSymbol.filePath() : effectiveFilePath(binding),
+                CodeAnchorKind.SYMBOL,
+                newSymbol != null ? newSymbol.symbolKey() : binding.symbolKey(),
+                newSymbol != null ? newSymbol.startLine() : binding.startLine(),
+                newSymbol != null ? newSymbol.endLine() : binding.endLine(),
                 binding.documentId(),
                 null,
                 binding.blockId(),
                 null,
-                binding.id(),
+                null,
                 null,
                 null,
                 result.detail,
-                preserveExisting ? null : 1.0,
+                1.0,
                 binding.bindingRole(),
                 binding.bindingOrdinal(),
-                preserveExisting ? binding.boundSignature()
-                        : newSymbol != null ? newSymbol.signature() : binding.boundSignature()
+                newSymbol != null ? newSymbol.signature() : null
         );
     }
 
@@ -557,11 +541,6 @@ public class DriftDetectionService {
             return false;
         }
         return a.equals(b);
-    }
-
-    private static String targetKey(CodeDocumentBinding binding) {
-        return binding.documentId() + ":"
-                + (binding.blockId() == null ? "DOCUMENT" : binding.blockId().toString());
     }
 
     private String buildRationale(

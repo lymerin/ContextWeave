@@ -11,36 +11,24 @@ public record JwtProperties(
         String secret,
         Duration accessTokenTtl
 ) {
-    private static final String PLACEHOLDER_SECRET =
-            "devcollab-local-development-secret-change-me";
 
     public JwtProperties {
         if (issuer == null || issuer.isBlank()) {
-            throw new IllegalArgumentException("JWT issuer must not be blank");
+            throw new IllegalArgumentException("JWT issuer 不能为空");
         }
 
         if (audience == null || audience.isBlank()) {
-            throw new IllegalArgumentException("JWT audience must not be blank");
+            throw new IllegalArgumentException("JWT audience 不能为空");
         }
 
         if (secret == null || secret.length() < 32) {
-            throw new IllegalArgumentException(
-                    "JWT secret must contain at least 32 characters"
-            );
-        }
-        if (PLACEHOLDER_SECRET.equals(secret)) {
-            throw new IllegalArgumentException(
-                    "JWT secret must not be the default placeholder; "
-                            + "set DEVCOLLAB_JWT_SECRET explicitly"
-            );
+            throw new IllegalArgumentException("JWT secret 长度不能少于 32 个字符");
         }
 
         if (accessTokenTtl == null
                 || accessTokenTtl.isZero()
                 || accessTokenTtl.isNegative()) {
-            throw new IllegalArgumentException(
-                    "JWT access-token-ttl must be positive"
-            );
+            throw new IllegalArgumentException("JWT access-token-ttl 必须大于 0");
         }
     }
 }

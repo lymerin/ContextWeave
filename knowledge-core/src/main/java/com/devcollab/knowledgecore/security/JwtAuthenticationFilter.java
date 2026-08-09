@@ -45,13 +45,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             JwtTokenService.TokenClaims claims =
                     jwtTokenService.verify(token);
-            if (!JwtTokenService.TOKEN_TYPE_ACCESS.equals(
-                    claims.tokenType()
-            )) {
-                throw new IllegalArgumentException(
-                        "Access token is required"
-                );
-            }
             CurrentUser currentUser = new CurrentUser(
                     claims.userId(),
                     claims.sessionId(),

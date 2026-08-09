@@ -251,30 +251,9 @@ public class DocumentChangeApplicationService {
             UUID currentUserId,
             CreateCommand command
     ) {
-        return createInternal(workspaceId, currentUserId, command, false);
-    }
-
-    @Transactional
-    public CreateResult createDrift(
-            UUID workspaceId,
-            UUID currentUserId,
-            CreateCommand command
-    ) {
-        return createInternal(workspaceId, currentUserId, command, true);
-    }
-
-    private CreateResult createInternal(
-            UUID workspaceId,
-            UUID currentUserId,
-            CreateCommand command,
-            boolean allowBindingReplace
-    ) {
         requireMember(workspaceId, currentUserId);
         validateCreateCommand(command);
         CreateCommand normalizedCommand = normalizeCreateCommand(command);
-        if (!allowBindingReplace) {
-            rejectUserBindingReplace(normalizedCommand);
-        }
         String fingerprint = fingerprint(normalizedCommand);
         var existing = repository.findByClientRequestId(
                 workspaceId,
@@ -351,13 +330,8 @@ public class DocumentChangeApplicationService {
         // so the formal binding table is always current — no PENDING gap.
         if (normalizedCommand.operations().isEmpty()
                 && !safeList(normalizedCommand.bindingProposals()).isEmpty()) {
-            boolean canAutoApply = safeList(normalizedCommand.bindingProposals()).stream()
-                    .allMatch(proposal -> proposal.action() == BindingAction.UPSERT_BINDING);
-            if (canAutoApply) {
-                applyBindingOnly(workspaceId, requestId, currentUserId);
-                return new CreateResult(requestId, Status.APPLIED, now, false);
-            }
-            return new CreateResult(requestId, Status.PENDING, now, false);
+            applyBindingOnly(workspaceId, requestId, currentUserId);
+            return new CreateResult(requestId, Status.APPLIED, now, false);
         }
 
         return new CreateResult(requestId, Status.PENDING, now, false);
@@ -407,19 +381,35 @@ public class DocumentChangeApplicationService {
             );
         }
 
-        List<BindingApplyResultView> appliedBindings = new ArrayList<>();
-        List<String> bindingDetails = new ArrayList<>();
+        // Atomic overwrite: for every target touched by these proposals,
+        // remove existing bindings first so the formal table always carries
+        // the latest agent assessment—no stale bindings survive alongside
+        // the new ones.
+        java.util.Set<String> clearedTargets = new java.util.HashSet<>();
         for (BindingProposal proposal : bindingProposals) {
-            BindingApplyOutcome result = applyBindingProposal(
-                    workspaceId,
+            if (proposal.action() != BindingAction.UPSERT_BINDING) {
+                continue;
+            }
+            UUID docId = resolveDocumentId(proposal, createdDocuments);
+            UUID blkId = resolveBlockId(proposal, createdBlocks);
+            String targetId = docId + ":" + (blkId == null ? "DOCUMENT" : blkId.toString());
+            if (clearedTargets.add(targetId)) {
+                gitKnowledgeService.removeBindingsForTarget(
+                        docId, blkId, currentUserId
+                );
+            }
+        }
+
+        List<BindingApplyResultView> appliedBindings = new ArrayList<>();
+        for (BindingProposal proposal : bindingProposals) {
+            BindingApplyResultView result = applyBindingProposal(
                     currentUserId,
                     proposal,
                     createdDocuments,
                     createdBlocks
             );
-            bindingDetails.addAll(result.details());
-            if (result.view() != null) {
-                appliedBindings.add(result.view());
+            if (result != null) {
+                appliedBindings.add(result);
             }
         }
 
@@ -435,7 +425,7 @@ public class DocumentChangeApplicationService {
                 applied,
                 currentUserId,
                 "DOCUMENT_CHANGE_APPLIED",
-                appliedMessage("批准并原子应用文档变更请求", bindingDetails),
+                "批准并原子应用文档变更请求",
                 reviewedAt
         );
         return new DecisionResult(detail(
@@ -471,25 +461,29 @@ public class DocumentChangeApplicationService {
         if (bindingProposals.isEmpty()) {
             return;
         }
-        boolean canAutoApply = bindingProposals.stream()
-                .allMatch(proposal -> proposal.action() == BindingAction.UPSERT_BINDING);
-        if (!canAutoApply) {
-            return;
-        }
         lockAndValidateBindingTargets(workspaceId, currentUserId, bindingProposals);
 
         Map<UUID, UUID> createdDocuments = new java.util.HashMap<>();
         Map<UUID, UUID> createdBlocks = new java.util.HashMap<>();
 
-        List<String> bindingDetails = new ArrayList<>();
+        // Atomic overwrite for every target touched by these proposals.
+        java.util.Set<String> clearedTargets = new java.util.HashSet<>();
         for (BindingProposal proposal : bindingProposals) {
-            bindingDetails.addAll(applyBindingProposal(
-                    workspaceId,
-                    currentUserId,
-                    proposal,
-                    createdDocuments,
-                    createdBlocks
-            ).details());
+            if (proposal.action() != BindingAction.UPSERT_BINDING) {
+                continue;
+            }
+            UUID docId = resolveDocumentId(proposal, createdDocuments);
+            UUID blkId = resolveBlockId(proposal, createdBlocks);
+            String targetId = docId + ":" + (blkId == null ? "DOCUMENT" : blkId.toString());
+            if (clearedTargets.add(targetId)) {
+                gitKnowledgeService.removeBindingsForTarget(
+                        docId, blkId, currentUserId
+                );
+            }
+        }
+
+        for (BindingProposal proposal : bindingProposals) {
+            applyBindingProposal(currentUserId, proposal, createdDocuments, createdBlocks);
         }
 
         Instant reviewedAt = Instant.now();
@@ -504,7 +498,7 @@ public class DocumentChangeApplicationService {
                 request,
                 currentUserId,
                 "DOCUMENT_CHANGE_APPLIED",
-                appliedMessage("绑定审查自动应用", bindingDetails),
+                "绑定审查自动应用",
                 reviewedAt
         );
     }
@@ -927,23 +921,6 @@ public class DocumentChangeApplicationService {
     ) {
     }
 
-    private record BindingApplyOutcome(
-            BindingApplyResultView view,
-            List<String> details
-    ) {
-        static BindingApplyOutcome of(BindingApplyResultView view) {
-            return new BindingApplyOutcome(view, List.of());
-        }
-
-        static BindingApplyOutcome detail(String detail) {
-            return new BindingApplyOutcome(null, List.of(detail));
-        }
-
-        static BindingApplyOutcome empty() {
-            return new BindingApplyOutcome(null, List.of());
-        }
-    }
-
     private LockedTargets lockAndValidateTargets(
             UUID workspaceId,
             List<Operation> operations
@@ -1149,8 +1126,7 @@ public class DocumentChangeApplicationService {
         return documentId;
     }
 
-    private BindingApplyOutcome applyBindingProposal(
-            UUID workspaceId,
+    private BindingApplyResultView applyBindingProposal(
             UUID currentUserId,
             BindingProposal proposal,
             Map<UUID, UUID> createdDocuments,
@@ -1183,25 +1159,14 @@ public class DocumentChangeApplicationService {
                     proposal.bindingOrdinal(),
                     proposal.boundSignature()
             );
-            if (proposal.bindingId() != null) {
-                return replaceBinding(
-                        workspaceId,
-                        currentUserId,
-                        proposal,
-                        documentId,
-                        blockId,
-                        command
-                );
-            }
             var existing = gitKnowledgeService.findExactBinding(
                     documentId,
                     currentUserId,
                     command
             );
             if (existing.isPresent()) {
-                return BindingApplyOutcome.of(new BindingApplyResultView(
+                return new BindingApplyResultView(
                         proposal.id(), existing.get().id(), true
-                )
                 );
             }
             try {
@@ -1210,9 +1175,8 @@ public class DocumentChangeApplicationService {
                         currentUserId,
                         command
                 );
-                return BindingApplyOutcome.of(new BindingApplyResultView(
+                return new BindingApplyResultView(
                         proposal.id(), created.id(), false
-                )
                 );
             } catch (DuplicateCodeBindingException
                      | DataIntegrityViolationException exception) {
@@ -1224,9 +1188,8 @@ public class DocumentChangeApplicationService {
                 if (concurrent.isEmpty()) {
                     throw exception;
                 }
-                return BindingApplyOutcome.of(new BindingApplyResultView(
+                return new BindingApplyResultView(
                         proposal.id(), concurrent.get().id(), true
-                )
                 );
             }
         } else if (proposal.action() == BindingAction.REMOVE_BINDING) {
@@ -1234,114 +1197,8 @@ public class DocumentChangeApplicationService {
                     proposal.bindingId(),
                     currentUserId
             );
-            return BindingApplyOutcome.detail(deletionDetail(proposal));
         }
-        return BindingApplyOutcome.empty();
-    }
-
-    private BindingApplyOutcome replaceBinding(
-            UUID workspaceId,
-            UUID currentUserId,
-            BindingProposal proposal,
-            UUID documentId,
-            UUID blockId,
-            CreateCodeBindingCommand command
-    ) {
-        CodeDocumentBinding current = gitKnowledgeService
-                .findBindingForUpdate(workspaceId, proposal.bindingId(), currentUserId)
-                .orElseThrow(() -> conflict(
-                        "REQUEST_TARGET_CHANGED",
-                        "变更请求引用的 Binding 已变化，无法应用"
-                ));
-        if (!current.workspaceId().equals(workspaceId)
-                || !current.documentId().equals(documentId)
-                || !Objects.equals(current.blockId(), blockId)) {
-            throw conflict(
-                    "REQUEST_TARGET_CHANGED",
-                    "变更请求引用的 Binding 已变化，无法应用"
-            );
-        }
-
-        CodeDocumentBinding replacement = new CodeDocumentBinding(
-                current.id(),
-                current.workspaceId(),
-                command.repositoryId(),
-                current.documentId(),
-                current.blockId(),
-                current.targetKey(),
-                command.pathPattern(),
-                command.revision(),
-                command.anchorKind(),
-                command.symbolKey(),
-                command.startLine(),
-                command.endLine(),
-                command.bindingRole(),
-                command.bindingOrdinal(),
-                current.createdBy(),
-                current.createdAt(),
-                command.boundSignature()
-        );
-        try {
-            if (!gitRepository.updateBinding(replacement)) {
-                throw conflict(
-                        "REQUEST_TARGET_CHANGED",
-                        "变更请求引用的 Binding 已变化，无法应用"
-                );
-            }
-            return new BindingApplyOutcome(
-                    new BindingApplyResultView(proposal.id(), replacement.id(), false),
-                    List.of(updateDetail(current, replacement))
-            );
-        } catch (DataIntegrityViolationException exception) {
-            var concurrent = gitKnowledgeService.findExactBinding(
-                    documentId,
-                    currentUserId,
-                    command
-            );
-            if (concurrent.isEmpty()
-                    || concurrent.get().id().equals(current.id())) {
-                throw exception;
-            }
-            gitRepository.deleteBinding(current.id());
-            return new BindingApplyOutcome(
-                    new BindingApplyResultView(proposal.id(), concurrent.get().id(), true),
-                    List.of(deletionDetail(current, "唯一冲突保留目标绑定"))
-            );
-        }
-    }
-
-    private String appliedMessage(String baseMessage, List<String> bindingDetails) {
-        String details = bindingDetails.stream()
-                .filter(detail -> detail != null && !detail.isBlank())
-                .collect(Collectors.joining("; "));
-        if (details.isBlank()) {
-            return baseMessage;
-        }
-        return baseMessage + "；" + details;
-    }
-
-    private String deletionDetail(BindingProposal proposal) {
-        return "删除绑定：bindingId=" + proposal.bindingId()
-                + ", symbol=" + proposal.symbolKey()
-                + ", target=" + proposal.documentId() + ":"
-                + (proposal.blockId() == null ? "DOCUMENT" : proposal.blockId());
-    }
-
-    private String deletionDetail(CodeDocumentBinding binding, String reason) {
-        return "删除绑定：bindingId=" + binding.id()
-                + ", symbol=" + binding.symbolKey()
-                + ", target=" + binding.documentId() + ":"
-                + (binding.blockId() == null ? "DOCUMENT" : binding.blockId())
-                + ", reason=" + reason;
-    }
-
-    private String updateDetail(CodeDocumentBinding before, CodeDocumentBinding after) {
-        return "绑定更新：bindingId=" + after.id()
-                + ", target=" + after.documentId() + ":"
-                + (after.blockId() == null ? "DOCUMENT" : after.blockId())
-                + ", symbol=" + before.symbolKey() + "->" + after.symbolKey()
-                + ", path=" + before.pathPattern() + "->" + after.pathPattern()
-                + ", revision=" + before.revision() + "->" + after.revision();
+        return null;
     }
 
     private UUID resolveBlockId(
@@ -1822,18 +1679,6 @@ public class DocumentChangeApplicationService {
             if (!sequences.contains(sequence)) {
                 throw operationInvalid("sequenceNumber 必须从 1 连续递增");
             }
-        }
-    }
-
-    private void rejectUserBindingReplace(CreateCommand command) {
-        boolean containsReplace = safeList(command.bindingProposals()).stream()
-                .anyMatch(proposal -> proposal.action() == BindingAction.UPSERT_BINDING
-                        && proposal.bindingId() != null);
-        if (containsReplace) {
-            throw conflict(
-                    "REQUEST_TARGET_CHANGED",
-                    "用户提交的 UPSERT_BINDING 不能携带 bindingId"
-            );
         }
     }
 

@@ -2,7 +2,6 @@ package com.devcollab.knowledgecore.auth.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.devcollab.knowledgecore.auth.infrastructure.JwtTokenService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,8 +12,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import java.time.Duration;
-import java.util.List;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -34,9 +31,6 @@ class AuthControllerIntegrationTests {
 
     @Autowired
     private ObjectMapper objectMapper;
-
-    @Autowired
-    private JwtTokenService jwtTokenService;
 
     @Test
     void shouldRegisterAndAccessCurrentUser() throws Exception {
@@ -136,30 +130,6 @@ class AuthControllerIntegrationTests {
     @Test
     void shouldRejectCurrentUserRequestWithoutToken() throws Exception {
         mockMvc.perform(get("/api/v1/auth/me"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("AUTH_ACCESS_INVALID"));
-    }
-
-    @Test
-    void shouldRejectAgentDelegationTokenOnRestEndpoints() throws Exception {
-        String delegationToken = jwtTokenService.issueAgentDelegationToken(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                "abc1234",
-                List.of("devcollab.document.get_structure"),
-                Duration.ofMinutes(5)
-        );
-
-        mockMvc.perform(
-                        get("/api/v1/auth/me")
-                                .header(
-                                        HttpHeaders.AUTHORIZATION,
-                                        "Bearer " + delegationToken
-                                )
-                )
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_ACCESS_INVALID"));
     }

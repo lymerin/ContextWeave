@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.api.agent_jobs import router as jobs_router
 from app.api.agent_runs import router as runs_router
+from app.api.perf import router as perf_router
 from app.clients.delegation_client import KnowledgeCoreDelegationClient
 from app.clients.mcp_client import OfficialMcpClient
 from app.clients.run_store import RedisRunStore
@@ -76,6 +77,7 @@ def create_app(
     )
     app.include_router(runs_router)
     app.include_router(jobs_router)
+    app.include_router(perf_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
