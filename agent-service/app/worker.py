@@ -54,6 +54,7 @@ class SkeletonReviewPendingError(RuntimeError):
 
 RETRYABLE_ERRORS = {
     "MODEL_TIMEOUT",
+    "MODEL_RATE_LIMITED",
     "MODEL_UNAVAILABLE",
     "MCP_UNAVAILABLE",
     "DATABASE_UNAVAILABLE",
@@ -330,7 +331,7 @@ class AgentWorker:
                     revision=str(job["revision"]),
                     selected_paths=selected_paths,
                     # 执行级幂等键：同一次执行内稳定，重跑随 attempt 变化
-                    run_id=f"{unit_id}-{int(unit.get('attempt') or 0)}",
+                    run_id=str(unit_id),
                     slot_scope=slot_scope,
                     batch_label=batch_label,
                 )
@@ -359,7 +360,7 @@ class AgentWorker:
                     repository_id=UUID(str(job["repository_id"])),
                     revision=str(job["revision"]),
                     selected_paths=selected_paths,
-                    run_id=f"{unit_id}-{int(unit.get('attempt') or 0)}",
+                    run_id=str(unit_id),
                     document_title=str(unit.get("display_name") or "代码模块"),
                 )
             if result.get("status") == "EMPTY_SCOPE":
