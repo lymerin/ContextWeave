@@ -18,11 +18,13 @@
 
       <WorkspaceContextNavigation :workspace-id="workspaceId" active="linked" />
 
-      <div class="collaboration-account">
-        <span class="collaboration-avatar" :aria-label="`当前用户：${currentUserName}`">
-          {{ currentUserInitial }}
-        </span>
-      </div>
+      <Teleport to="body">
+        <div class="collaboration-account">
+          <span class="collaboration-avatar" :aria-label="`当前用户：${currentUserName}`">
+            {{ currentUserInitial }}
+          </span>
+        </div>
+      </Teleport>
     </header>
 
     <section class="collaboration-stage">
@@ -308,7 +310,6 @@ import {
 
 const route = useRoute();
 const router = useRouter();
-const authStore = useAuthStore();
 const workspaceId = computed(() => String(route.params.workspaceId || ''));
 const workspace = ref<Workspace | null>(null);
 const repositories = ref<GitRepository[]>([]);
@@ -353,6 +354,7 @@ const documentScope = ref<DocumentScope>({
 const errorMessage = ref('');
 const workbenchShellRef = ref<InstanceType<typeof LinkedWorkbenchShell> | null>(null);
 const backgroundActivity = useBackgroundActivityStore();
+const authStore = useAuthStore();
 
 const state = useLinkedWorkbenchState();
 const {
@@ -372,6 +374,7 @@ const currentUserName = computed(() => (
   || '用户'
 ));
 const currentUserInitial = computed(() => currentUserName.value.trim().slice(0, 1).toUpperCase() || 'U');
+
 function navigatePrimary(target: string) {
   void router.push(target);
 }
@@ -1262,6 +1265,8 @@ function flattenDocumentTree(nodes: DocumentTreeNode[], depth = 0): LinkedDocume
 .linked-page-shell { height: 100vh; overflow: hidden; color: #101820; background: #eef3f5; }
 .collaboration-page { display: grid; grid-template-rows: 72px minmax(0, 1fr); }
 .collaboration-topbar { position: relative; z-index: 20; display: grid; grid-template-columns: minmax(240px, 1fr) auto minmax(240px, 1fr); align-items: center; padding: 0 28px; border-bottom: 1px solid rgba(202, 213, 220, .78); background: rgba(255, 255, 255, .94); box-shadow: 0 7px 24px rgba(28, 46, 58, .055); backdrop-filter: blur(18px); }
+.collaboration-account { position: fixed; top: 16px; right: 28px; z-index: 120; display: flex; }
+.collaboration-avatar { display: grid; width: 39px; height: 39px; place-items: center; border-radius: 50%; background: #0b1015; color: #fff; font-size: 15px; font-weight: 700; }
 .collaboration-brand { display: flex; width: max-content; align-items: center; gap: 11px; border: 0; padding: 0; background: transparent; color: #0c1116; cursor: pointer; }
 .collaboration-logo { position: relative; width: 38px; height: 38px; overflow: hidden; border-radius: 10px; background: #0b1015; }
 .collaboration-logo::before, .collaboration-logo::after, .collaboration-logo span { position: absolute; left: 9px; width: 20px; height: 2px; content: ''; background: #18d1ff; transform: skewX(-28deg); }
@@ -1277,8 +1282,6 @@ function flattenDocumentTree(nodes: DocumentTreeNode[], depth = 0): LinkedDocume
 .collaboration-navigation-item.is-active { background: #0b1015; color: #fff; box-shadow: 0 6px 14px rgba(8, 15, 20, .17); }
 .collaboration-navigation-item.is-active span { display: inline-block; width: 6px; height: 6px; margin-left: 7px; border-radius: 50%; background: #17d5f2; vertical-align: 2px; }
 .collaboration-navigation-item:disabled:not(.is-active) { opacity: .42; cursor: not-allowed; }
-.collaboration-account { display: flex; justify-content: flex-end; }
-.collaboration-avatar { display: grid; width: 39px; height: 39px; place-items: center; border-radius: 50%; background: #0b1015; color: #fff; font-size: 15px; font-weight: 700; }
 .collaboration-stage { min-height: 0; overflow: hidden; padding: 18px 22px 22px; background-color: #eef4f6; background-image: radial-gradient(circle at 1px 1px, rgba(27, 170, 199, .16) 1px, transparent 1.15px), radial-gradient(circle at 18% 8%, rgba(34, 213, 237, .13), transparent 25%), radial-gradient(circle at 82% 92%, rgba(90, 177, 210, .12), transparent 28%); background-size: 22px 22px, auto, auto; }
 .collaboration-workspace-grid { display: grid; height: 100%; min-height: 0; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; border: 1px solid rgba(215, 224, 229, .92); border-radius: 18px; background: rgba(255, 255, 255, .94); box-shadow: 0 22px 54px rgba(35, 57, 68, .1); backdrop-filter: blur(16px); }
 .collaboration-workspace-header { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 24px; padding: 18px 24px; border-bottom: 1px solid #e1e7ea; background: rgba(255, 255, 255, .97); }
@@ -1330,8 +1333,8 @@ function flattenDocumentTree(nodes: DocumentTreeNode[], depth = 0): LinkedDocume
 .project-scan-units { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .project-scan-units li { display: grid; gap: 3px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; }
 .project-scan-units span, .project-scan-hint { color: #64748b; font-size: 13px; }
-@media (max-width: 1180px) { .collaboration-topbar { grid-template-columns: auto 1fr auto; padding: 0 18px; } .collaboration-brand-name, .collaboration-beta { display: none; } .collaboration-navigation-item { min-width: 0; padding-inline: 12px; } .collaboration-workspace-body { grid-template-columns: 220px minmax(0, 1fr); } .workspace-check-actions :deep(.el-button) { padding-inline: 12px; } }
-@media (max-width: 820px) { .linked-page-shell { height: auto; min-height: 100vh; overflow: visible; } .collaboration-page { grid-template-rows: auto auto; } .collaboration-topbar { grid-template-columns: auto auto; gap: 12px; padding: 12px 14px; } .collaboration-navigation { grid-column: 1 / -1; grid-row: 2; overflow-x: auto; justify-self: stretch; } .collaboration-navigation-item { flex: 1 0 auto; } .collaboration-stage { overflow: visible; padding: 10px; } .collaboration-workspace-grid { height: auto; } .collaboration-workspace-header { align-items: flex-start; flex-direction: column; } .workspace-check-actions { width: 100%; overflow-x: auto; } .collaboration-workspace-body { grid-template-columns: 1fr; } .collaboration-tree-panel { max-height: 320px; border-right: 0; border-bottom: 1px solid #e1e7eb; } .linked-page-main { min-height: 720px; } }
+@media (max-width: 1180px) { .collaboration-topbar { grid-template-columns: auto 1fr auto; padding: 0 18px; } .collaboration-account { right: 18px; } .collaboration-brand-name, .collaboration-beta { display: none; } .collaboration-navigation-item { min-width: 0; padding-inline: 12px; } .collaboration-workspace-body { grid-template-columns: 220px minmax(0, 1fr); } .workspace-check-actions :deep(.el-button) { padding-inline: 12px; } }
+@media (max-width: 820px) { .linked-page-shell { height: auto; min-height: 100vh; overflow: visible; } .collaboration-page { grid-template-rows: auto auto; } .collaboration-topbar { grid-template-columns: auto auto; gap: 12px; padding: 12px 14px; } .collaboration-account { top: 12px; right: 14px; } .collaboration-navigation { grid-column: 1 / -1; grid-row: 2; overflow-x: auto; justify-self: stretch; } .collaboration-navigation-item { flex: 1 0 auto; } .collaboration-stage { overflow: visible; padding: 10px; } .collaboration-workspace-grid { height: auto; } .collaboration-workspace-header { align-items: flex-start; flex-direction: column; } .workspace-check-actions { width: 100%; overflow-x: auto; } .collaboration-workspace-body { grid-template-columns: 1fr; } .collaboration-tree-panel { max-height: 320px; border-right: 0; border-bottom: 1px solid #e1e7eb; } .linked-page-main { min-height: 720px; } }
 @media (orientation: portrait) and (max-width: 1024px) { .collaboration-workspace-header { align-items: flex-start; flex-direction: column; } .collaboration-workspace-body { grid-template-columns: 1fr; } .collaboration-tree-panel { max-height: 340px; border-right: 0; border-bottom: 1px solid #e1e7eb; } }
 @media (prefers-reduced-motion: reduce) { .collaboration-navigation-item, .linked-page-main :deep(.el-button) { transition: none !important; } }
 </style>

@@ -601,6 +601,7 @@ function scrollToTop() {
 }
 
 .landing-account {
+  grid-column: 3;
   justify-content: flex-end;
   gap: 12px;
 }

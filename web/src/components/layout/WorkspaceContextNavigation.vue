@@ -156,6 +156,12 @@ button:focus-visible {
   }
 }
 
+@media (min-width: 821px) and (orientation: landscape) {
+  .workspace-context-navigation {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   button,
   .workspace-navigation-indicator {
