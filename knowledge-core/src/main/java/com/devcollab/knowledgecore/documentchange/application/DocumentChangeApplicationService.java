@@ -330,8 +330,13 @@ public class DocumentChangeApplicationService {
         // so the formal binding table is always current — no PENDING gap.
         if (normalizedCommand.operations().isEmpty()
                 && !safeList(normalizedCommand.bindingProposals()).isEmpty()) {
-            applyBindingOnly(workspaceId, requestId, currentUserId);
-            return new CreateResult(requestId, Status.APPLIED, now, false);
+            boolean canAutoApply = safeList(normalizedCommand.bindingProposals()).stream()
+                    .allMatch(proposal -> proposal.action() == BindingAction.UPSERT_BINDING);
+            if (canAutoApply) {
+                applyBindingOnly(workspaceId, requestId, currentUserId);
+                return new CreateResult(requestId, Status.APPLIED, now, false);
+            }
+            return new CreateResult(requestId, Status.PENDING, now, false);
         }
 
         return new CreateResult(requestId, Status.PENDING, now, false);
@@ -440,6 +445,11 @@ public class DocumentChangeApplicationService {
         List<BindingProposal> bindingProposals =
                 repository.findBindingProposals(request.id());
         if (bindingProposals.isEmpty()) {
+            return;
+        }
+        boolean canAutoApply = bindingProposals.stream()
+                .allMatch(proposal -> proposal.action() == BindingAction.UPSERT_BINDING);
+        if (!canAutoApply) {
             return;
         }
         lockAndValidateBindingTargets(workspaceId, currentUserId, bindingProposals);
