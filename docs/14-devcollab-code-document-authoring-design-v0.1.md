@@ -1,4 +1,4 @@
-# DevCollab 代码—文档关联与异步文档施工设计 V0.1
+# ContextWeave 代码—文档关联与异步文档施工设计 V0.1
 
 ## 文档信息
 
@@ -43,7 +43,7 @@ MCP 已批准实施：
 
 ## 1. 当前现实
 
-结论：DevCollab 已有真实 Git、文档和粗粒度路径绑定能力，但新版 Linked Workbench 展示的 Anchor、Link、Issue 和 Evidence 仍由前端 Fixture 临时生成。当前不是“数据库完全没有关联”，而是“旧路径绑定没有接入新版工作台，且数据模型尚不能表达提交、符号、范围、关系类型、状态和版本证据”。
+结论：ContextWeave 已有真实 Git、文档和粗粒度路径绑定能力，但新版 Linked Workbench 展示的 Anchor、Link、Issue 和 Evidence 仍由前端 Fixture 临时生成。当前不是“数据库完全没有关联”，而是“旧路径绑定没有接入新版工作台，且数据模型尚不能表达提交、符号、范围、关系类型、状态和版本证据”。
 
 已确认的代码证据：
 

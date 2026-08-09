@@ -1,4 +1,4 @@
-# DevCollab 结构化 Block 数据与接口契约 V0.1
+# ContextWeave 结构化 Block 数据与接口契约 V0.1
 
 ## 文档信息
 

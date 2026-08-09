@@ -1,4 +1,4 @@
-# 07 DevCollab Agent RAG 架构设计 V0.1
+# 07 ContextWeave Agent RAG 架构设计 V0.1
 
 ## 文档信息
 
@@ -13,9 +13,9 @@
 
 ## 1. 设计结论
 
-DevCollab Agent 不是开放式聊天机器人，而是受控的工程审阅工作流。系统采用 LangChain 统一模型、Prompt、Tool、Retriever 和结构化输出接口，采用 LangGraph 编排具有状态、分支、并行 Reviewer、有限重试和人工确认点的审阅流程，采用 Elasticsearch 构建带权限与版本过滤的混合检索 RAG。
+ContextWeave Agent 不是开放式聊天机器人，而是受控的工程审阅工作流。系统采用 LangChain 统一模型、Prompt、Tool、Retriever 和结构化输出接口，采用 LangGraph 编排具有状态、分支、并行 Reviewer、有限重试和人工确认点的审阅流程，采用 Elasticsearch 构建带权限与版本过滤的混合检索 RAG。
 
-框架仅承担通用运行能力，不替代业务设计。文档版本锁定、权限校验、检索范围、Evidence 验证、Issue 幂等和发布边界仍由 DevCollab 自身规则控制。
+框架仅承担通用运行能力，不替代业务设计。文档版本锁定、权限校验、检索范围、Evidence 验证、Issue 幂等和发布边界仍由 ContextWeave 自身规则控制。
 
 ### 1.1 为什么采用 LangChain 与 LangGraph
 
@@ -75,7 +75,7 @@ flowchart LR
 
     Kafka --> API
     API --> Graph
-    Graph -->|MCP Client| MCP["DevCollab MCP Server"]
+    Graph -->|MCP Client| MCP["ContextWeave MCP Server"]
     MCP -->|可信身份 + Core 二次授权| Core
     Graph --> Rules
     Graph --> Retrieval
@@ -90,7 +90,7 @@ flowchart LR
 
 Agent Review Service 包含两个相互隔离的运行单元：RAG Indexer 负责知识入库，Review Runtime 负责审阅任务。二者可以位于同一代码仓库，但使用独立消费者组、线程池、限流和失败队列，避免批量重建索引影响在线审阅。
 
-Agent 的领域 Tool 入口统一使用 MCP Client，经 DevCollab MCP Server 调用 Knowledge Core。Agent 不直连 Core 数据库、不读取 `.data`，DeepSeek 等模型 Provider 不嵌入 MCP Server。MCP 提供稳定、受权限控制的领域能力，LangGraph 负责有限状态工作流；任何生成结果只能提交待审核方案，不能直接写正式文档。
+Agent 的领域 Tool 入口统一使用 MCP Client，经 ContextWeave MCP Server 调用 Knowledge Core。Agent 不直连 Core 数据库、不读取 `.data`，DeepSeek 等模型 Provider 不嵌入 MCP Server。MCP 提供稳定、受权限控制的领域能力，LangGraph 负责有限状态工作流；任何生成结果只能提交待审核方案，不能直接写正式文档。
 
 ## 4. RAG 知识入库
 

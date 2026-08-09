@@ -1,8 +1,8 @@
-# 03 DevCollab 架构验证方案 V0.1
+# 03 ContextWeave 架构验证方案 V0.1
 
 ## 1. 文档目的
 
-本文定义 DevCollab 关键架构设计的验证范围、验证方法和通过条件。功能验收以 `01-devcollab-product-requirements-v0.1.md` 为准，系统结构及技术约束以 `02-devcollab-system-architecture-v0.3.md` 为准。
+本文定义 ContextWeave 关键架构设计的验证范围、验证方法和通过条件。功能验收以 `01-devcollab-product-requirements-v0.1.md` 为准，系统结构及技术约束以 `02-devcollab-system-architecture-v0.3.md` 为准。
 
 验证结论必须来自可复现的自动化测试、压测数据或故障实验，不以理论分析代替实际结果。
 

@@ -3,7 +3,7 @@
 不再建设完整 Code Graph、通用 Workflow、LSP、跨版本漂移或复杂多 Agent。
 
 ```markdown
-# DevCollab 稳健代码—文档 Binding V1
+# ContextWeave 稳健代码—文档 Binding V1
 
 | 项目 | 内容 |
 |---|---|
@@ -1349,5 +1349,5 @@ web/src/utils/linkedWorkbenchBindings.ts
 
 > 对一个真实FastAPI接口，程序能够生成职责明确的文档Block计划，DeepSeek只能在真实候选中选择主辅Binding，Validator能够阻止错误粒度和缺失关联，Core能够将DocumentBlock与多条Binding原子落库。
 
-该能力完成后，DevCollab便具备足够稳定的代码—文档双向Binding基础，可以作为简历中的核心Agent与Java后端功能进行展示和讲解。
+该能力完成后，ContextWeave便具备足够稳定的代码—文档双向Binding基础，可以作为简历中的核心Agent与Java后端功能进行展示和讲解。
 ```

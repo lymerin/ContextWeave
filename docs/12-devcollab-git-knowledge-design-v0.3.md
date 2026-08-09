@@ -1,4 +1,4 @@
-# DevCollab Git 工程知识设计 V0.3
+# ContextWeave Git 工程知识设计 V0.3
 
 ## 文档信息
 
@@ -15,7 +15,7 @@
 
 ## 1. 结论与边界
 
-工作区可以异步同步公开 GitHub 仓库，展示文件树、Commit 身份和文件级行数统计，并查看受限长度的行级 Patch。Git 数据用于代码—文档追溯与后续影响分析，不把 DevCollab 变成代码编辑器。
+工作区可以异步同步公开 GitHub 仓库，展示文件树、Commit 身份和文件级行数统计，并查看受限长度的行级 Patch。Git 数据用于代码—文档追溯与后续影响分析，不把 ContextWeave 变成代码编辑器。
 
 首期只接受公开 HTTPS GitHub 仓库。Core 不在 HTTP 线程执行 Git 操作；JGit 克隆、提交遍历和 Diff 计算位于 Worker。私有凭证、GitHub 账号匹配、Webhook、完整大型 Patch 和多父合并比较仍不在本期范围。
 

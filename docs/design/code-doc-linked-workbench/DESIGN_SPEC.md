@@ -1,4 +1,4 @@
-# DevCollab Code ↔ Doc Linked Workbench
+# ContextWeave Code ↔ Doc Linked Workbench
 
 ## 1. Product definition
 

@@ -1,4 +1,4 @@
-# DevCollab 前端产品与交互设计说明 V0.1
+# ContextWeave 前端产品与交互设计说明 V0.1
 
 ## 文档信息
 
@@ -15,7 +15,7 @@
 
 ## 1. 设计目标
 
-DevCollab 前端应帮助 2～10 人的软件团队完成以下主闭环：
+ContextWeave 前端应帮助 2～10 人的软件团队完成以下主闭环：
 
 ```text
 找到工程文档 → 编辑并协作 → 提交评审 → 处理问题
@@ -103,7 +103,7 @@ flowchart LR
 
 ### 4.1 可视化静态原型
 
-[打开 DevCollab 文档工作台静态原型](assets/frontend-workbench-static-v0.1.html)
+[打开 ContextWeave 文档工作台静态原型](assets/frontend-workbench-static-v0.1.html)
 
 该原型替代字符框图作为页面布局基线，直观展示全局导航、文档树、草稿与发布版状态、Block 编辑区、在线成员、Review Issue 和 Evidence。右侧评论、问题、关联和版本页签可在本地点击切换；所有数据均为设计示例，不代表功能已实现。
 
