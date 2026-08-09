@@ -381,25 +381,6 @@ public class DocumentChangeApplicationService {
             );
         }
 
-        // Atomic overwrite: for every target touched by these proposals,
-        // remove existing bindings first so the formal table always carries
-        // the latest agent assessment—no stale bindings survive alongside
-        // the new ones.
-        java.util.Set<String> clearedTargets = new java.util.HashSet<>();
-        for (BindingProposal proposal : bindingProposals) {
-            if (proposal.action() != BindingAction.UPSERT_BINDING) {
-                continue;
-            }
-            UUID docId = resolveDocumentId(proposal, createdDocuments);
-            UUID blkId = resolveBlockId(proposal, createdBlocks);
-            String targetId = docId + ":" + (blkId == null ? "DOCUMENT" : blkId.toString());
-            if (clearedTargets.add(targetId)) {
-                gitKnowledgeService.removeBindingsForTarget(
-                        docId, blkId, currentUserId
-                );
-            }
-        }
-
         List<BindingApplyResultView> appliedBindings = new ArrayList<>();
         for (BindingProposal proposal : bindingProposals) {
             BindingApplyResultView result = applyBindingProposal(
@@ -425,7 +406,7 @@ public class DocumentChangeApplicationService {
                 applied,
                 currentUserId,
                 "DOCUMENT_CHANGE_APPLIED",
-                "批准并原子应用文档变更请求",
+                appliedMessage("批准并原子应用文档变更请求", bindingProposals),
                 reviewedAt
         );
         return new DecisionResult(detail(
@@ -466,22 +447,6 @@ public class DocumentChangeApplicationService {
         Map<UUID, UUID> createdDocuments = new java.util.HashMap<>();
         Map<UUID, UUID> createdBlocks = new java.util.HashMap<>();
 
-        // Atomic overwrite for every target touched by these proposals.
-        java.util.Set<String> clearedTargets = new java.util.HashSet<>();
-        for (BindingProposal proposal : bindingProposals) {
-            if (proposal.action() != BindingAction.UPSERT_BINDING) {
-                continue;
-            }
-            UUID docId = resolveDocumentId(proposal, createdDocuments);
-            UUID blkId = resolveBlockId(proposal, createdBlocks);
-            String targetId = docId + ":" + (blkId == null ? "DOCUMENT" : blkId.toString());
-            if (clearedTargets.add(targetId)) {
-                gitKnowledgeService.removeBindingsForTarget(
-                        docId, blkId, currentUserId
-                );
-            }
-        }
-
         for (BindingProposal proposal : bindingProposals) {
             applyBindingProposal(currentUserId, proposal, createdDocuments, createdBlocks);
         }
@@ -498,7 +463,7 @@ public class DocumentChangeApplicationService {
                 request,
                 currentUserId,
                 "DOCUMENT_CHANGE_APPLIED",
-                "绑定审查自动应用",
+                appliedMessage("绑定审查自动应用", bindingProposals),
                 reviewedAt
         );
     }
@@ -1169,6 +1134,9 @@ public class DocumentChangeApplicationService {
                         proposal.id(), existing.get().id(), true
                 );
             }
+            if (proposal.bindingId() != null) {
+                gitKnowledgeService.deleteBinding(proposal.bindingId(), currentUserId);
+            }
             try {
                 CodeDocumentBinding created = gitKnowledgeService.createBinding(
                         documentId,
@@ -1199,6 +1167,20 @@ public class DocumentChangeApplicationService {
             );
         }
         return null;
+    }
+
+    private String appliedMessage(String baseMessage, List<BindingProposal> proposals) {
+        String deletionDetails = proposals.stream()
+                .filter(proposal -> proposal.action() == BindingAction.REMOVE_BINDING)
+                .map(proposal -> "bindingId=" + proposal.bindingId()
+                        + ", symbol=" + proposal.symbolKey()
+                        + ", target=" + proposal.documentId() + ":"
+                        + (proposal.blockId() == null ? "DOCUMENT" : proposal.blockId()))
+                .collect(Collectors.joining("; "));
+        if (deletionDetails.isBlank()) {
+            return baseMessage;
+        }
+        return baseMessage + "；删除绑定：" + deletionDetails;
     }
 
     private UUID resolveBlockId(
