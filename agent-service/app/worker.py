@@ -298,12 +298,15 @@ class AgentWorker:
                         delegation_id=UUID(str(job["delegation_id"])),
                         job_id=job_id,
                     )
-                    if review_status == "PENDING":
-                        raise SkeletonReviewPendingError(
-                            f"skeleton review {skeleton_review_id} is PENDING"
-                        )
-                    if review_status in ("REJECTED", "STALE"):
+                    if review_status == "APPLIED":
+                        pass
+                    elif review_status in ("REJECTED", "STALE"):
                         return {"status": "NO_CHANGE", "change_request_id": None}
+                    else:
+                        raise SkeletonReviewPendingError(
+                            f"skeleton review {skeleton_review_id} is "
+                            f"{review_status or 'MISSING'}"
+                        )
             else:
                 selected_paths = [str(scope["filePath"])]
                 slot_scope = ()
@@ -544,7 +547,9 @@ class AgentWorker:
             attempt = int(unit["attempt"])
             max_attempts = int(unit["max_attempts"])
             retry_at = None
-            if code in RETRYABLE_ERRORS and attempt < max_attempts:
+            if code in RETRYABLE_ERRORS and (
+                code == "SKELETON_REVIEW_PENDING" or attempt < max_attempts
+            ):
                 # 骨架 review 未审批：固定 5 分钟长退避，避免批次单元高频
                 # 撞墙轮询（审批前 N 个单元 × 每次 DB+HTTP）；attempt 已由
                 # fail_unit 减回，等待不消耗重试预算，审批后再正常执行。
