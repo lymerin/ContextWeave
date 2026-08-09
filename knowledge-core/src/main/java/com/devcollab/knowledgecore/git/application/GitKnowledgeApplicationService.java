@@ -1123,8 +1123,10 @@ public class GitKnowledgeApplicationService {
             Integer maxBindings
     ) {
         java.util.Set<UUID> seenBindingIds = new java.util.HashSet<>();
-        List<CodeDocumentBinding> matching = bindings.stream()
+        List<CodeDocumentBinding> pathMatches = bindings.stream()
                 .filter(binding -> matches(binding.pathPattern(), normalizedPath))
+                .toList();
+        List<CodeDocumentBinding> matching = pathMatches.stream()
                 .filter(binding -> matchesRevision(binding, revision, includeLegacy))
                 .filter(binding -> seenBindingIds.add(binding.id()))
                 .toList();
@@ -1147,7 +1149,10 @@ public class GitKnowledgeApplicationService {
                 ? DEFAULT_MAX_BINDINGS_PER_FILE
                 : maxBindings;
         boolean truncated = ordered.size() > effectiveMax;
-        int omittedBindingCount = truncated ? ordered.size() - effectiveMax : 0;
+        int revisionFilteredCount = truncated && includeLegacy
+                ? pathMatches.size() - matching.size() : 0;
+        int omittedBindingCount = truncated
+                ? ordered.size() - effectiveMax + revisionFilteredCount : 0;
         List<CodeBindingQueryItem> result = truncated
                 ? ordered.subList(0, effectiveMax)
                 : ordered;
@@ -1228,12 +1233,9 @@ public class GitKnowledgeApplicationService {
      * <ul>
      *   <li>{@code revision != null && !includeLegacy} — strict: only
      *       bindings created against exactly that revision match.</li>
-     *   <li>{@code includeLegacy == true} (regardless of revision) —
-     *       keep every binding; the revision is used only for sorting and
-     *       dedup priority, never for filtering.  Without this, syncing a
-     *       repository updates {@code lastSyncedCommit} and every binding
-     *       whose stored revision is the older commit would disappear
-     *       from the UI even though it is still valid.</li>
+     *   <li>{@code revision != null && includeLegacy} — FILE anchors keep
+     *       exact revision plus legacy null; structured anchors retain the
+     *       existing legacy-inclusive behavior.</li>
      *   <li>{@code revision == null && !includeLegacy} — keep only
      *       bindings that carry a revision.</li>
      * </ul>
@@ -1245,6 +1247,9 @@ public class GitKnowledgeApplicationService {
     ) {
         if (revision != null && !includeLegacy) {
             return revision.equals(binding.revision());
+        }
+        if (revision != null && binding.anchorKind() == CodeAnchorKind.FILE) {
+            return revision.equals(binding.revision()) || binding.revision() == null;
         }
         if (revision == null && !includeLegacy) {
             return binding.revision() != null;

@@ -51,11 +51,11 @@ class DriftDetectionServiceTest {
     }
 
     /**
-     * Stub create() to return a result, and stub apply() for tests
+     * Stub createDrift() to return a result, and stub apply() for tests
      * that expect a change request to be submitted.
      */
     private void stubCreateResult(UUID requestId, Status status) {
-        when(documentChangeService.create(any(), any(), any()))
+        when(documentChangeService.createDrift(any(), any(), any()))
                 .thenReturn(new CreateResult(requestId, status, Instant.now(), false));
     }
 
@@ -114,7 +114,7 @@ class DriftDetectionServiceTest {
         service.detectAndSubmit(WORKSPACE_ID, REPO_ID, "abc1234", USER_ID);
 
         verify(documentChangeService, org.mockito.Mockito.never())
-                .create(any(), any(), any());
+                .createDrift(any(), any(), any());
     }
 
     @Test
@@ -127,7 +127,7 @@ class DriftDetectionServiceTest {
         service.detectAndSubmit(WORKSPACE_ID, REPO_ID, "abc1234", USER_ID);
 
         verify(documentChangeService, org.mockito.Mockito.never())
-                .create(any(), any(), any());
+                .createDrift(any(), any(), any());
     }
 
     // ── NONE (no drift) ────────────────────────────────────────────────────
@@ -150,7 +150,7 @@ class DriftDetectionServiceTest {
 
         // No drift → no submission
         verify(documentChangeService, org.mockito.Mockito.never())
-                .create(any(), any(), any());
+                .createDrift(any(), any(), any());
     }
 
     // ── COSMETIC ───────────────────────────────────────────────────────────
@@ -172,7 +172,7 @@ class DriftDetectionServiceTest {
 
         service.detectAndSubmit(WORKSPACE_ID, REPO_ID, "abc1234", USER_ID);
 
-        verify(documentChangeService).create(
+        verify(documentChangeService).createDrift(
                 eq(WORKSPACE_ID), eq(USER_ID), any());
     }
 
@@ -197,7 +197,7 @@ class DriftDetectionServiceTest {
 
         service.detectAndSubmit(WORKSPACE_ID, REPO_ID, "abc1234", USER_ID);
 
-        verify(documentChangeService).create(
+        verify(documentChangeService).createDrift(
                 eq(WORKSPACE_ID), eq(USER_ID), any());
     }
 
@@ -221,7 +221,7 @@ class DriftDetectionServiceTest {
 
         service.detectAndSubmit(WORKSPACE_ID, REPO_ID, "abc1234", USER_ID);
 
-        verify(documentChangeService).create(
+        verify(documentChangeService).createDrift(
                 eq(WORKSPACE_ID), eq(USER_ID), any());
     }
 
@@ -245,7 +245,7 @@ class DriftDetectionServiceTest {
 
         service.detectAndSubmit(WORKSPACE_ID, REPO_ID, "abc1234", USER_ID);
 
-        verify(documentChangeService).create(
+        verify(documentChangeService).createDrift(
                 eq(WORKSPACE_ID), eq(USER_ID), any());
     }
 
@@ -270,7 +270,7 @@ class DriftDetectionServiceTest {
 
         // Legacy binding without symbolKey → conservative, no drift reported
         verify(documentChangeService, org.mockito.Mockito.never())
-                .create(any(), any(), any());
+                .createDrift(any(), any(), any());
     }
 
     // ── symbol_key 格式不兼容防护（回归测试） ───────────────────────────────
@@ -296,7 +296,7 @@ class DriftDetectionServiceTest {
 
         // 格式不兼容 → 整体跳过，不提交任何 change request，绑定保持不动
         verify(documentChangeService, org.mockito.Mockito.never())
-                .create(any(), any(), any());
+                .createDrift(any(), any(), any());
         // 任何情况下都不应该执行 deleteBinding / REMOVE
         verify(gitRepository, org.mockito.Mockito.never())
                 .deleteBinding(any());

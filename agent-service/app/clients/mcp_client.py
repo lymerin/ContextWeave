@@ -108,7 +108,7 @@ class OfficialMcpClient:
                 "MCP_PROTOCOL_ERROR",
                 "MCP review result is missing changeRequestId",
             )
-        if result.get("status") != "PENDING":
+        if result.get("status") not in {"PENDING", "APPLIED"}:
             raise McpClientError(
                 "MCP_PROTOCOL_ERROR",
                 "MCP review result has an invalid status",

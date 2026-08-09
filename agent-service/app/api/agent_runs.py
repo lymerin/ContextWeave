@@ -11,64 +11,13 @@ from app.config import Settings
 from app.graph.state import AgentState
 from app.graph.workflow import ContextWorkflow
 from app.schemas.runs import (
-    AgentRunRecord,
     AgentRunResponse,
-    CreateAgentRunRequest,
     CreateContextRunRequest,
-    QueuedAgentRunResponse,
     RunStatus,
     TraceSummary,
 )
 
 router = APIRouter(prefix="/api/v1/agent-runs", tags=["agent-runs"])
-
-
-@router.post(
-    "",
-    response_model=QueuedAgentRunResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def create_agent_run(
-    payload: CreateAgentRunRequest,
-    request: Request,
-    authorization: str | None = Header(default=None),
-) -> QueuedAgentRunResponse:
-    authorization = _require_bearer(authorization)
-    settings: Settings = request.app.state.settings
-    _validate_selected_path_limit(payload.selectedPaths, settings)
-    run_id = uuid4()
-    now = datetime.now(UTC)
-    queued = AgentRunRecord(
-        runId=run_id,
-        status="QUEUED",
-        workspaceId=payload.workspaceId,
-        repositoryId=payload.repositoryId,
-        selectedPaths=payload.selectedPaths,
-        currentNode="queued",
-        createdAt=now,
-        updatedAt=now,
-    )
-    try:
-        await request.app.state.run_store.save(
-            str(run_id),
-            queued.model_dump(mode="json"),
-            settings.agent_run_ttl_seconds,
-        )
-    except RunStoreError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": "REDIS_UNAVAILABLE", "message": str(exc)},
-        ) from exc
-    request.app.state.run_executor.start(
-        run_id=str(run_id),
-        workspace_id=str(payload.workspaceId),
-        repository_id=str(payload.repositoryId),
-        selected_paths=payload.selectedPaths,
-        user_instruction=payload.userInstruction,
-        authorization=authorization,
-        created_at=now.isoformat(),
-    )
-    return QueuedAgentRunResponse(runId=run_id, status="QUEUED")
 
 
 @router.post("/context", response_model=AgentRunResponse)

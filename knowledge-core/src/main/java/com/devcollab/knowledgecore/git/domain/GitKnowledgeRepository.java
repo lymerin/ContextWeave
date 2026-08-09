@@ -56,6 +56,8 @@ public interface GitKnowledgeRepository {
 
     CodeDocumentBinding saveBinding(CodeDocumentBinding binding);
 
+    boolean updateBinding(CodeDocumentBinding binding);
+
     Optional<CodeDocumentBinding> findBindingById(UUID bindingId);
 
     Optional<CodeDocumentBinding> findBindingByIdForUpdate(UUID bindingId);

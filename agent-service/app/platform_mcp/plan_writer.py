@@ -42,9 +42,9 @@ class PlanWriter:
           - section_binding_sets 中的每条 SectionBinding → 一条 BindingProposal
           - evidence 从 planned_sections 派生
         """
-        # clientRequestId 带计划内容指纹：同内容重试 → knowledge-core 幂等重放；
-        # 内容变化（如骨架 Apply 后 CREATE→UPDATE）→ 新 ID → 新变更请求。
-        # 固定 run_id 会导致内容变化时 IDEMPOTENCY_CONFLICT（409）。
+        # clientRequestId = stable unit run_id + content fingerprint.
+        # Same content replay hits knowledge-core idempotency; changed content
+        # gets a new request id through the fingerprint.
         fingerprint = _plan_fingerprint(plan)
         mcp_payload = {
             "clientRequestId": f"agent-{run_id}-{fingerprint}",

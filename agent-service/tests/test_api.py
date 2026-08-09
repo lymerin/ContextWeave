@@ -90,6 +90,15 @@ def test_ready_run_is_persisted_without_token(
     )
 
 
+def test_legacy_agent_runs_create_endpoint_is_removed(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/agent-runs",
+        json=request_payload(),
+        headers={"Authorization": "Bearer secret-token"},
+    )
+    assert response.status_code == 404
+
+
 def test_get_run_requires_authorization(client: TestClient) -> None:
     response = client.get("/api/v1/agent-runs/11111111-1111-1111-1111-111111111111")
     assert response.status_code == 401

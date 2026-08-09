@@ -14,8 +14,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class GatewayTokenServiceTests {
 
-    private static final String SECRET =
+    private static final String PLACEHOLDER_SECRET =
             "devcollab-local-development-secret-change-me";
+    private static final String SECRET =
+            "devcollab-gateway-test-secret-with-at-least-32-characters";
 
     private final GatewayTokenService tokenService =
             new GatewayTokenService(new GatewayJwtProperties(
@@ -54,6 +56,15 @@ class GatewayTokenServiceTests {
 
         assertThatThrownBy(() -> tokenService.verify(token))
                 .isInstanceOf(JWTVerificationException.class);
+    }
+
+    @Test
+    void rejectsDefaultPlaceholderSecret() {
+        assertThatThrownBy(() -> new GatewayJwtProperties(
+                "devcollab-knowledge-core",
+                "devcollab-web",
+                PLACEHOLDER_SECRET
+        )).isInstanceOf(IllegalArgumentException.class);
     }
 
     private String token(

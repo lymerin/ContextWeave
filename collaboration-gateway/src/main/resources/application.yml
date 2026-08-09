@@ -27,7 +27,7 @@ devcollab:
     jwt:
       issuer: ${DEVCOLLAB_JWT_ISSUER:devcollab-knowledge-core}
       audience: ${DEVCOLLAB_JWT_AUDIENCE:devcollab-web}
-      secret: ${DEVCOLLAB_JWT_SECRET:devcollab-local-development-secret-change-me}
+      secret: ${DEVCOLLAB_JWT_SECRET:devcollab-local-dev-jwt-secret-8f3a2c9e7b1d4f6a}
 
 management:
   endpoints:
