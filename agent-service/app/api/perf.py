@@ -8,8 +8,8 @@ router = APIRouter(prefix="/api/v1/perf", tags=["perf"])
 
 
 @router.get("/metrics")
-async def get_metrics() -> dict[str, Any]:
-    return perf_metrics.snapshot()
+async def get_metrics(jobId: str | None = None) -> dict[str, Any]:
+    return perf_metrics.snapshot(job_id=jobId)
 
 
 @router.post("/metrics/reset")

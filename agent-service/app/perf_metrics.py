@@ -6,11 +6,15 @@ import time
 from collections import Counter, deque
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from pathlib import Path
 from threading import Lock
 from typing import Any
 
 _MAX_SAMPLES = 20_000
+_CONTEXT: ContextVar[dict[str, str] | None] = ContextVar(
+    "perf_metrics_context", default=None
+)
 
 
 class PerfMetrics:
@@ -57,8 +61,8 @@ class PerfMetrics:
             ).append(elapsed_ms)
             _append_event({"kind": "mcp_tool", "name": name, "elapsed_ms": elapsed_ms})
 
-    def snapshot(self) -> dict[str, Any]:
-        file_snapshot = _snapshot_events()
+    def snapshot(self, *, job_id: str | None = None) -> dict[str, Any]:
+        file_snapshot = _snapshot_events(job_id=job_id)
         if file_snapshot is not None:
             return file_snapshot
         with self._lock:
@@ -72,8 +76,8 @@ class PerfMetrics:
         return _build_snapshot(counters, mcp_tool_counts, duration_samples, started_at)
 
 
-def snapshot() -> dict[str, Any]:
-    return _METRICS.snapshot()
+def snapshot(*, job_id: str | None = None) -> dict[str, Any]:
+    return _METRICS.snapshot(job_id=job_id)
 
 
 def reset() -> None:
@@ -90,6 +94,14 @@ def add_backoff(seconds: float) -> None:
 
 def record_mcp_tool(name: str, elapsed_ms: float) -> None:
     _METRICS.record_mcp_tool(name, elapsed_ms)
+
+
+def set_context(*, job_id: str, unit_id: str) -> Token[dict[str, str] | None]:
+    return _CONTEXT.set({"job_id": job_id, "unit_id": unit_id})
+
+
+def reset_context(token: Token[dict[str, str] | None]) -> None:
+    _CONTEXT.reset(token)
 
 
 @contextmanager
@@ -146,7 +158,7 @@ def _append_event(event: dict[str, Any]) -> None:
     path = _metrics_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"ts": _now(), **event}
+        payload = {"ts": _now(), **(_CONTEXT.get() or {}), **event}
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
             handle.write("\n")
@@ -163,7 +175,7 @@ def _truncate_events() -> None:
         return
 
 
-def _snapshot_events() -> dict[str, Any] | None:
+def _snapshot_events(*, job_id: str | None) -> dict[str, Any] | None:
     path = _metrics_path()
     if not path.exists():
         return None
@@ -177,6 +189,8 @@ def _snapshot_events() -> dict[str, Any] | None:
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
+                continue
+            if job_id is not None and event.get("job_id") != job_id:
                 continue
             kind = event.get("kind")
             if kind == "counter":

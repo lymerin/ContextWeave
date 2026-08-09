@@ -242,6 +242,9 @@ class AgentWorker:
         job = unit["job"]
         unit_id = UUID(str(unit["id"]))
         job_id = UUID(str(job["id"]))
+        perf_context = perf_metrics.set_context(
+            job_id=str(job_id), unit_id=str(unit_id)
+        )
         heartbeat = asyncio.create_task(
             self._heartbeat(unit_id), name=f"heartbeat-{unit_id}"
         )
@@ -567,6 +570,7 @@ class AgentWorker:
                 await asyncio.gather(workflow_task, return_exceptions=True)
             heartbeat.cancel()
             await asyncio.gather(heartbeat, return_exceptions=True)
+            perf_metrics.reset_context(perf_context)
 
     async def _review_status(
         self,

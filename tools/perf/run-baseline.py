@@ -362,7 +362,7 @@ def run_round(
             timeout_seconds=timeout_seconds,
             interval_seconds=3,
         )
-    metrics = client.agent("/api/v1/perf/metrics")
+    metrics = client.agent(f"/api/v1/perf/metrics?jobId={job_id}")
     units = client.agent(f"/api/v1/agent-jobs/{job_id}/units?offset=0&limit=100", token=token)
 
     total_duration_s = time.perf_counter() - started
