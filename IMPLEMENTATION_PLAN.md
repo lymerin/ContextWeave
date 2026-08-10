@@ -277,3 +277,16 @@
 - 新增骨架文件：`agent-service/app/runtime/mcp_session_pool.py`、`agent-service/app/runtime/delegation_token_cache.py`、`agent-service/app/runtime/staged_concurrency.py`、`devcollab-mcp-server/src/main/java/com/devcollab/mcp/cache/ContentAddressableCache.java`、`devcollab-mcp-server/src/main/java/com/devcollab/mcp/cache/ReverseDependencyIndex.java`、三份 MCP batch contributor、六份 batch schema。
 - 测试记录：agent-service 新增测试 8 passed；devcollab-mcp-server 受影响测试 57 passed；`devcollab-mcp-server compile` SUCCESS。
 - 全量回归记录：agent pytest 因缺 `tree_sitter_java` 在 collection 阶段失败；MCP full test 100 run / 2 failures，均为既有换行断言，详见 `tools/perf/NIGHT-HOLDING-ISSUES.md`。
+
+## 给 Codex 的开工提示词（第六批——接线批，2026-08-10 发送，全文另存 tools/perf/PROMPT-batch6.md）
+
+（全文见 `tools/perf/PROMPT-batch6.md`。模式：开关化接线——每接线点一个默认关闭的开关 + 独立 commit；off 态与现状逐字节一致、on 态过确定性回归。任务一：阶段 3 接线——McpSessionPool（`AGENT_MCP_SESSION_POOL_ENABLED`）、DelegationTokenCache（`AGENT_DELEGATION_TOKEN_CACHE_ENABLED` + TTL=300s）、批量工具（`AGENT_BATCH_TOOLS_ENABLED`，只接 find_candidates_batch/get_structure_batch，**code.read_batch 因截断语义不等价不接，契约增强待定案**）。任务二：阶段 4——先修 code-metadata 缺失 blobSha（勘察发现真实 API 不返回，MCP 侧恒 null）、knowledge-core 正则结果缓存、agent job 内增量读取（`AGENT_INCREMENTAL_READ_ENABLED`，list_files 已含 blobSha）。任务三：阶段 5——先修 StagedPipeline 异常泄漏缺陷，再拆 job_executor 为四阶段接 worker 调度（`AGENT_STAGED_PIPELINE_ENABLED`，含降级路径）。勘察事实 10 条已在提示词内定案，Codex 直接采信。）
+
+## 批次记录：第六批阶段 3/4/5 开关化接线（2026-08-10）
+
+- 分支与提交：在 `main` 上连续提交 `bbd41a9`、`4f55b34`、`7688ef0`、`63e6690`、`956f5a4`、`c341914`、`5d4dc53`、`71bd317`、`61de556`。
+- 开关清单：`AGENT_MCP_SESSION_POOL_ENABLED`、`AGENT_DELEGATION_TOKEN_CACHE_ENABLED`、`AGENT_DELEGATION_TOKEN_TTL_SECONDS`、`AGENT_BATCH_TOOLS_ENABLED`、`DEVCOLLAB_CODE_METADATA_CACHE_ENABLED`、`DEVCOLLAB_CODE_METADATA_CACHE_CAPACITY`、`AGENT_INCREMENTAL_READ_ENABLED`、`AGENT_STAGED_PIPELINE_ENABLED`，均默认关闭。
+- 文件清单：agent `mcp_client.py`/`delegated_mcp_client.py`/`document_reader.py`/`workspace_reader.py`/`source_reader.py`/`job_executor.py`/`worker.py`/`config.py`；knowledge-core `GitKnowledgeApplicationService`、`CodeMetadataBatchResult`、`CodeMetadataInspector`、`ContentAddressableCache`、`CodeMetadataCacheProperties`、配置文件与对应测试。
+- 测试记录：agent 定向测试命令均通过（session pool 4、delegation cache 5、document batch 6、incremental read 5、staged/AIMD 8）；knowledge-core 定向缓存 suite 23 passed；knowledge-core full `276 tests run / 0 failures / 4 skipped`。
+- 全量回归记录：agent full pytest 仍因缺 `tree_sitter_java` collection 失败；MCP full test 仍为 100 run / 2 trailing-newline failures；两者均记录在 `tools/perf/NIGHT-HOLDING-ISSUES.md`。
+- 降级/未接线：`devcollab.code.read_batch` 因 200KB 截断语义不等价未接；完整四阶段 `StagedPipeline` 替换 `JobExecutor` 风险过高，本批仅接 AIMD 模型退避 fallback。详见 `tools/perf/BATCH6-REPORT.md`。
