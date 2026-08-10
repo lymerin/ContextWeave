@@ -3,6 +3,10 @@ import pytest
 from app.clients.mcp_client import McpClientError, OfficialMcpClient
 
 
+def test_official_client_allows_code_read_batch():
+    assert "devcollab.code.read_batch" in OfficialMcpClient.ALLOWED_TOOLS
+
+
 class FakePool:
     def __init__(self):
         self.calls = []

@@ -47,11 +47,13 @@ LOGGER = logging.getLogger("devcollab.agent.worker")
 
 class ReviewSubmissionError(RuntimeError):
     """提交审查请求失败。"""
+
     code = "REVIEW_SUBMISSION_FAILED"
 
 
 class SkeletonReviewPendingError(RuntimeError):
     """批次所属的骨架 review 尚未 APPLIED——自动重试等待。"""
+
     code = "SKELETON_REVIEW_PENDING"
 
 
@@ -68,9 +70,7 @@ RETRYABLE_ERRORS = {
 }
 
 
-def _batch_payloads(
-    skeleton: object, review_id: str | None = None
-) -> list[dict[str, Any]]:
+def _batch_payloads(skeleton: object, review_id: str | None = None) -> list[dict[str, Any]]:
     """DocumentSkeleton → create_batch_units 的批次载荷（槽位序列化）。
 
     skeletonReviewId 记录本模块骨架 review——批次执行前等待其 APPLIED，
@@ -102,15 +102,19 @@ def _batch_payloads(
         }
         if review_id:
             slot_plan["skeletonReviewId"] = review_id
-        batches.append({
-            "batch_index": batch.batch_index,
-            "batch_label": label,
-            "display_name": label,
-            "summary": "",
-            "slot_plan": slot_plan,
-            "file_paths": list(batch.file_paths),
-        })
+        batches.append(
+            {
+                "batch_index": batch.batch_index,
+                "batch_label": label,
+                "display_name": label,
+                "summary": "",
+                "slot_plan": slot_plan,
+                "file_paths": list(batch.file_paths),
+            }
+        )
     return batches
+
+
 PHASES = {
     "PLANNING": "MODEL_RUNNING",
     "VALIDATING": "VALIDATING",
@@ -136,10 +140,7 @@ class AgentWorker:
         self._delegation_client = delegation_client
         self._provider = provider
         self._settings = settings
-        self._worker_id = (
-            worker_id
-            or f"{socket.gethostname()}-{os.getpid()}-{uuid4().hex[:12]}"
-        )
+        self._worker_id = worker_id or f"{socket.gethostname()}-{os.getpid()}-{uuid4().hex[:12]}"
         self._stopping = asyncio.Event()
         self._memory_profiler = memory_profiler
         self._registry = SnapshotStoreRegistry()
@@ -177,11 +178,7 @@ class AgentWorker:
                         continue
                     await self._wait_for_poll()
                     continue
-                tasks.add(
-                    asyncio.create_task(
-                        self._execute(unit), name=f"agent-unit-{unit['id']}"
-                    )
-                )
+                tasks.add(asyncio.create_task(self._execute(unit), name=f"agent-unit-{unit['id']}"))
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -245,12 +242,8 @@ class AgentWorker:
         job = unit["job"]
         unit_id = UUID(str(unit["id"]))
         job_id = UUID(str(job["id"]))
-        perf_context = perf_metrics.set_context(
-            job_id=str(job_id), unit_id=str(unit_id)
-        )
-        heartbeat = asyncio.create_task(
-            self._heartbeat(unit_id), name=f"heartbeat-{unit_id}"
-        )
+        perf_context = perf_metrics.set_context(job_id=str(job_id), unit_id=str(unit_id))
+        heartbeat = asyncio.create_task(self._heartbeat(unit_id), name=f"heartbeat-{unit_id}")
         session_pool = (
             McpSessionPool(
                 self._settings.mcp_base_url,
@@ -270,9 +263,7 @@ class AgentWorker:
             else self._mcp_client
         )
         token_cache = (
-            DelegationTokenCache(
-                self._settings.agent_delegation_token_ttl_seconds
-            )
+            DelegationTokenCache(self._settings.agent_delegation_token_ttl_seconds)
             if self._settings.agent_delegation_token_cache_enabled
             else None
         )
@@ -290,9 +281,7 @@ class AgentWorker:
         async def on_status(status: str, _node: str, _updates: dict[str, Any]) -> None:
             phase = PHASES.get(status)
             if phase:
-                updated = await self._repository.update_phase(
-                    unit_id, self._worker_id, phase
-                )
+                updated = await self._repository.update_phase(unit_id, self._worker_id, phase)
                 if not updated:
                     raise RuntimeError("Agent unit lease was lost")
 
@@ -302,17 +291,12 @@ class AgentWorker:
                 context = await self._repository.get_unit_context(unit_id)
                 # 批次单元：槽位清单随单元持久化（slot_plan），注入会话作用域
                 slot_plan = context.get("slot_plan") or {}
-                slot_scope = tuple(
-                    SkeletonSlot(**slot)
-                    for slot in slot_plan.get("slots", [])
-                )
+                slot_scope = tuple(SkeletonSlot(**slot) for slot in slot_plan.get("slots", []))
                 # 批次只需槽位目标的源码。单元文件列表在多骨架 job 下会
                 # 累积全部模块文件（batch:1 共享单元 ID），超过 SourceReader
                 # 字符预算后路径靠后的文件被截断为空 → 槽位目标不在快照 →
                 # 批次永远覆盖失败。按槽位 file_path 选取，快照只含目标符号。
-                slot_files = sorted(
-                    {s.file_path for s in slot_scope if s.file_path}
-                )
+                slot_files = sorted({s.file_path for s in slot_scope if s.file_path})
                 if slot_files:
                     selected_paths = slot_files
                 else:
@@ -337,8 +321,7 @@ class AgentWorker:
                         return {"status": "NO_CHANGE", "change_request_id": None}
                     else:
                         raise SkeletonReviewPendingError(
-                            f"skeleton review {skeleton_review_id} is "
-                            f"{review_status or 'MISSING'}"
+                            f"skeleton review {skeleton_review_id} is {review_status or 'MISSING'}"
                         )
             else:
                 selected_paths = [str(scope["filePath"])]
@@ -347,7 +330,10 @@ class AgentWorker:
 
             executor = JobExecutor(
                 workspace_reader=WorkspaceReader(delegated),
-                source_reader=SourceReader(delegated),
+                source_reader=SourceReader(
+                    delegated,
+                    code_read_batch_enabled=self._settings.agent_code_read_batch_enabled,
+                ),
                 document_reader=DocumentReader(
                     delegated,
                     batch_tools_enabled=self._settings.agent_batch_tools_enabled,
@@ -382,7 +368,10 @@ class AgentWorker:
             ]
             executor = JobExecutor(
                 workspace_reader=WorkspaceReader(delegated),
-                source_reader=SourceReader(delegated),
+                source_reader=SourceReader(
+                    delegated,
+                    code_read_batch_enabled=self._settings.agent_code_read_batch_enabled,
+                ),
                 document_reader=DocumentReader(
                     delegated,
                     batch_tools_enabled=self._settings.agent_batch_tools_enabled,
@@ -419,16 +408,12 @@ class AgentWorker:
 
         async def run_project_discovery() -> None:
             async def on_phase(phase: str) -> None:
-                updated = await self._repository.update_phase(
-                    unit_id, self._worker_id, phase
-                )
+                updated = await self._repository.update_phase(unit_id, self._worker_id, phase)
                 if not updated:
                     raise RuntimeError("Agent unit lease was lost")
 
             service = ProjectDiscoveryService(delegated, self._settings, on_phase)
-            with self._profile_stage(
-                "PROJECT_INDEX", job, job_id, unit_id
-            ) as index_stage:
+            with self._profile_stage("PROJECT_INDEX", job, job_id, unit_id) as index_stage:
                 (
                     files,
                     project_files,
@@ -444,10 +429,7 @@ class AgentWorker:
                 index_stage.attribute("fileCount", len(files))
                 index_stage.attribute(
                     "sourceBytes",
-                    sum(
-                        int(item.get("sizeBytes") or 0)
-                        for item in project_index.get("files", [])
-                    ),
+                    sum(int(item.get("sizeBytes") or 0) for item in project_index.get("files", [])),
                 )
             execution_limit = self._settings.agent_project_execution_limit
             planner_limit = self._settings.agent_max_analysis_units
@@ -456,9 +438,7 @@ class AgentWorker:
                 batch["requestedMaxUnits"] = planner_limit
                 batch["constraints"] = {
                     "maxUnits": planner_limit,
-                    "maxFilesPerUnit": (
-                        self._settings.agent_max_total_files_per_unit
-                    ),
+                    "maxFilesPerUnit": (self._settings.agent_max_total_files_per_unit),
                 }
             planner = DeepSeekUnitPlanner(
                 self._provider,
@@ -467,9 +447,7 @@ class AgentWorker:
                 on_phase=on_phase,
                 batch_concurrency=self._settings.agent_plan_batch_concurrency,
             )
-            with self._profile_stage(
-                "PLANNER", job, job_id, unit_id
-            ) as planner_stage:
+            with self._profile_stage("PLANNER", job, job_id, unit_id) as planner_stage:
                 unit_plan = (
                     await planner.plan(planner_batches[0])
                     if len(planner_batches) == 1
@@ -521,13 +499,9 @@ class AgentWorker:
                     discovery_task.result()
                 return
             if unit.get("unit_kind") == "SKELETON_PLAN":
-                workflow_task = asyncio.create_task(
-                    run_skeleton_flow(), name=f"skeleton-{unit_id}"
-                )
+                workflow_task = asyncio.create_task(run_skeleton_flow(), name=f"skeleton-{unit_id}")
             else:
-                workflow_task = asyncio.create_task(
-                    run_workflow(), name=f"workflow-{unit_id}"
-                )
+                workflow_task = asyncio.create_task(run_workflow(), name=f"workflow-{unit_id}")
             async with asyncio.timeout(self._settings.agent_unit_timeout_seconds):
                 done, _pending = await asyncio.wait(
                     {workflow_task, heartbeat},
@@ -568,9 +542,7 @@ class AgentWorker:
                     unit_id, self._worker_id, "REVIEW_SUBMITTED", review_id
                 )
             else:
-                await self._repository.complete_unit(
-                    unit_id, self._worker_id, "NO_CHANGE", None
-                )
+                await self._repository.complete_unit(unit_id, self._worker_id, "NO_CHANGE", None)
         except Exception as exc:
             LOGGER.exception(
                 "Agent unit execution failed jobId=%s unitId=%s unitKind=%s",
@@ -578,9 +550,7 @@ class AgentWorker:
                 unit_id,
                 unit.get("unit_kind"),
             )
-            if unit.get("unit_kind") == "PROJECT_DISCOVERY" and isinstance(
-                exc, TimeoutError
-            ):
+            if unit.get("unit_kind") == "PROJECT_DISCOVERY" and isinstance(exc, TimeoutError):
                 code, message = (
                     "PROJECT_DISCOVERY_TIMEOUT",
                     "Project discovery exceeded the configured unit timeout",
@@ -596,15 +566,11 @@ class AgentWorker:
                 # 骨架 review 未审批：固定 5 分钟长退避，避免批次单元高频
                 # 撞墙轮询（审批前 N 个单元 × 每次 DB+HTTP）；attempt 已由
                 # fail_unit 减回，等待不消耗重试预算，审批后再正常执行。
-                delay = 300 if code == "SKELETON_REVIEW_PENDING" else (
-                    60 if attempt == 1 else 300
-                )
+                delay = 300 if code == "SKELETON_REVIEW_PENDING" else (60 if attempt == 1 else 300)
                 perf_metrics.increment("retry_count")
                 perf_metrics.add_backoff(delay)
                 retry_at = datetime.now(UTC) + timedelta(seconds=delay)
-            await self._repository.fail_unit(
-                unit_id, self._worker_id, code, message, retry_at
-            )
+            await self._repository.fail_unit(unit_id, self._worker_id, code, message, retry_at)
         finally:
             if discovery_task is not None and not discovery_task.done():
                 discovery_task.cancel()
@@ -646,9 +612,7 @@ class AgentWorker:
                     f"{workspace_id}/document-change-requests/{review_id}"
                 )
         except httpx.HTTPError as exc:
-            raise McpClientError(
-                "MCP_UNAVAILABLE", "Review status query failed"
-            ) from exc
+            raise McpClientError("MCP_UNAVAILABLE", "Review status query failed") from exc
         if response.status_code == 404:
             return "MISSING"
         if response.status_code >= 400:

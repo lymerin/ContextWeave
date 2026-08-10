@@ -35,6 +35,10 @@ _CONTRACT_FILES: dict[str, tuple[str, str]] = {
         "code_read_input.json",
         "code_read_output.json",
     ),
+    "devcollab.code.read_batch": (
+        "code_read_batch_input.json",
+        "code_read_batch_output.json",
+    ),
     "devcollab.binding.list": (
         "binding_list_input.json",
         "binding_list_output.json",

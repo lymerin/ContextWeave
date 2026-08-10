@@ -52,11 +52,9 @@ class Settings(BaseSettings):
         canonical = _MODEL_ALIASES.get(raw)
         if canonical is None:
             allowed = ", ".join(sorted({m.value for m in DeepSeekModelName}))
-            raise ValueError(
-                f"Invalid DeepSeek model '{value}'. "
-                f"Allowed values: {allowed}"
-            )
+            raise ValueError(f"Invalid DeepSeek model '{value}'. Allowed values: {allowed}")
         return canonical.value
+
     mcp_base_url: str = "http://localhost:8091/mcp"
     redis_url: str = "redis://localhost:6379/0"
     agent_database_url: str = "postgresql://devcollab:devcollab@localhost:5432/devcollab"
@@ -108,6 +106,7 @@ class Settings(BaseSettings):
     agent_delegation_token_ttl_seconds: int = Field(300, ge=1, le=300)
     agent_batch_tools_enabled: bool = False
     agent_incremental_read_enabled: bool = False
+    agent_code_read_batch_enabled: bool = False
     agent_staged_pipeline_enabled: bool = False
     devcollab_memory_profile_enabled: bool = False
     devcollab_memory_profile_run_id: str = ""

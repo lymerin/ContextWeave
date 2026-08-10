@@ -37,6 +37,18 @@ def test_code_read_payload() -> None:
     )
 
 
+def test_code_read_batch_payload() -> None:
+    _assert_valid(
+        "devcollab.code.read_batch",
+        {
+            "workspaceId": WS,
+            "repositoryId": REPO,
+            "paths": ["app/schemas.py", "app/domain.py"],
+            "revision": "main",
+        },
+    )
+
+
 def test_binding_list_payload() -> None:
     _assert_valid(
         "devcollab.binding.list",
@@ -219,10 +231,38 @@ def test_document_structure_output_matches() -> None:
     assert not errs, f"get_structure 输出不符合契约: {errs}"
 
 
-if __name__ == "__main__":
+def test_code_read_batch_output_matches() -> None:
+    errs = validate_response(
+        "devcollab.code.read_batch",
+        {
+            "workspaceId": WS,
+            "repositoryId": REPO,
+            "revision": "main",
+            "truncated": False,
+            "files": {
+                "app/schemas.py": {
+                    "path": "app/schemas.py",
+                    "commitHash": "main",
+                    "language": "python",
+                    "sizeBytes": 12,
+                    "startLine": 1,
+                    "endLine": 1,
+                    "totalLines": 1,
+                    "content": "print('x')\n",
+                    "truncated": False,
+                    "omittedLineCount": 0,
+                    "omittedCharacterCount": 0,
+                }
+            },
+        },
+    )
+    assert not errs, f"code.read_batch output does not match contract: {errs}"
 
+
+if __name__ == "__main__":
     fns = [
-        obj for _, obj in sorted(globals().items())
+        obj
+        for _, obj in sorted(globals().items())
         if callable(obj) and obj.__module__ == __name__ and obj.__name__.startswith("test_")
     ]
     for fn in fns:

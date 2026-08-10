@@ -71,6 +71,7 @@ class OfficialMcpClient:
         {
             "devcollab.workspace.get_context",
             "devcollab.code.read",
+            "devcollab.code.read_batch",
             "devcollab.binding.list",
             "devcollab.document.find_candidates",
             "devcollab.document.find_candidates_batch",
@@ -122,9 +123,10 @@ class OfficialMcpClient:
             payload,
             authorization,
         )
-        if not isinstance(result.get("changeRequestId"), str) or not result[
-            "changeRequestId"
-        ].strip():
+        if (
+            not isinstance(result.get("changeRequestId"), str)
+            or not result["changeRequestId"].strip()
+        ):
             raise McpClientError(
                 "MCP_PROTOCOL_ERROR",
                 "MCP review result is missing changeRequestId",
@@ -162,9 +164,7 @@ class OfficialMcpClient:
                             await session.initialize()
                             started = time.perf_counter()
                             result = await session.call_tool(name, arguments)
-            perf_metrics.record_mcp_tool(
-                name, (time.perf_counter() - started) * 1000
-            )
+            perf_metrics.record_mcp_tool(name, (time.perf_counter() - started) * 1000)
         except httpx.TimeoutException as exc:
             raise McpClientError("MCP_UNAVAILABLE", "MCP request timed out") from exc
         except McpClientError:
