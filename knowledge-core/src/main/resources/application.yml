@@ -24,6 +24,9 @@ spring:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
 
 devcollab:
+  code-metadata-cache:
+    enabled: ${DEVCOLLAB_CODE_METADATA_CACHE_ENABLED:false}
+    capacity: ${DEVCOLLAB_CODE_METADATA_CACHE_CAPACITY:1024}
   memory-profile:
     enabled: ${DEVCOLLAB_MEMORY_PROFILE_ENABLED:false}
     run-id: ${DEVCOLLAB_MEMORY_PROFILE_RUN_ID:}

@@ -52,6 +52,7 @@ public class GitKnowledgeApplicationService {
     private static final Logger LOG = LoggerFactory.getLogger(
             GitKnowledgeApplicationService.class);
     private static final int DEFAULT_MAX_BINDINGS_PER_FILE = 1000;
+    private static final String CODE_METADATA_EXTRACTOR_VERSION = "regex-v1";
 
     private final GitKnowledgeRepository gitRepository;
     private final WorkspaceApplicationService workspaceService;
@@ -61,6 +62,8 @@ public class GitKnowledgeApplicationService {
     private final OutboxEventPublisher outboxPublisher;
     private final CodeMetadataInspector metadataInspector;
     private final DriftDetectionService driftDetectionService;
+    private final CodeMetadataCacheProperties codeMetadataCacheProperties;
+    private final ContentAddressableCache<CodeMetadataBatchResult.FileMetadata> codeMetadataCache;
 
     public GitKnowledgeApplicationService(
             GitKnowledgeRepository gitRepository,
@@ -70,7 +73,8 @@ public class GitKnowledgeApplicationService {
             DocumentBlockRepository blockRepository,
             OutboxEventPublisher outboxPublisher,
             CodeMetadataInspector metadataInspector,
-            DriftDetectionService driftDetectionService
+            DriftDetectionService driftDetectionService,
+            CodeMetadataCacheProperties codeMetadataCacheProperties
     ) {
         this.gitRepository = gitRepository;
         this.workspaceService = workspaceService;
@@ -80,6 +84,10 @@ public class GitKnowledgeApplicationService {
         this.outboxPublisher = outboxPublisher;
         this.metadataInspector = metadataInspector;
         this.driftDetectionService = driftDetectionService;
+        this.codeMetadataCacheProperties = codeMetadataCacheProperties;
+        this.codeMetadataCache = new ContentAddressableCache<>(
+                codeMetadataCacheProperties.capacity()
+        );
     }
 
     @Transactional
@@ -341,11 +349,24 @@ public class GitKnowledgeApplicationService {
                                 "FAILED", "FILE_NOT_FOUND"
                         );
                     }
-                    return metadataInspector.inspect(file);
+                    return inspectMetadata(file);
                 })
                 .toList();
         return new CodeMetadataBatchResult(
                 workspaceId, repositoryId, repository.lastSyncedCommit(), files
+        );
+    }
+
+    private CodeMetadataBatchResult.FileMetadata inspectMetadata(GitRepositoryFile file) {
+        if (!codeMetadataCacheProperties.enabled()
+                || file.blobSha() == null
+                || file.blobSha().isBlank()) {
+            return metadataInspector.inspect(file);
+        }
+        return codeMetadataCache.getOrCompute(
+                file.blobSha(),
+                CODE_METADATA_EXTRACTOR_VERSION,
+                () -> metadataInspector.inspect(file)
         );
     }
 
