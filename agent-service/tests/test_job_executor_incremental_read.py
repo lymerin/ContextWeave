@@ -4,6 +4,8 @@ import pytest
 
 from app.execution.job_executor import JobExecutor
 from app.model_context_mcp.snapshot_store_registry import SnapshotStoreRegistry
+from app.providers.base import ModelProviderError
+from app.runtime.staged_concurrency import AimdConcurrencyController
 from app.schemas.platform_mcp.source_file import RepositoryFileRef, SourceFileBatch
 from app.schemas.platform_mcp.workspace import RepositoryRef, WorkspaceContext
 from app.source_selection.file_filter import SourceFileFilter
@@ -104,11 +106,65 @@ async def test_job_executor_does_not_list_files_when_incremental_read_disabled()
     assert source_reader.blob_shas is None
 
 
+@pytest.mark.asyncio
+async def test_job_executor_aimd_wrapper_retries_rate_limited_model_call():
+    calls = 0
+    slept: list[float] = []
+    controller = AimdConcurrencyController(
+        initial_limit=4,
+        min_limit=1,
+        max_limit=8,
+    )
+
+    async def sleep(seconds):
+        slept.append(seconds)
+
+    executor = executor_with(
+        FakeWorkspaceReader(),
+        FakeSourceReader(),
+        incremental_read_enabled=False,
+        staged_pipeline_enabled=True,
+        model_controller=controller,
+        sleep=sleep,
+    )
+
+    async def call():
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ModelProviderError("MODEL_RATE_LIMITED", "429")
+        return "ok"
+
+    assert await executor._call_model_with_aimd(call) == "ok"
+    assert calls == 2
+    assert controller.current_limit == 2
+    assert slept
+
+
+@pytest.mark.asyncio
+async def test_job_executor_aimd_wrapper_disabled_preserves_rate_limit_error():
+    executor = executor_with(
+        FakeWorkspaceReader(),
+        FakeSourceReader(),
+        incremental_read_enabled=False,
+        staged_pipeline_enabled=False,
+    )
+
+    async def call():
+        raise ModelProviderError("MODEL_RATE_LIMITED", "429")
+
+    with pytest.raises(ModelProviderError, match="429"):
+        await executor._call_model_with_aimd(call)
+
+
 def executor_with(
     workspace_reader,
     source_reader,
     *,
     incremental_read_enabled: bool,
+    staged_pipeline_enabled: bool = False,
+    model_controller: AimdConcurrencyController | None = None,
+    sleep=None,
 ) -> JobExecutor:
     return JobExecutor(
         workspace_reader=workspace_reader,
@@ -120,4 +176,7 @@ def executor_with(
         registry=SnapshotStoreRegistry(),
         provider=None,
         incremental_read_enabled=incremental_read_enabled,
+        staged_pipeline_enabled=staged_pipeline_enabled,
+        model_controller=model_controller,
+        sleep=sleep,
     )

@@ -359,6 +359,7 @@ class AgentWorker:
                 provider=self._provider,
                 budget_chars=self._settings.agent_max_code_chars,
                 incremental_read_enabled=self._settings.agent_incremental_read_enabled,
+                staged_pipeline_enabled=self._settings.agent_staged_pipeline_enabled,
             )
             with self._profile_stage("UNIT_EXECUTION", job, job_id, unit_id):
                 return await executor.execute(
@@ -393,6 +394,7 @@ class AgentWorker:
                 provider=self._provider,
                 budget_chars=self._settings.agent_max_code_chars,
                 incremental_read_enabled=self._settings.agent_incremental_read_enabled,
+                staged_pipeline_enabled=self._settings.agent_staged_pipeline_enabled,
             )
             with self._profile_stage("UNIT_EXECUTION", job, job_id, unit_id):
                 result = await executor.execute_skeleton_flow(

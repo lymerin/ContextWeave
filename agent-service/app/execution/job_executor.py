@@ -14,8 +14,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID
@@ -39,6 +41,8 @@ from app.platform_mcp.document_reader import DocumentReader
 from app.platform_mcp.plan_writer import PlanWriter
 from app.platform_mcp.source_reader import SourceReader
 from app.platform_mcp.workspace_reader import WorkspaceReader
+from app.providers.base import ModelProviderError
+from app.runtime.staged_concurrency import AimdConcurrencyController
 from app.schemas.ast_atom import AtomCatalog, symbol_key_file_path
 from app.schemas.document_planner.skeleton import SkeletonSlot
 from app.schemas.model_context.snapshot import ContextSnapshot
@@ -78,6 +82,9 @@ class JobExecutor:
         provider: Any = None,
         budget_chars: int = 40_000,
         incremental_read_enabled: bool = False,
+        staged_pipeline_enabled: bool = False,
+        model_controller: AimdConcurrencyController | None = None,
+        sleep: Callable[[float], Any] | None = None,
     ) -> None:
         self._ws = workspace_reader
         self._src = source_reader
@@ -89,6 +96,12 @@ class JobExecutor:
         self._provider = provider
         self._budget_chars = budget_chars
         self._incremental_read_enabled = incremental_read_enabled
+        self._staged_pipeline_enabled = staged_pipeline_enabled
+        self._model_controller = model_controller or AimdConcurrencyController(
+            initial_limit=2,
+            max_limit=8,
+        )
+        self._sleep = sleep or asyncio.sleep
 
     async def execute(
         self,
@@ -502,8 +515,10 @@ class JobExecutor:
         last_error_result: SemanticAnalysisResult | None = None
         for attempt in range(orch.session.max_repairs + 1):
             try:
-                result = await self._provider.analyze_batch(
-                    request, inline_sources,
+                result = await self._call_model_with_aimd(
+                    lambda: self._provider.analyze_batch(
+                        request, inline_sources,
+                    )
                 )
             except Exception as exc:
                 LOGGER.error(
@@ -576,8 +591,10 @@ class JobExecutor:
         last_error_result: SemanticAnalysisResult | None = None
         for attempt in range(orch.session.max_repairs + 1):
             try:
-                result = await self._provider.analyze_semantics(
-                    request, tool_handler
+                result = await self._call_model_with_aimd(
+                    lambda: self._provider.analyze_semantics(
+                        request, tool_handler
+                    )
                 )
             except Exception as exc:
                 LOGGER.error(
@@ -629,6 +646,41 @@ class JobExecutor:
             snapshot_hash=orch._snap.snapshot_hash,
             overall_responsibility="SEMANTIC_ANALYSIS_EXHAUSTED",
         )
+
+    async def _call_model_with_aimd(
+        self,
+        call: Callable[[], Any],
+    ) -> Any:
+        if not self._staged_pipeline_enabled:
+            result = call()
+            if hasattr(result, "__await__"):
+                return await result
+            return result
+
+        while True:
+            await self._model_controller.acquire()
+            started = time.perf_counter()
+            try:
+                result = call()
+                if hasattr(result, "__await__"):
+                    result = await result
+            except ModelProviderError as exc:
+                await self._model_controller.release()
+                if exc.code != "MODEL_RATE_LIMITED":
+                    raise
+                await self._model_controller.record_rate_limited()
+                await self._sleep(
+                    self._model_controller.current_backoff_seconds
+                )
+                continue
+            except Exception:
+                await self._model_controller.release()
+                raise
+
+            latency_ms = (time.perf_counter() - started) * 1000
+            await self._model_controller.record_success(latency_ms)
+            await self._model_controller.release()
+            return result
 
 
 def _bind_result_atoms(
