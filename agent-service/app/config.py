@@ -106,6 +106,7 @@ class Settings(BaseSettings):
     agent_mcp_session_pool_enabled: bool = False
     agent_delegation_token_cache_enabled: bool = False
     agent_delegation_token_ttl_seconds: int = Field(300, ge=1, le=300)
+    agent_batch_tools_enabled: bool = False
     devcollab_memory_profile_enabled: bool = False
     devcollab_memory_profile_run_id: str = ""
     devcollab_memory_profile_output_dir: Path = Path(".data/memory-profile")

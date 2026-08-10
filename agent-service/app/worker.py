@@ -348,7 +348,10 @@ class AgentWorker:
             executor = JobExecutor(
                 workspace_reader=WorkspaceReader(delegated),
                 source_reader=SourceReader(delegated),
-                document_reader=DocumentReader(delegated),
+                document_reader=DocumentReader(
+                    delegated,
+                    batch_tools_enabled=self._settings.agent_batch_tools_enabled,
+                ),
                 binding_reader=BindingReader(delegated),
                 plan_writer=PlanWriter(delegated),
                 file_filter=SourceFileFilter(),
@@ -378,7 +381,10 @@ class AgentWorker:
             executor = JobExecutor(
                 workspace_reader=WorkspaceReader(delegated),
                 source_reader=SourceReader(delegated),
-                document_reader=DocumentReader(delegated),
+                document_reader=DocumentReader(
+                    delegated,
+                    batch_tools_enabled=self._settings.agent_batch_tools_enabled,
+                ),
                 binding_reader=BindingReader(delegated),
                 plan_writer=PlanWriter(delegated),
                 file_filter=SourceFileFilter(),

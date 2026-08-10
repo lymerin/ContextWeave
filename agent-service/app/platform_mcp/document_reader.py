@@ -1,4 +1,4 @@
-"""平台 MCP 文档读取——结构 + 候选 + 定位。"""
+"""Platform MCP document reader."""
 
 from uuid import UUID
 
@@ -10,18 +10,45 @@ from app.schemas.platform_mcp.document import (
 )
 
 
-class DocumentReader:
-    """读取文档结构和候选文档。"""
+_MAX_BATCH_ITEMS = 100
 
-    def __init__(self, client: ReadOnlyMcpClient) -> None:
+
+class DocumentReader:
+    """Read document structures and document candidates."""
+
+    def __init__(
+        self,
+        client: ReadOnlyMcpClient,
+        *,
+        batch_tools_enabled: bool = False,
+    ) -> None:
         self._client = client
+        self._batch_tools_enabled = batch_tools_enabled
 
     async def read_structures(
         self,
         workspace_id: UUID,
         document_ids: list[UUID],
     ) -> list[DocumentStructure]:
-        """批量读取文档结构。"""
+        if not document_ids:
+            return []
+        if self._batch_tools_enabled and len(document_ids) > _MAX_BATCH_ITEMS:
+            raise ValueError("documentIds exceeds the batch tool limit")
+        if self._batch_tools_enabled:
+            result = await self._client.call_tool(
+                "devcollab.document.get_structure_batch",
+                {
+                    "workspaceId": str(workspace_id),
+                    "documentIds": [str(doc_id) for doc_id in document_ids],
+                    "includeBlockContent": True,
+                },
+                "delegated",
+            )
+            return [
+                self._structure_from_result(item, fallback_id=document_ids[index])
+                for index, item in enumerate(result.get("structures", []))
+            ]
+
         results: list[DocumentStructure] = []
         for doc_id in document_ids:
             result = await self._client.call_tool(
@@ -33,28 +60,7 @@ class DocumentReader:
                 },
                 "delegated",
             )
-            blocks = [
-                DocumentBlock(
-                    block_id=UUID(b["blockId"]),
-                    block_type=str(b.get("blockType", "PARAGRAPH")),
-                    sort_order=int(b.get("sortOrder") or 0),
-                    # version=0 是合法初始值：`or 1` 会把 0 替换成 1，
-                    # 导致 UPDATE_BLOCK 的 baseBlockVersion 与真实版本不符 → apply 409
-                    version=(
-                        int(b["version"])
-                        if b.get("version") is not None else 1
-                    ),
-                    plain_text=b.get("plainText"),
-                    content=b.get("content"),
-                )
-                for b in result.get("blocks", [])
-            ]
-            results.append(DocumentStructure(
-                document_id=UUID(result.get("documentId", str(doc_id))),
-                title=str(result.get("title") or ""),
-                document_type=result.get("documentType"),
-                blocks=blocks,
-            ))
+            results.append(self._structure_from_result(result, fallback_id=doc_id))
         return results
 
     async def find_candidates(
@@ -64,7 +70,12 @@ class DocumentReader:
         file_path: str,
         limit: int = 5,
     ) -> list[DocumentCandidate]:
-        """按文件路径查找候选文档。"""
+        if self._batch_tools_enabled:
+            by_path = await self._find_candidates_batch(
+                workspace_id, repository_id, [file_path], limit
+            )
+            return by_path.get(file_path.replace("\\", "/"), [])
+
         result = await self._client.call_tool(
             "devcollab.document.find_candidates",
             {
@@ -75,18 +86,7 @@ class DocumentReader:
             },
             "delegated",
         )
-        return [
-            DocumentCandidate(
-                document_id=UUID(c["documentId"]),
-                title=str(c.get("title", "")),
-                existing_binding_count=int(c.get("existingBindingCount") or 0),
-                matched_block_ids=[
-                    UUID(b) for b in (c.get("matchedBlockIds") or [])
-                ],
-            )
-            for c in result.get("candidates", [])
-            if c.get("documentId")
-        ]
+        return self._candidates_from_items(result.get("candidates", []))
 
     async def locate_documents(
         self,
@@ -94,12 +94,98 @@ class DocumentReader:
         repository_id: UUID,
         file_paths: list[str],
     ) -> list[DocumentCandidate]:
-        """为一批文件定位候选文档（去重）。"""
+        if not file_paths:
+            return []
+        if self._batch_tools_enabled and len(file_paths) > _MAX_BATCH_ITEMS:
+            raise ValueError("paths exceeds the batch tool limit")
+
         seen: set[UUID] = set()
         candidates: list[DocumentCandidate] = []
-        for path in file_paths:
-            for c in await self.find_candidates(workspace_id, repository_id, path):
-                if c.document_id not in seen:
-                    seen.add(c.document_id)
-                    candidates.append(c)
+        if self._batch_tools_enabled:
+            batch = await self._find_candidates_batch(
+                workspace_id, repository_id, file_paths, 5
+            )
+            candidate_groups = [
+                batch.get(path.replace("\\", "/"), []) for path in file_paths
+            ]
+        else:
+            candidate_groups = [
+                await self.find_candidates(workspace_id, repository_id, path)
+                for path in file_paths
+            ]
+
+        for group in candidate_groups:
+            for candidate in group:
+                if candidate.document_id not in seen:
+                    seen.add(candidate.document_id)
+                    candidates.append(candidate)
         return candidates
+
+    async def _find_candidates_batch(
+        self,
+        workspace_id: UUID,
+        repository_id: UUID,
+        file_paths: list[str],
+        limit: int,
+    ) -> dict[str, list[DocumentCandidate]]:
+        if not file_paths:
+            return {}
+        result = await self._client.call_tool(
+            "devcollab.document.find_candidates_batch",
+            {
+                "workspaceId": str(workspace_id),
+                "repositoryId": str(repository_id),
+                "paths": file_paths,
+                "limit": limit,
+            },
+            "delegated",
+        )
+        raw = result.get("candidatesByPath") or {}
+        if not isinstance(raw, dict):
+            return {}
+        return {
+            str(path).replace("\\", "/"): self._candidates_from_items(items)
+            for path, items in raw.items()
+        }
+
+    def _structure_from_result(
+        self,
+        result: dict,
+        *,
+        fallback_id: UUID,
+    ) -> DocumentStructure:
+        blocks = [
+            DocumentBlock(
+                block_id=UUID(block["blockId"]),
+                block_type=str(block.get("blockType", "PARAGRAPH")),
+                sort_order=int(block.get("sortOrder") or 0),
+                version=(
+                    int(block["version"])
+                    if block.get("version") is not None else 1
+                ),
+                plain_text=block.get("plainText"),
+                content=block.get("content"),
+            )
+            for block in result.get("blocks", [])
+        ]
+        return DocumentStructure(
+            document_id=UUID(result.get("documentId", str(fallback_id))),
+            title=str(result.get("title") or ""),
+            document_type=result.get("documentType"),
+            blocks=blocks,
+        )
+
+    def _candidates_from_items(self, items: object) -> list[DocumentCandidate]:
+        return [
+            DocumentCandidate(
+                document_id=UUID(candidate["documentId"]),
+                title=str(candidate.get("title", "")),
+                existing_binding_count=int(candidate.get("existingBindingCount") or 0),
+                matched_block_ids=[
+                    UUID(block_id)
+                    for block_id in (candidate.get("matchedBlockIds") or [])
+                ],
+            )
+            for candidate in (items if isinstance(items, list) else [])
+            if candidate.get("documentId")
+        ]
