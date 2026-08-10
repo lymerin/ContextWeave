@@ -63,5 +63,6 @@ class WorkspaceReader:
                 size_bytes=max(0, int(item.get("sizeBytes") or 0)),
                 language=item.get("language"),
                 readable=item.get("readable", True),
+                blob_sha=item.get("blobSha"),
             ))
         return files

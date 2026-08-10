@@ -358,6 +358,7 @@ class AgentWorker:
                 registry=self._registry,
                 provider=self._provider,
                 budget_chars=self._settings.agent_max_code_chars,
+                incremental_read_enabled=self._settings.agent_incremental_read_enabled,
             )
             with self._profile_stage("UNIT_EXECUTION", job, job_id, unit_id):
                 return await executor.execute(
@@ -391,6 +392,7 @@ class AgentWorker:
                 registry=self._registry,
                 provider=self._provider,
                 budget_chars=self._settings.agent_max_code_chars,
+                incremental_read_enabled=self._settings.agent_incremental_read_enabled,
             )
             with self._profile_stage("UNIT_EXECUTION", job, job_id, unit_id):
                 result = await executor.execute_skeleton_flow(

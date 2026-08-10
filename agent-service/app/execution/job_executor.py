@@ -77,6 +77,7 @@ class JobExecutor:
         registry: SnapshotStoreRegistry,
         provider: Any = None,
         budget_chars: int = 40_000,
+        incremental_read_enabled: bool = False,
     ) -> None:
         self._ws = workspace_reader
         self._src = source_reader
@@ -87,6 +88,7 @@ class JobExecutor:
         self._registry = registry
         self._provider = provider
         self._budget_chars = budget_chars
+        self._incremental_read_enabled = incremental_read_enabled
 
     async def execute(
         self,
@@ -117,6 +119,7 @@ class JobExecutor:
             repo = ctx.repository(repository_id)
             if repo is None:
                 return {"error": "REPOSITORY_NOT_FOUND"}
+            blob_shas = await self._read_blob_shas(workspace_id, repository_id)
 
             batch = self._filter.filter(
                 repository_id, revision,
@@ -129,7 +132,9 @@ class JobExecutor:
                 paths=tuple(f.file_path for f in batch.files),
                 total_count=batch.total_count,
             )
-            sources = await self._src.read_batch(workspace_id, repository_id, selection)
+            sources = await self._src.read_batch(
+                workspace_id, repository_id, selection, blob_shas=blob_shas
+            )
 
         # ── 2. AST 解析 + 直接范围构造 ───────────────────────────
         def read_source(path: str) -> str | None:
@@ -438,6 +443,7 @@ class JobExecutor:
             repo = ctx.repository(repository_id)
             if repo is None:
                 return None
+            blob_shas = await self._read_blob_shas(workspace_id, repository_id)
             batch = self._filter.filter(
                 repository_id, revision,
                 [{"filePath": p, "readable": True, "sizeBytes": 0} for p in selected_paths],
@@ -448,7 +454,9 @@ class JobExecutor:
                 paths=tuple(f.file_path for f in batch.files),
                 total_count=batch.total_count,
             )
-            sources = await self._src.read_batch(workspace_id, repository_id, selection)
+            sources = await self._src.read_batch(
+                workspace_id, repository_id, selection, blob_shas=blob_shas
+            )
 
         def read_source(path: str) -> str | None:
             for f in sources.files:
@@ -468,6 +476,16 @@ class JobExecutor:
         )
         snap = freeze_context(shaped)
         return catalog, snap, scope
+
+    async def _read_blob_shas(
+        self,
+        workspace_id: UUID,
+        repository_id: UUID,
+    ) -> dict[str, str | None] | None:
+        if not self._incremental_read_enabled:
+            return None
+        files = await self._ws.list_files(workspace_id, repository_id)
+        return {file.file_path: file.blob_sha for file in files}
 
     # ── 批次静态生成（Bounded Repair Loop，无工具循环）─────────────
 

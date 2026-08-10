@@ -6,6 +6,7 @@ MCP code.read 有 maxCodeLines 限制（400 行）。对于更大的文件，
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from uuid import UUID
 
 from app.clients.mcp_client import ReadOnlyMcpClient
@@ -30,20 +31,23 @@ class SourceReader:
     ) -> None:
         self._client = client
         self._max_chars = max_chars
+        self._cache: dict[tuple[str, str], tuple[str, str, bool]] = {}
 
     async def read_batch(
         self,
         workspace_id: UUID,
         repository_id: UUID,
         selection: SelectedSourceFileBatch,
+        blob_shas: Mapping[str, str | None] | None = None,
     ) -> SourceFileBatch:
         """读取 SelectedSourceFileBatch 中的全部源码，超限自动分段。"""
         files: list[SourceFileRef] = []
         remaining_chars = self._max_chars
 
         for path in selection.paths:
-            content, language, truncated = await self._read_full(
-                workspace_id, repository_id, path
+            blob_sha = blob_shas.get(path) if blob_shas else None
+            content, language, truncated = await self._read_cached(
+                workspace_id, repository_id, path, blob_sha
             )
             if len(content) > remaining_chars:
                 content = content[:remaining_chars]
@@ -63,6 +67,23 @@ class SourceReader:
             files=tuple(files),
             total_count=len(files),
         )
+
+    async def _read_cached(
+        self,
+        workspace_id: UUID,
+        repository_id: UUID,
+        path: str,
+        blob_sha: str | None,
+    ) -> tuple[str, str, bool]:
+        if blob_sha is None or not blob_sha.strip():
+            return await self._read_full(workspace_id, repository_id, path)
+        key = (path, blob_sha.strip())
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        result = await self._read_full(workspace_id, repository_id, path)
+        self._cache[key] = result
+        return result
 
     async def _read_full(
         self,

@@ -14,6 +14,7 @@ class RepositoryFileRef(BaseModel):
     size_bytes: int = 0
     language: str | None = None
     readable: bool = True
+    blob_sha: str | None = None
 
 
 class SelectedSourceFileBatch(BaseModel):
