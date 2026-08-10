@@ -105,6 +105,38 @@ async def test_bounded_queues_apply_backpressure_without_dropping_tasks():
     ]
 
 
+@pytest.mark.asyncio
+async def test_stage_exception_cancels_pipeline_tasks_and_reraises():
+    async def passthrough(value):
+        return value
+
+    async def parse(_value):
+        raise RuntimeError("parse failed")
+
+    pipeline = StagedPipeline(
+        config=PipelineConfig(
+            read=StageConfig(workers=1, queue_size=1),
+            parse=StageConfig(workers=1, queue_size=1),
+            model=StageConfig(workers=1, queue_size=1),
+            submit=StageConfig(workers=1, queue_size=1),
+        ),
+        read=passthrough,
+        parse=parse,
+        model=passthrough,
+        submit=passthrough,
+    )
+
+    with pytest.raises(RuntimeError, match="parse failed"):
+        await pipeline.run(range(3))
+
+    current = asyncio.current_task()
+    leaked = [
+        task for task in asyncio.all_tasks()
+        if task is not current and task.get_name().startswith("staged-pipeline-")
+    ]
+    assert leaked == []
+
+
 def config():
     return PipelineConfig(
         read=StageConfig(workers=1, queue_size=2),

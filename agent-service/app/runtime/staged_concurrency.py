@@ -155,7 +155,12 @@ class StagedPipeline:
         results: list[Any] = [None] * len(input_items)
 
         tasks = [
+            asyncio.create_task(
+                self._produce(input_items, read_queue, self._config.read.workers),
+                name="staged-pipeline-producer",
+            ),
             asyncio.create_task(self._run_stage(
+                "read",
                 read_queue,
                 parse_queue,
                 self._read,
@@ -163,8 +168,9 @@ class StagedPipeline:
                 self._config.parse.workers,
                 model_stage=False,
                 results=None,
-            )),
+            ), name="staged-pipeline-stage-read"),
             asyncio.create_task(self._run_stage(
+                "parse",
                 parse_queue,
                 model_queue,
                 self._parse,
@@ -172,8 +178,9 @@ class StagedPipeline:
                 self._config.model.workers,
                 model_stage=False,
                 results=None,
-            )),
+            ), name="staged-pipeline-stage-parse"),
             asyncio.create_task(self._run_stage(
+                "model",
                 model_queue,
                 submit_queue,
                 self._model,
@@ -181,8 +188,9 @@ class StagedPipeline:
                 self._config.submit.workers,
                 model_stage=True,
                 results=None,
-            )),
+            ), name="staged-pipeline-stage-model"),
             asyncio.create_task(self._run_stage(
+                "submit",
                 submit_queue,
                 None,
                 self._submit,
@@ -190,19 +198,36 @@ class StagedPipeline:
                 0,
                 model_stage=False,
                 results=results,
-            )),
+            ), name="staged-pipeline-stage-submit"),
         ]
 
+        try:
+            await asyncio.gather(*tasks)
+        except BaseException:
+            await self._cancel_tasks(tasks)
+            raise
+        return results
+
+    async def _produce(
+        self,
+        input_items: list[Any],
+        read_queue: asyncio.Queue[WorkItem | None],
+        read_workers: int,
+    ) -> None:
         for index, item in enumerate(input_items):
             await read_queue.put(WorkItem(index, item))
-        for _ in range(self._config.read.workers):
+        for _ in range(read_workers):
             await read_queue.put(None)
 
-        await asyncio.gather(*tasks)
-        return results
+    async def _cancel_tasks(self, tasks: list[asyncio.Task[Any]]) -> None:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _run_stage(
         self,
+        stage_name: str,
         in_queue: asyncio.Queue[WorkItem | None],
         out_queue: asyncio.Queue[WorkItem | None] | None,
         func: StageFunc,
@@ -214,11 +239,16 @@ class StagedPipeline:
     ) -> None:
         worker_tasks = [
             asyncio.create_task(
-                self._worker(in_queue, out_queue, func, model_stage, results)
+                self._worker(in_queue, out_queue, func, model_stage, results),
+                name=f"staged-pipeline-worker-{stage_name}-{index}",
             )
-            for _ in range(workers)
+            for index in range(workers)
         ]
-        await asyncio.gather(*worker_tasks)
+        try:
+            await asyncio.gather(*worker_tasks)
+        except BaseException:
+            await self._cancel_tasks(worker_tasks)
+            raise
         if out_queue is not None:
             for _ in range(downstream_workers):
                 await out_queue.put(None)
