@@ -190,6 +190,7 @@ public interface KnowledgeCoreGateway {
 
     record RepositoryFileInfo(
             String filePath,
+            String blobSha,
             String fileName,
             String extension,
             long sizeBytes,

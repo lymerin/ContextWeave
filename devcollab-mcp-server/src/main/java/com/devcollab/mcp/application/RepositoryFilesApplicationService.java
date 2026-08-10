@@ -81,6 +81,7 @@ public class RepositoryFilesApplicationService {
         result.put("files", page.files().stream().map(file -> {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("filePath", file.filePath());
+            item.put("blobSha", file.blobSha());
             item.put("fileName", file.fileName());
             item.put("extension", file.extension());
             item.put("sizeBytes", file.sizeBytes());

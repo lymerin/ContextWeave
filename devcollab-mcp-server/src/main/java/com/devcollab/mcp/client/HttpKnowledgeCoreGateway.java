@@ -253,9 +253,9 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
                     payload.revision(), payload.pathPrefix(), payload.recursive(),
                     payload.files() == null ? List.of() : payload.files().stream()
                             .map(file -> new RepositoryFileInfo(
-                                    file.filePath(), file.fileName(), file.extension(),
-                                    file.sizeBytes(), file.language(), file.readable(),
-                                    file.isDirectory()
+                                    file.filePath(), file.blobSha(), file.fileName(),
+                                    file.extension(), file.sizeBytes(), file.language(),
+                                    file.readable(), file.isDirectory()
                             )).toList(),
                     payload.nextCursor(), payload.hasMore()
             );
@@ -600,6 +600,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
 
     private record RepositoryFilePayload(
             String filePath,
+            String blobSha,
             String fileName,
             String extension,
             long sizeBytes,

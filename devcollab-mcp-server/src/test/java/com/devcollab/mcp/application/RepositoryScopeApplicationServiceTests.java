@@ -53,7 +53,7 @@ class RepositoryScopeApplicationServiceTests {
         )).thenReturn(new KnowledgeCoreGateway.RepositoryFilePage(
                 workspaceId, repositoryId, "abc123", "src/main", true,
                 List.of(new KnowledgeCoreGateway.RepositoryFileInfo(
-                        "src/main/App.java", "App.java", "java",
+                        "src/main/App.java", "sha-abc123", "App.java", "java",
                         12, "Java", true, false
                 )), null, false
         ));
@@ -67,6 +67,7 @@ class RepositoryScopeApplicationServiceTests {
         assertThat(files).hasSize(1);
         Map<?, ?> file = (Map<?, ?>) files.get(0);
         assertThat(file.get("filePath")).isEqualTo("src/main/App.java");
+        assertThat(file.get("blobSha")).isEqualTo("sha-abc123");
         assertThat(file.containsKey("content")).isFalse();
     }
 
