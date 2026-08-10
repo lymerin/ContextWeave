@@ -35,6 +35,7 @@ from app.profiling import MemoryProfileConfig, RuntimeMemoryProfiler
 from app.providers.base import ModelProvider, ModelProviderError
 from app.providers.deepseek import DeepSeekProvider
 from app.runtime.delegated_mcp_client import DelegatedMcpClient
+from app.runtime.delegation_token_cache import DelegationTokenCache
 from app.runtime.mcp_session_pool import McpSessionPool
 from app.runtime.project_discovery import ProjectDiscoveryService
 from app.runtime.semantic_planner import materialize_deepseek_units, overlapping_file_count
@@ -268,6 +269,13 @@ class AgentWorker:
             if session_pool is not None
             else self._mcp_client
         )
+        token_cache = (
+            DelegationTokenCache(
+                self._settings.agent_delegation_token_ttl_seconds
+            )
+            if self._settings.agent_delegation_token_cache_enabled
+            else None
+        )
         delegated = DelegatedMcpClient(
             mcp_client,
             self._delegation_client,
@@ -276,6 +284,7 @@ class AgentWorker:
             revision=str(job["revision"]),
             knowledge_core_base_url=self._settings.knowledge_core_base_url,
             request_timeout_seconds=self._settings.agent_request_timeout_seconds,
+            token_cache=token_cache,
         )
 
         async def on_status(status: str, _node: str, _updates: dict[str, Any]) -> None:

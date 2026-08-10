@@ -5,6 +5,7 @@ import httpx
 
 from app.clients.delegation_client import DelegationClient
 from app.clients.mcp_client import McpClientError, ReviewMcpClient, _authorization_header
+from app.runtime.delegation_token_cache import DelegationTokenCache
 from app.schemas.plans import AgentPlan
 
 
@@ -19,6 +20,7 @@ class DelegatedMcpClient:
         revision: str,
         knowledge_core_base_url: str | None = None,
         request_timeout_seconds: float = 30,
+        token_cache: DelegationTokenCache | None = None,
     ) -> None:
         self._client = client
         self._delegation_client = delegation_client
@@ -31,14 +33,12 @@ class DelegatedMcpClient:
             else None
         )
         self._request_timeout_seconds = request_timeout_seconds
+        self._token_cache = token_cache
 
     async def call_tool(
         self, name: str, arguments: dict[str, Any], _authorization: str
     ) -> dict[str, Any]:
-        authorization = await self._delegation_client.exchange(
-            delegation_id=self._delegation_id,
-            job_id=self._job_id,
-        )
+        authorization = await self._delegated_authorization()
         result = await self._client.call_tool(name, arguments, authorization)
         if name == "devcollab.code.read":
             actual = str(result.get("commitHash") or "")
@@ -58,10 +58,7 @@ class DelegatedMcpClient:
     ) -> dict[str, Any]:
         if self._knowledge_core_base_url is None:
             return {}
-        authorization = await self._delegation_client.exchange(
-            delegation_id=self._delegation_id,
-            job_id=self._job_id,
-        )
+        authorization = await self._delegated_authorization()
         try:
             async with httpx.AsyncClient(
                 timeout=self._request_timeout_seconds,
@@ -112,13 +109,22 @@ class DelegatedMcpClient:
         authorization: str,
     ) -> dict[str, Any]:
         del authorization
-        delegated = await self._delegation_client.exchange(
-            delegation_id=self._delegation_id,
-            job_id=self._job_id,
-        )
+        delegated = await self._delegated_authorization()
         return await self._client.submit_document_change(
             plan,
             workspace_id=workspace_id,
             run_id=run_id,
             authorization=delegated,
+        )
+
+    async def _delegated_authorization(self) -> str:
+        if self._token_cache is None:
+            return await self._delegation_client.exchange(
+                delegation_id=self._delegation_id,
+                job_id=self._job_id,
+            )
+        return await self._token_cache.get(
+            delegation_id=self._delegation_id,
+            job_id=self._job_id,
+            exchange=self._delegation_client.exchange,
         )
