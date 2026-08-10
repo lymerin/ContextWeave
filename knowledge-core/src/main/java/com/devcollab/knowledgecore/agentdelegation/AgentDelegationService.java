@@ -21,10 +21,13 @@ public class AgentDelegationService {
     public static final List<String> CURRENT_FILE_TOOLS = List.of(
             "devcollab.workspace.get_context",
             "devcollab.code.read",
+            "devcollab.code.read_batch",
             "devcollab.binding.list",
             "devcollab.binding.list_batch",
             "devcollab.document.find_candidates",
+            "devcollab.document.find_candidates_batch",
             "devcollab.document.get_structure",
+            "devcollab.document.get_structure_batch",
             "devcollab.review.submit_document_change"
     );
     public static final List<String> PROJECT_INITIALIZATION_TOOLS = List.of(
@@ -32,10 +35,13 @@ public class AgentDelegationService {
             "devcollab.repository.list_files",
             "devcollab.repository.inspect_code_metadata",
             "devcollab.code.read",
+            "devcollab.code.read_batch",
             "devcollab.binding.list",
             "devcollab.binding.list_batch",
             "devcollab.document.find_candidates",
+            "devcollab.document.find_candidates_batch",
             "devcollab.document.get_structure",
+            "devcollab.document.get_structure_batch",
             "devcollab.review.submit_document_change"
     );
 
