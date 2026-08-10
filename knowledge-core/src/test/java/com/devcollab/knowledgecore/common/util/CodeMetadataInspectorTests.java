@@ -38,6 +38,7 @@ class CodeMetadataInspectorTests {
         );
 
         assertThat(controller.packageName()).isEqualTo("com.example");
+        assertThat(controller.blobSha()).isEqualTo("blob");
         assertThat(controller.imports()).containsExactly("com.example.auth.AuthService");
         assertThat(controller.topLevelSymbols()).contains("AuthController");
         assertThat(controller.annotations()).contains("RestController", "RequestMapping");
@@ -105,6 +106,7 @@ class CodeMetadataInspectorTests {
         );
 
         assertThat(failed.parseStatus()).isEqualTo("FAILED");
+        assertThat(failed.blobSha()).isEqualTo("blob");
         assertThat(failed.errorCode()).isEqualTo("SOURCE_NOT_READABLE");
         assertThat(unsupported.parseStatus()).isEqualTo("FAILED");
         assertThat(unsupported.errorCode()).isEqualTo("UNSUPPORTED_LANGUAGE");

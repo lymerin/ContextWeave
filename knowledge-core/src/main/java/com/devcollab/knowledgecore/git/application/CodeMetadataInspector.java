@@ -108,7 +108,7 @@ public class CodeMetadataInspector {
             List<String> roles
     ) {
         return new CodeMetadataBatchResult.FileMetadata(
-                file.path(), file.language(), packageName, moduleKey(file.path()),
+                file.path(), file.blobSha(), file.language(), packageName, moduleKey(file.path()),
                 layerHint(roles), imports, exports, symbols, annotations, routes,
                 roles, "PARSED", null
         );
@@ -119,7 +119,7 @@ public class CodeMetadataInspector {
             String errorCode
     ) {
         return new CodeMetadataBatchResult.FileMetadata(
-                file.path(), file.language(), null, moduleKey(file.path()), null,
+                file.path(), file.blobSha(), file.language(), null, moduleKey(file.path()), null,
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
                 "FAILED", errorCode
         );

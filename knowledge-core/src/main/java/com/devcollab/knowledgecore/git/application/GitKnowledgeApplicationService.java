@@ -336,7 +336,7 @@ public class GitKnowledgeApplicationService {
                     GitRepositoryFile file = available.get(path);
                     if (file == null) {
                         return new CodeMetadataBatchResult.FileMetadata(
-                                path, null, null, null, null, List.of(), List.of(),
+                                path, null, null, null, null, null, List.of(), List.of(),
                                 List.of(), List.of(), List.of(), List.of(),
                                 "FAILED", "FILE_NOT_FOUND"
                         );

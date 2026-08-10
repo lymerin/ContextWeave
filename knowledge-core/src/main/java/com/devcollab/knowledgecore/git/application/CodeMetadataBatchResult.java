@@ -11,6 +11,7 @@ public record CodeMetadataBatchResult(
 ) {
     public record FileMetadata(
             String filePath,
+            String blobSha,
             String language,
             String packageName,
             String moduleKey,
