@@ -10,6 +10,9 @@ spring:
     enabled: true
 
 devcollab:
+  code-metadata-cache:
+    enabled: false
+    capacity: 1024
   agent-delegation:
     service-token: devcollab-test-agent-service-token-at-least-32-bytes
     delegation-ttl: PT24H
