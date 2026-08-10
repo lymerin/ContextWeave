@@ -41,11 +41,18 @@
           "sizeBytes",
           "language",
           "readable",
-          "isDirectory"
+          "isDirectory",
+          "blobSha"
         ],
         "properties": {
           "filePath": {
             "type": "string"
+          },
+          "blobSha": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "fileName": {
             "type": "string"
