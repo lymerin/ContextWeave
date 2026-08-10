@@ -143,8 +143,8 @@ class OfficialMcpClient:
         authorization: str,
     ) -> dict[str, Any]:
         try:
-            started = time.perf_counter()
             if self._session_pool is not None and self._job_id is not None:
+                started = time.perf_counter()
                 result = await self._session_pool.call_tool(
                     self._job_id, name, arguments, authorization
                 )
@@ -160,6 +160,7 @@ class OfficialMcpClient:
                         async with ClientSession(read_stream, write_stream) as session:
                             perf_metrics.increment("session_initialize_count")
                             await session.initialize()
+                            started = time.perf_counter()
                             result = await session.call_tool(name, arguments)
             perf_metrics.record_mcp_tool(
                 name, (time.perf_counter() - started) * 1000
