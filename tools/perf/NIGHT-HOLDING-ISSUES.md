@@ -26,3 +26,18 @@
 3. 全量回归仍存在既有环境/历史失败。
    - `agent-service`: `python -m pytest tests/ -x` 在 collection 阶段失败，缺 `tree_sitter_java`。
    - `devcollab-mcp-server`: `.\mvnw.cmd -pl devcollab-mcp-server test` 为 100 run / 2 failures，仍是第五批记录的末尾换行断言差异。
+
+## 2026-08-10 第七批
+
+1. `StagedPipeline` 完整接线继续 deferred。
+   - 规格判断：本批已经把 `code.read_batch` 落地并接入 source read，读取阶段 MCP 往返会明显下降；完整四阶段 pipeline 的主要收益模型随之变化。
+   - 风险：直接拆 `JobExecutor` 的 read/parse/model/submit 控制流会影响会话上下文、文档候选、binding 解析、提交顺序和错误归类。
+   - 当前处理：保留第六批默认关闭的 `AGENT_STAGED_PIPELINE_ENABLED` AIMD 模型退避接线；完整替换等待阶段 6 实验数据和等价边界规格。
+
+2. 跨 job 增量持久化缓存继续 deferred。
+   - 原因：当前 `SourceReader` 的 blobSha 缓存是 job 内内存级，边界清晰；跨 job 缓存需要额外定义容量、失效、租户隔离、parser/version key 和隐私边界。
+   - 当前处理：本批仅复用 job 内 blobSha cache，并让 `code.read_batch` 读取出的完整内容进入同一缓存；跨 job 持久化等待实验数据证明收益后再定案。
+
+3. 全量回归仍存在既有环境/历史失败。
+   - `agent-service`: `python -m pytest tests/ -x` collected 123 items / 1 error，缺 `tree_sitter_java`。
+   - `devcollab-mcp-server`: `.\mvnw.cmd -pl devcollab-mcp-server test` 为 103 run / 2 failures，仍是末尾换行断言差异。

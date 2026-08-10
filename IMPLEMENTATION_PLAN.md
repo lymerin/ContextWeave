@@ -290,3 +290,32 @@
 - 测试记录：agent 定向测试命令均通过（session pool 4、delegation cache 5、document batch 6、incremental read 5、staged/AIMD 8）；knowledge-core 定向缓存 suite 23 passed；knowledge-core full `276 tests run / 0 failures / 4 skipped`。
 - 全量回归记录：agent full pytest 仍因缺 `tree_sitter_java` collection 失败；MCP full test 仍为 100 run / 2 trailing-newline failures；两者均记录在 `tools/perf/NIGHT-HOLDING-ISSUES.md`。
 - 降级/未接线：`devcollab.code.read_batch` 因 200KB 截断语义不等价未接；完整四阶段 `StagedPipeline` 替换 `JobExecutor` 风险过高，本批仅接 AIMD 模型退避 fallback。详见 `tools/perf/BATCH6-REPORT.md`。
+
+## 批次记录：第七批 read_batch 契约增强 + 批量读取接线 + 实验脚本（2026-08-10）
+
+- 分支与起点：在 `main` 上连续施工，起始 HEAD=`8d812d5`。
+- 提交清单：
+  - `3852811` 功能：read_batch 契约增强为逐文件首段读取（对齐 code.read 行语义）
+  - `7482a1c` 功能：开关化接入 code.read_batch 源码批量读取
+  - `b42749f` 功能：开关对比实验脚本（off vs 单开关 vs 全 on）
+- 新增/增强文件清单：
+  - `contracts/mcp/code_read_batch_output.json`
+  - `devcollab-mcp-server/src/main/java/com/devcollab/mcp/application/CodeReadApplicationService.java`
+  - `devcollab-mcp-server/src/test/java/com/devcollab/mcp/application/CodeReadApplicationServiceTests.java`
+  - `agent-service/app/platform_mcp/source_reader.py`
+  - `agent-service/app/config.py`
+  - `agent-service/app/worker.py`
+  - `agent-service/app/clients/mcp_client.py`
+  - `agent-service/app/contracts/validator.py`
+  - `agent-service/tests/test_source_reader_incremental_read.py`
+  - `agent-service/tests/test_mcp_contracts.py`
+  - `agent-service/tests/test_official_mcp_client_session_pool.py`
+  - `tools/perf/run-switch-comparison.py`
+- 测试数与验收摘录：
+  - MCP 定向：`CodeReadApplicationServiceTests,McpToolSchemasTests` 共 10 tests，0 failures。
+  - Agent 定向：source reader + official client + contract tests 共 26 passed。
+  - 脚本冒烟：`run-switch-comparison.py` 通过 `py_compile`、`ruff check`、`ruff format --check`、`--help`。
+  - Agent 全量：`python -m pytest tests/ -x` collected 123 items / 1 error，仍为既有 `tree_sitter_java` 缺失。
+  - MCP 全量：`./mvnw.cmd -pl devcollab-mcp-server test` 为 103 run / 2 failures，仍为既有末尾换行断言差异。
+- 行为边界：所有新增接线由 `AGENT_CODE_READ_BATCH_ENABLED=false` 默认关闭；未改变默认 hot path。`code.read_batch` 的服务端契约已从总 200KB 截断改为逐文件首段读取，并与 `code.read` 行分页语义对齐。
+- 遗留：完整四阶段 `StagedPipeline` 替换和跨 job 持久化增量缓存继续 deferred，详见 `tools/perf/NIGHT-HOLDING-ISSUES.md` 第七批。
