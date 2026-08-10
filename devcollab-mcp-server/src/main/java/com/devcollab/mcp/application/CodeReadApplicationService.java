@@ -7,7 +7,6 @@ import com.devcollab.mcp.governance.ContextBudgetPolicy;
 import com.devcollab.mcp.security.McpUserIdentity;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,7 +16,6 @@ import java.util.UUID;
 public class CodeReadApplicationService {
 
     private static final int MAX_BATCH_PATHS = 100;
-    private static final int MAX_BATCH_BYTES = 200 * 1024;
 
     private final KnowledgeCoreGateway coreGateway;
     private final ContextBudgetPolicy budgetPolicy;
@@ -86,7 +84,6 @@ public class CodeReadApplicationService {
         }
 
         Map<String, Object> files = new LinkedHashMap<>();
-        int remainingBytes = MAX_BATCH_BYTES;
         boolean batchTruncated = false;
         for (String path : paths) {
             budgetPolicy.validateRepositoryPath(path);
@@ -105,17 +102,22 @@ public class CodeReadApplicationService {
                         "Repository revision changed after the batch read request was created"
                 );
             }
-            TruncatedContent content = fitWithinRemainingBytes(source.content(), remainingBytes);
-            remainingBytes = Math.max(0, remainingBytes - content.bytesUsed());
+            ContextBudgetPolicy.BudgetedContent content =
+                    budgetPolicy.limit(source.content(), null, null);
             batchTruncated = batchTruncated || content.truncated();
 
             Map<String, Object> file = new LinkedHashMap<>();
             file.put("path", source.path());
             file.put("commitHash", source.commitSha());
             file.put("language", source.language());
-            file.put("totalLines", totalLines(source.content()));
+            file.put("sizeBytes", source.sizeBytes());
+            file.put("startLine", content.startLine());
+            file.put("endLine", content.endLine());
+            file.put("totalLines", content.totalLines());
             file.put("content", content.content());
             file.put("truncated", content.truncated());
+            file.put("omittedLineCount", content.omittedLineCount());
+            file.put("omittedCharacterCount", content.omittedCharacterCount());
             files.put(source.path(), file);
         }
 
@@ -123,41 +125,8 @@ public class CodeReadApplicationService {
         result.put("workspaceId", workspaceId.toString());
         result.put("repositoryId", repositoryId.toString());
         result.put("revision", revision);
-        result.put("byteLimit", MAX_BATCH_BYTES);
         result.put("truncated", batchTruncated);
         result.put("files", files);
         return result;
-    }
-
-    private TruncatedContent fitWithinRemainingBytes(String content, int remainingBytes) {
-        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length <= remainingBytes) {
-            return new TruncatedContent(content, bytes.length, false);
-        }
-        if (remainingBytes <= 0) {
-            return new TruncatedContent("", 0, true);
-        }
-        int end = 0;
-        int bytesUsed = 0;
-        while (end < content.length()) {
-            int next = content.offsetByCodePoints(end, 1);
-            int nextBytes = content.substring(end, next).getBytes(StandardCharsets.UTF_8).length;
-            if (bytesUsed + nextBytes > remainingBytes) {
-                break;
-            }
-            bytesUsed += nextBytes;
-            end = next;
-        }
-        return new TruncatedContent(content.substring(0, end), bytesUsed, true);
-    }
-
-    private int totalLines(String content) {
-        if (content.isEmpty()) {
-            return 0;
-        }
-        return content.split("\\R", -1).length;
-    }
-
-    private record TruncatedContent(String content, int bytesUsed, boolean truncated) {
     }
 }

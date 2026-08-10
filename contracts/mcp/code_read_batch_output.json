@@ -5,7 +5,6 @@
     "workspaceId",
     "repositoryId",
     "revision",
-    "byteLimit",
     "truncated",
     "files"
   ],
@@ -24,9 +23,6 @@
         "null"
       ]
     },
-    "byteLimit": {
-      "type": "integer"
-    },
     "truncated": {
       "type": "boolean"
     },
@@ -39,9 +35,14 @@
           "path",
           "commitHash",
           "language",
+          "sizeBytes",
+          "startLine",
+          "endLine",
           "totalLines",
           "content",
-          "truncated"
+          "truncated",
+          "omittedLineCount",
+          "omittedCharacterCount"
         ],
         "properties": {
           "path": {
@@ -56,6 +57,15 @@
               "null"
             ]
           },
+          "sizeBytes": {
+            "type": "integer"
+          },
+          "startLine": {
+            "type": "integer"
+          },
+          "endLine": {
+            "type": "integer"
+          },
           "totalLines": {
             "type": "integer"
           },
@@ -64,6 +74,12 @@
           },
           "truncated": {
             "type": "boolean"
+          },
+          "omittedLineCount": {
+            "type": "integer"
+          },
+          "omittedCharacterCount": {
+            "type": "integer"
           }
         }
       }

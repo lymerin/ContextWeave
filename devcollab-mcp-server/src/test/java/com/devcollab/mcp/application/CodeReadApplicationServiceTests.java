@@ -94,39 +94,118 @@ class CodeReadApplicationServiceTests {
     }
 
     @Test
-    void readBatchTruncatesAtTotalByteLimitBoundary() {
-        String exact = "a".repeat(200 * 1024);
+    void readBatchReturnsSmallFileWithCodeReadMetadata() {
+        String content = "one\ntwo";
         when(gateway.readRepositorySource(eq(workspaceId), eq(repositoryId), eq("A.java"), any()))
                 .thenReturn(new KnowledgeCoreGateway.RepositorySource(
-                        repositoryId, "abc", "A.java", exact.length(), "Java", true, exact
+                        repositoryId, "abc", "A.java", content.length(), "Java", true, content
                 ));
         CodeReadApplicationService service = service(400, 40_000);
 
-        Map<String, Object> exactResult = service.readBatch(
+        Map<String, Object> result = service.readBatch(
                 workspaceId, repositoryId, List.of("A.java"), "abc", identity
         );
 
-        assertThat(exactResult.get("truncated")).isEqualTo(false);
+        assertThat(result.get("truncated")).isEqualTo(false);
         @SuppressWarnings("unchecked")
-        Map<String, Map<String, Object>> exactFiles =
-                (Map<String, Map<String, Object>>) exactResult.get("files");
-        assertThat(exactFiles.get("A.java").get("content")).isEqualTo(exact);
+        Map<String, Map<String, Object>> files =
+                (Map<String, Map<String, Object>>) result.get("files");
+        Map<String, Object> file = files.get("A.java");
+        assertThat(file.get("path")).isEqualTo("A.java");
+        assertThat(file.get("commitHash")).isEqualTo("abc");
+        assertThat(file.get("language")).isEqualTo("Java");
+        assertThat(file.get("sizeBytes")).isEqualTo((long) content.length());
+        assertThat(file.get("startLine")).isEqualTo(1);
+        assertThat(file.get("endLine")).isEqualTo(2);
+        assertThat(file.get("totalLines")).isEqualTo(2);
+        assertThat(file.get("content")).isEqualTo("one\ntwo\n");
+        assertThat(file.get("truncated")).isEqualTo(false);
+        assertThat(file.get("omittedLineCount")).isEqualTo(0);
+        assertThat(file.get("omittedCharacterCount")).isEqualTo(0);
+    }
 
+    @Test
+    void readBatchUsesSameFirstSegmentAsCodeReadForLargeFile() {
+        String content = java.util.stream.IntStream.rangeClosed(1, 401)
+                .mapToObj(line -> "line-" + line)
+                .collect(java.util.stream.Collectors.joining("\n"));
         when(gateway.readRepositorySource(eq(workspaceId), eq(repositoryId), eq("B.java"), any()))
                 .thenReturn(new KnowledgeCoreGateway.RepositorySource(
-                        repositoryId, "abc", "B.java", exact.length() + 1, "Java",
-                        true, exact + "b"
+                        repositoryId, "abc", "B.java", content.length(), "Java", true, content
                 ));
-        Map<String, Object> truncatedResult = service.readBatch(
+        CodeReadApplicationService service = service(400, 40_000);
+
+        Map<String, Object> single = service.read(
+                workspaceId, repositoryId, "B.java", null, null, false, identity
+        );
+        Map<String, Object> batch = service.readBatch(
                 workspaceId, repositoryId, List.of("B.java"), "abc", identity
         );
 
-        assertThat(truncatedResult.get("truncated")).isEqualTo(true);
+        assertThat(batch.get("truncated")).isEqualTo(true);
         @SuppressWarnings("unchecked")
-        Map<String, Map<String, Object>> truncatedFiles =
-                (Map<String, Map<String, Object>>) truncatedResult.get("files");
-        assertThat((String) truncatedFiles.get("B.java").get("content")).hasSize(200 * 1024);
-        assertThat(truncatedFiles.get("B.java").get("truncated")).isEqualTo(true);
+        Map<String, Map<String, Object>> files =
+                (Map<String, Map<String, Object>>) batch.get("files");
+        Map<String, Object> file = files.get("B.java");
+        assertThat(file)
+                .containsEntry("content", single.get("content"))
+                .containsEntry("startLine", single.get("startLine"))
+                .containsEntry("endLine", single.get("endLine"))
+                .containsEntry("totalLines", single.get("totalLines"))
+                .containsEntry("truncated", single.get("truncated"))
+                .containsEntry("omittedLineCount", single.get("omittedLineCount"))
+                .containsEntry("omittedCharacterCount", single.get("omittedCharacterCount"));
+        assertThat(file.get("endLine")).isEqualTo(400);
+        assertThat(file.get("totalLines")).isEqualTo(401);
+    }
+
+    @Test
+    void readBatchKeepsExactLineBoundaryBehaviorFromCodeRead() {
+        String content = java.util.stream.IntStream.rangeClosed(1, 400)
+                .mapToObj(line -> "line-" + line)
+                .collect(java.util.stream.Collectors.joining("\n"));
+        when(gateway.readRepositorySource(eq(workspaceId), eq(repositoryId), eq("C.java"), any()))
+                .thenReturn(new KnowledgeCoreGateway.RepositorySource(
+                        repositoryId, "abc", "C.java", content.length(), "Java", true, content
+                ));
+        CodeReadApplicationService service = service(400, 40_000);
+
+        Map<String, Object> single = service.read(
+                workspaceId, repositoryId, "C.java", null, null, false, identity
+        );
+        Map<String, Object> batch = service.readBatch(
+                workspaceId, repositoryId, List.of("C.java"), "abc", identity
+        );
+
+        @SuppressWarnings("unchecked")
+        Map<String, Map<String, Object>> files =
+                (Map<String, Map<String, Object>>) batch.get("files");
+        assertThat(files.get("C.java").get("content")).isEqualTo(single.get("content"));
+        assertThat(files.get("C.java").get("endLine")).isEqualTo(single.get("endLine"));
+        assertThat(files.get("C.java").get("totalLines")).isEqualTo(single.get("totalLines"));
+    }
+
+    @Test
+    void readBatchHandlesEmptyFileWithCodeReadSemantics() {
+        when(gateway.readRepositorySource(eq(workspaceId), eq(repositoryId), eq("Empty.java"), any()))
+                .thenReturn(new KnowledgeCoreGateway.RepositorySource(
+                        repositoryId, "abc", "Empty.java", 0, "Java", true, ""
+                ));
+        CodeReadApplicationService service = service(400, 40_000);
+
+        Map<String, Object> single = service.read(
+                workspaceId, repositoryId, "Empty.java", null, null, false, identity
+        );
+        Map<String, Object> batch = service.readBatch(
+                workspaceId, repositoryId, List.of("Empty.java"), "abc", identity
+        );
+
+        @SuppressWarnings("unchecked")
+        Map<String, Map<String, Object>> files =
+                (Map<String, Map<String, Object>>) batch.get("files");
+        assertThat(files.get("Empty.java").get("content")).isEqualTo(single.get("content"));
+        assertThat(files.get("Empty.java").get("endLine")).isEqualTo(single.get("endLine"));
+        assertThat(batch.get("truncated")).isEqualTo(false);
     }
 
     @Test
