@@ -45,6 +45,16 @@ class ReviewMcpClient(ReadOnlyMcpClient, Protocol):
     ) -> dict[str, Any]: ...
 
 
+class PooledMcpSession(Protocol):
+    async def call_tool(
+        self,
+        job_id: str,
+        name: str,
+        arguments: dict[str, Any],
+        authorization: str,
+    ) -> Any: ...
+
+
 def _authorization_header(authorization: str) -> str:
     """规范化 Authorization 头：过滤器只认 `Bearer <token>` 前缀。
 
@@ -71,9 +81,18 @@ class OfficialMcpClient:
         }
     )
 
-    def __init__(self, base_url: str, timeout_seconds: float) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        timeout_seconds: float,
+        *,
+        session_pool: PooledMcpSession | None = None,
+        job_id: str | None = None,
+    ) -> None:
         self._base_url = base_url
         self._timeout_seconds = timeout_seconds
+        self._session_pool = session_pool
+        self._job_id = job_id
 
     async def call_tool(
         self, name: str, arguments: dict[str, Any], authorization: str
@@ -122,22 +141,27 @@ class OfficialMcpClient:
         authorization: str,
     ) -> dict[str, Any]:
         try:
-            async with httpx.AsyncClient(
-                headers={"Authorization": _authorization_header(authorization)},
-                timeout=self._timeout_seconds,
-            ) as http_client:
-                async with streamable_http_client(
-                    self._base_url,
-                    http_client=http_client,
-                ) as (read_stream, write_stream, _):
-                    async with ClientSession(read_stream, write_stream) as session:
-                        perf_metrics.increment("session_initialize_count")
-                        await session.initialize()
-                        started = time.perf_counter()
-                        result = await session.call_tool(name, arguments)
-                        perf_metrics.record_mcp_tool(
-                            name, (time.perf_counter() - started) * 1000
-                        )
+            started = time.perf_counter()
+            if self._session_pool is not None and self._job_id is not None:
+                result = await self._session_pool.call_tool(
+                    self._job_id, name, arguments, authorization
+                )
+            else:
+                async with httpx.AsyncClient(
+                    headers={"Authorization": _authorization_header(authorization)},
+                    timeout=self._timeout_seconds,
+                ) as http_client:
+                    async with streamable_http_client(
+                        self._base_url,
+                        http_client=http_client,
+                    ) as (read_stream, write_stream, _):
+                        async with ClientSession(read_stream, write_stream) as session:
+                            perf_metrics.increment("session_initialize_count")
+                            await session.initialize()
+                            result = await session.call_tool(name, arguments)
+            perf_metrics.record_mcp_tool(
+                name, (time.perf_counter() - started) * 1000
+            )
         except httpx.TimeoutException as exc:
             raise McpClientError("MCP_UNAVAILABLE", "MCP request timed out") from exc
         except McpClientError:

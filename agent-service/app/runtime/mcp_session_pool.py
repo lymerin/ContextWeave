@@ -7,6 +7,7 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
+from app import perf_metrics
 from app.clients.mcp_client import _authorization_header
 
 
@@ -107,6 +108,7 @@ class McpSessionPool:
             session = await stack.enter_async_context(
                 self._session_factory(read_stream, write_stream)
             )
+            perf_metrics.increment("session_initialize_count")
             await session.initialize()
             return _SessionEntry(
                 authorization=authorization,

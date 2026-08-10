@@ -35,6 +35,7 @@ from app.profiling import MemoryProfileConfig, RuntimeMemoryProfiler
 from app.providers.base import ModelProvider, ModelProviderError
 from app.providers.deepseek import DeepSeekProvider
 from app.runtime.delegated_mcp_client import DelegatedMcpClient
+from app.runtime.mcp_session_pool import McpSessionPool
 from app.runtime.project_discovery import ProjectDiscoveryService
 from app.runtime.semantic_planner import materialize_deepseek_units, overlapping_file_count
 from app.schemas.document_planner.skeleton import SkeletonSlot
@@ -249,8 +250,26 @@ class AgentWorker:
         heartbeat = asyncio.create_task(
             self._heartbeat(unit_id), name=f"heartbeat-{unit_id}"
         )
+        session_pool = (
+            McpSessionPool(
+                self._settings.mcp_base_url,
+                self._settings.agent_request_timeout_seconds,
+            )
+            if self._settings.agent_mcp_session_pool_enabled
+            else None
+        )
+        mcp_client = (
+            OfficialMcpClient(
+                self._settings.mcp_base_url,
+                self._settings.agent_request_timeout_seconds,
+                session_pool=session_pool,
+                job_id=str(job_id),
+            )
+            if session_pool is not None
+            else self._mcp_client
+        )
         delegated = DelegatedMcpClient(
-            self._mcp_client,
+            mcp_client,
             self._delegation_client,
             delegation_id=UUID(str(job["delegation_id"])),
             job_id=job_id,
@@ -574,6 +593,8 @@ class AgentWorker:
             if workflow_task is not None and not workflow_task.done():
                 workflow_task.cancel()
                 await asyncio.gather(workflow_task, return_exceptions=True)
+            if session_pool is not None:
+                await session_pool.aclose()
             heartbeat.cancel()
             await asyncio.gather(heartbeat, return_exceptions=True)
             perf_metrics.reset_context(perf_context)

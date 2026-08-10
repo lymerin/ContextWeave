@@ -103,6 +103,7 @@ class Settings(BaseSettings):
     agent_plan_batch_concurrency: int = Field(2, ge=1, le=8)
     agent_project_execution_limit: int = Field(0, ge=0, le=500)
     agent_project_max_tool_calls: int = Field(24, ge=5, le=100)
+    agent_mcp_session_pool_enabled: bool = False
     devcollab_memory_profile_enabled: bool = False
     devcollab_memory_profile_run_id: str = ""
     devcollab_memory_profile_output_dir: Path = Path(".data/memory-profile")
