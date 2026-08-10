@@ -45,11 +45,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             JwtTokenService.TokenClaims claims =
                     jwtTokenService.verify(token);
-            if (!JwtTokenService.TOKEN_TYPE_ACCESS.equals(
+            if (JwtTokenService.TOKEN_TYPE_ACCESS.equals(claims.tokenType())) {
+                // 普通用户访问令牌
+            } else if (JwtTokenService.TOKEN_TYPE_AGENT_DELEGATION.equals(
                     claims.tokenType()
             )) {
+                // Agent 委托令牌：MCP 服务端透传给知识核心的数据链路依赖此类型；
+                // 与 gRPC 侧一致，要求委托令牌携带 allowed_tools（作用域已由
+                // mcp-server 的 AuditedToolExecutor 校验）。
+                if (claims.allowedTools().isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "Agent delegation token must include allowed_tools"
+                    );
+                }
+            } else {
                 throw new IllegalArgumentException(
-                        "Access token is required"
+                        "Unsupported token type"
                 );
             }
             CurrentUser currentUser = new CurrentUser(
