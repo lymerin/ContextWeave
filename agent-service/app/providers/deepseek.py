@@ -267,6 +267,7 @@ class DeepSeekProvider:
         raw_plan: dict[str, Any] | None = None
         try:
             response_json = response.json()
+            _record_usage(response_json)
             content = response_json["choices"][0]["message"]["content"]
             decoded = json.loads(content)
             if not isinstance(decoded, dict):
@@ -317,14 +318,21 @@ class DeepSeekProvider:
         from app.schemas.semantic.analysis_result import SemanticAnalysisResult
 
         self._require_configuration()
-        user_payload = {
-            "instruction": request.instruction,
+        stable_payload = {
             "output_contract": request.output_contract,
+            "context": {
+                "analysis_id": request.analysis_id,
+                "context_id": request.context_id,
+                "revision": request.revision,
+                "snapshot_hash": request.snapshot_hash,
+            },
             "inline_sources": inline_sources,
         }
+        task_payload = {"instruction": request.instruction}
         messages = [
             {"role": "system", "content": _SEMANTIC_SYSTEM_PROMPT},
-            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+            {"role": "user", "content": _compact_json(stable_payload)},
+            {"role": "user", "content": _compact_json(task_payload)},
         ]
         body: dict[str, Any] = {
             "model": self._model,
@@ -364,6 +372,7 @@ class DeepSeekProvider:
                 raise ModelProviderError("MODEL_CONFIGURATION_ERROR", "Model request was rejected")
             try:
                 response_json = response.json()
+                _record_usage(response_json)
                 message = response_json["choices"][0]["message"]
                 content = message.get("content") or ""
                 reasoning = message.get("reasoning_content") or ""
@@ -406,13 +415,13 @@ class DeepSeekProvider:
                             r_exc, _retry,
                         )
                 if _retry < 2:
-                    user_payload["instruction"] += (
+                    task_payload["instruction"] += (
                         "\n\n【强制】直接输出符合输出契约的完整 JSON 对象，"
                         "不要输出任何其他文本、注释或思考。"
                     )
-                    messages[1] = {
+                    messages[-1] = {
                         "role": "user",
-                        "content": json.dumps(user_payload, ensure_ascii=False),
+                        "content": _compact_json(task_payload),
                     }
                     body["messages"] = messages
                     continue
@@ -485,6 +494,7 @@ class DeepSeekProvider:
                 )
 
             msg = response.json()
+            _record_usage(msg)
             choice = msg.get("choices", [{}])[0]
             message = choice.get("message", {})
 
@@ -552,6 +562,21 @@ class DeepSeekProvider:
                 "MODEL_CONFIGURATION_ERROR",
                 "DeepSeek provider is not configured",
             )
+
+
+def _compact_json(value: Any) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def _record_usage(response_json: dict[str, Any]) -> None:
+    usage = response_json.get("usage")
+    if isinstance(usage, dict):
+        perf_metrics.record_model_usage(usage)
 
 
 def _extract_json_object(content: str) -> dict[str, Any]:

@@ -61,6 +61,27 @@ class PerfMetrics:
             ).append(elapsed_ms)
             _append_event({"kind": "mcp_tool", "name": name, "elapsed_ms": elapsed_ms})
 
+    def record_model_usage(self, usage: dict[str, Any]) -> None:
+        fields = {
+            "model_prompt_tokens": usage.get("prompt_tokens"),
+            "model_completion_tokens": usage.get("completion_tokens"),
+            "model_total_tokens": usage.get("total_tokens"),
+            "model_prompt_cache_hit_tokens": usage.get("prompt_cache_hit_tokens"),
+            "model_prompt_cache_miss_tokens": usage.get("prompt_cache_miss_tokens"),
+        }
+        normalized = {
+            name: int(value)
+            for name, value in fields.items()
+            if isinstance(value, int | float) and value >= 0
+        }
+        if not normalized:
+            return
+        with self._lock:
+            for name, value in normalized.items():
+                self._counters[name] += value
+            self._counters["model_call_usage_count"] += 1
+            _append_event({"kind": "model_usage", **normalized})
+
     def snapshot(self, *, job_id: str | None = None) -> dict[str, Any]:
         file_snapshot = _snapshot_events(job_id=job_id)
         if file_snapshot is not None:
@@ -94,6 +115,10 @@ def add_backoff(seconds: float) -> None:
 
 def record_mcp_tool(name: str, elapsed_ms: float) -> None:
     _METRICS.record_mcp_tool(name, elapsed_ms)
+
+
+def record_model_usage(usage: dict[str, Any]) -> None:
+    _METRICS.record_model_usage(usage)
 
 
 def set_context(*, job_id: str, unit_id: str) -> Token[dict[str, str] | None]:
@@ -209,6 +234,16 @@ def _snapshot_events(*, job_id: str | None) -> dict[str, Any] | None:
                 mcp_tool_counts[name] += 1
                 duration_samples.setdefault("mcp_tool", []).append(elapsed_ms)
                 duration_samples.setdefault(f"mcp_tool:{name}", []).append(elapsed_ms)
+            elif kind == "model_usage":
+                counters["model_call_usage_count"] += 1
+                for name in (
+                    "model_prompt_tokens",
+                    "model_completion_tokens",
+                    "model_total_tokens",
+                    "model_prompt_cache_hit_tokens",
+                    "model_prompt_cache_miss_tokens",
+                ):
+                    counters[name] += int(event.get(name) or 0)
     except OSError:
         return None
     return _build_snapshot(dict(counters), dict(mcp_tool_counts), duration_samples, _now())
@@ -250,6 +285,18 @@ def _build_snapshot(
             "rate_limit_429_count": counters.get("rate_limit_429_count", 0),
             "retry_count": counters.get("retry_count", 0),
             "backoff_ms_total": counters.get("retry_backoff_ms_total", 0),
+        },
+        "model": {
+            "usage_count": counters.get("model_call_usage_count", 0),
+            "prompt_tokens": counters.get("model_prompt_tokens", 0),
+            "completion_tokens": counters.get("model_completion_tokens", 0),
+            "total_tokens": counters.get("model_total_tokens", 0),
+            "prompt_cache_hit_tokens": counters.get(
+                "model_prompt_cache_hit_tokens", 0
+            ),
+            "prompt_cache_miss_tokens": counters.get(
+                "model_prompt_cache_miss_tokens", 0
+            ),
         },
         "stages": stages,
     }

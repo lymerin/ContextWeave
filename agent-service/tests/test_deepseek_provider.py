@@ -6,7 +6,10 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import DeepSeekModelName, Settings
+from app import perf_metrics
+from app.providers.base import ModelProviderError
 from app.providers.deepseek import DeepSeekProvider
+from app.schemas.semantic.analysis_request import SemanticAnalysisRequest
 
 
 def provider(handler: Any, key: str = "secret-key") -> DeepSeekProvider:
@@ -48,6 +51,13 @@ PROJECT_INDEX: dict[str, Any] = {
     "revision": "abc",
     "files": [{"filePath": "src/AuthService.java"}],
     "documents": [],
+}
+
+MINIMAL_ANALYSIS_RESULT: dict[str, Any] = {
+    "overall_responsibility": "module summary",
+    "semantic_groups": [],
+    "member_interpretations": [],
+    "execution_flow": [],
 }
 
 
@@ -162,3 +172,149 @@ async def test_deepseek_thinking_disabled_excludes_body_field() -> None:
 def test_deepseek_thinking_defaults_false() -> None:
     settings = Settings(deepseek_model="flash", _env_file=None)  # type: ignore[call-arg]
     assert settings.deepseek_thinking is False
+
+
+@pytest.mark.asyncio
+async def test_batch_analysis_puts_stable_context_before_instruction() -> None:
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{
+                    "message": {
+                        "content": json.dumps(MINIMAL_ANALYSIS_RESULT)
+                    }
+                }],
+            },
+        )
+
+    await provider(handler).analyze_batch(
+        SemanticAnalysisRequest(
+            analysis_id="analysis-1",
+            context_id="context-1",
+            revision="rev-1",
+            snapshot_hash="hash-1",
+            entry_point_ids=[],
+            structure_block_ids=[],
+            manifest={
+                "atom_count": 0,
+                "block_count": 0,
+                "chunk_count": 0,
+                "relation_count": 0,
+            },
+            instruction="write this slot",
+            output_contract={"type": "object"},
+        ),
+        [{
+            "file_path": "src/App.java",
+            "source": "class App {}",
+        }],
+    )
+
+    stable = json.loads(seen["messages"][1]["content"])
+    task = json.loads(seen["messages"][2]["content"])
+    assert "inline_sources" in stable
+    assert stable["context"]["snapshot_hash"] == "hash-1"
+    assert "instruction" not in stable
+    assert task == {"instruction": "write this slot"}
+
+
+@pytest.mark.asyncio
+async def test_batch_analysis_records_deepseek_cache_usage() -> None:
+    perf_metrics.reset()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{
+                    "message": {
+                        "content": json.dumps(MINIMAL_ANALYSIS_RESULT)
+                    }
+                }],
+                "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 20,
+                    "total_tokens": 120,
+                    "prompt_cache_hit_tokens": 80,
+                    "prompt_cache_miss_tokens": 20,
+                },
+            },
+        )
+
+    await provider(handler).analyze_batch(
+        SemanticAnalysisRequest(
+            analysis_id="analysis-1",
+            context_id="context-1",
+            revision="rev-1",
+            snapshot_hash="hash-1",
+            entry_point_ids=[],
+            structure_block_ids=[],
+            manifest={
+                "atom_count": 0,
+                "block_count": 0,
+                "chunk_count": 0,
+                "relation_count": 0,
+            },
+            instruction="write this slot",
+            output_contract={"type": "object"},
+        ),
+        [],
+    )
+
+    model = perf_metrics.snapshot()["model"]
+    assert model["usage_count"] == 1
+    assert model["prompt_tokens"] == 100
+    assert model["completion_tokens"] == 20
+    assert model["total_tokens"] == 120
+    assert model["prompt_cache_hit_tokens"] == 80
+    assert model["prompt_cache_miss_tokens"] == 20
+
+
+@pytest.mark.asyncio
+async def test_batch_analysis_repair_keeps_stable_context_unchanged() -> None:
+    stable_messages: list[str] = []
+    task_messages: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        stable_messages.append(body["messages"][1]["content"])
+        task_messages.append(body["messages"][2]["content"])
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{
+                    "message": {"content": "not json"},
+                    "finish_reason": "stop",
+                }],
+            },
+        )
+
+    with pytest.raises(ModelProviderError):
+        await provider(handler).analyze_batch(
+            SemanticAnalysisRequest(
+                analysis_id="analysis-1",
+                context_id="context-1",
+                revision="rev-1",
+                snapshot_hash="hash-1",
+                entry_point_ids=[],
+                structure_block_ids=[],
+                manifest={
+                    "atom_count": 0,
+                    "block_count": 0,
+                    "chunk_count": 0,
+                    "relation_count": 0,
+                },
+                instruction="write this slot",
+                output_contract={"type": "object"},
+            ),
+            [{"file_path": "src/App.java", "source": "class App {}"}],
+        )
+
+    assert len(stable_messages) == 3
+    assert len(set(stable_messages)) == 1
+    assert task_messages[0] != task_messages[1]
+    assert task_messages[1] != task_messages[2]
