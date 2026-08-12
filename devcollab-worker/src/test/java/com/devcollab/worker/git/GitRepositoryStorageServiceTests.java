@@ -253,6 +253,23 @@ class GitRepositoryStorageServiceTests {
         }
     }
 
+    @Test
+    void unchangedProjectionSkipsOnlyWhenHeadAndVersionMatch() {
+        int version = GitRepositoryProjectionStore.CURRENT_PROJECTION_VERSION;
+        assertThat(GitRepositoryStorageService.isUnchangedProjection(
+                "abc123", null, version)).isFalse();
+        assertThat(GitRepositoryStorageService.isUnchangedProjection(
+                null, "abc123", version)).isFalse();
+        assertThat(GitRepositoryStorageService.isUnchangedProjection(
+                "abc123", "abc123", null)).isFalse();
+        assertThat(GitRepositoryStorageService.isUnchangedProjection(
+                "abc123", "abc123", version - 1)).isFalse();
+        assertThat(GitRepositoryStorageService.isUnchangedProjection(
+                "abc123", "abc124", version)).isFalse();
+        assertThat(GitRepositoryStorageService.isUnchangedProjection(
+                "abc123", "abc123", version)).isTrue();
+    }
+
     private GitRepositoryStorageService service(GitRepositoryProjectionStore store) {
         return new GitRepositoryStorageService(
                 new GitRepositoryStorageProperties(

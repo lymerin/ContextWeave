@@ -12,10 +12,36 @@ import java.util.UUID;
 @Repository
 public class GitRepositoryProjectionStore {
 
+    /**
+     * Projection format version. Bump when code graph semantics, commit
+     * projection semantics, the effective {@code max-commits} range, or a
+     * schema/algorithm upgrade requires rebuilding projections for the same
+     * HEAD.
+     */
+    public static final int CURRENT_PROJECTION_VERSION = 1;
+
     private final JdbcTemplate jdbcTemplate;
 
     public GitRepositoryProjectionStore(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+    }
+
+    /**
+     * Checkpoint used by the fast-return path: the last successfully
+     * projected HEAD and the projection version it was built with.
+     */
+    public record ProjectionCheckpoint(String lastSyncedCommit, Integer projectionVersion) {
+    }
+
+    public ProjectionCheckpoint readProjectionCheckpoint(UUID repositoryId) {
+        return jdbcTemplate.queryForObject("""
+                SELECT last_synced_commit, projection_version
+                  FROM git_repositories
+                 WHERE id = ?
+                """, (rs, rowNum) -> new ProjectionCheckpoint(
+                        rs.getString("last_synced_commit"),
+                        (Integer) rs.getObject("projection_version")
+                ), repositoryId);
     }
 
     public boolean markSyncing(UUID repositoryId) {
@@ -164,11 +190,13 @@ public class GitRepositoryProjectionStore {
         jdbcTemplate.update("""
                 UPDATE git_repositories
                    SET sync_status = 'READY', last_synced_commit = ?,
+                       projection_version = ?,
                        last_synced_at = ?, last_sync_error = NULL,
                        updated_at = ?
                  WHERE id = ?
-                """, headCommit, Timestamp.from(Instant.now()),
-                Timestamp.from(Instant.now()), repositoryId);
+                """, headCommit, CURRENT_PROJECTION_VERSION,
+                Timestamp.from(Instant.now()), Timestamp.from(Instant.now()),
+                repositoryId);
     }
 
     public void markFailed(UUID repositoryId, String error) {

@@ -95,6 +95,19 @@ public class GitRepositoryStorageService {
                 }
                 Repository repository = git.getRepository();
                 String head = repository.resolve("HEAD").name();
+                GitRepositoryProjectionStore.ProjectionCheckpoint checkpoint =
+                        store.readProjectionCheckpoint(repositoryId);
+                if (isUnchangedProjection(
+                        head, checkpoint.lastSyncedCommit(),
+                        checkpoint.projectionVersion()
+                )) {
+                    store.markReady(repositoryId, head);
+                    if (syncStage != null) {
+                        syncStage.attribute("fastReturn", true);
+                        syncStage.attribute("head", head);
+                    }
+                    return;
+                }
                 List<GitRepositoryFileProjection> files;
                 RuntimeMemoryProfiler.Stage scanStage = stage(
                         "FILE_SCAN", repositoryId, head
@@ -586,6 +599,24 @@ public class GitRepositoryStorageService {
             case "proto" -> "Protocol Buffers";
             default -> null;
         };
+    }
+
+    /**
+     * Fast-return predicate: the fetched HEAD is exactly the last successfully
+     * projected commit and the projection was built with the current version,
+     * so no scan, AST or projection rebuild is needed.
+     */
+    static boolean isUnchangedProjection(
+            String head,
+            String lastSyncedCommit,
+            Integer projectionVersion
+    ) {
+        return head != null
+                && lastSyncedCommit != null
+                && head.equals(lastSyncedCommit)
+                && Integer.valueOf(
+                        GitRepositoryProjectionStore.CURRENT_PROJECTION_VERSION
+                ).equals(projectionVersion);
     }
 
     private String rootMessage(Exception exception) {
