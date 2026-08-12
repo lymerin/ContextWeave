@@ -80,9 +80,19 @@ public class GitRepositoryStorageService {
             validateRemote(remoteUrl);
             Files.createDirectories(repositoryDirectory.getParent());
             try (Git git = openOrClone(
-                    repositoryDirectory, remoteUrl, defaultBranch
+                    repositoryId, repositoryDirectory, remoteUrl, defaultBranch
             )) {
-                verifyRepositorySize(repositoryDirectory);
+                RuntimeMemoryProfiler.Stage sizeStage = stage(
+                        "REPOSITORY_SIZE_CHECK", repositoryId, null
+                );
+                try {
+                    verifyRepositorySize(repositoryDirectory);
+                } catch (RuntimeException | IOException exception) {
+                    if (sizeStage != null) sizeStage.failed(exception);
+                    throw exception;
+                } finally {
+                    if (sizeStage != null) sizeStage.close();
+                }
                 Repository repository = git.getRepository();
                 String head = repository.resolve("HEAD").name();
                 List<GitRepositoryFileProjection> files;
@@ -93,6 +103,9 @@ public class GitRepositoryStorageService {
                     files = scanFiles(repository);
                     if (scanStage != null) {
                         scanStage.attribute("fileCount", files.size());
+                        scanStage.attribute("javaFileCount", files.stream()
+                                .filter(file -> "Java".equals(file.language()))
+                                .count());
                         scanStage.attribute("sourceBytes", files.stream()
                                 .mapToLong(GitRepositoryFileProjection::sizeBytes).sum());
                     }
@@ -102,7 +115,23 @@ public class GitRepositoryStorageService {
                 } finally {
                     if (scanStage != null) scanStage.close();
                 }
-                List<GitCommitProjection> commits = scanCommits(git, repository);
+                List<GitCommitProjection> commits;
+                RuntimeMemoryProfiler.Stage commitStage = stage(
+                        "COMMIT_SCAN", repositoryId, head
+                );
+                try {
+                    commits = scanCommits(git, repository);
+                    if (commitStage != null) {
+                        commitStage.attribute("commitCount", commits.size());
+                        commitStage.attribute("diffCount", commits.stream()
+                                .mapToLong(commit -> commit.files().size()).sum());
+                    }
+                } catch (Exception exception) {
+                    if (commitStage != null) commitStage.failed(exception);
+                    throw exception;
+                } finally {
+                    if (commitStage != null) commitStage.close();
+                }
                 CodeGraphProjection codeGraph;
                 RuntimeMemoryProfiler.Stage graphStage = stage(
                         "CODE_GRAPH", repositoryId, head
@@ -122,9 +151,39 @@ public class GitRepositoryStorageService {
                 } finally {
                     if (graphStage != null) graphStage.close();
                 }
-                store.replaceFiles(repositoryId, files);
-                store.saveCommits(repositoryId, commits);
-                store.replaceCodeGraph(repositoryId, codeGraph);
+                RuntimeMemoryProfiler.Stage filesStage = stage(
+                        "DB_FILES", repositoryId, head
+                );
+                try {
+                    store.replaceFiles(repositoryId, files);
+                } catch (RuntimeException exception) {
+                    if (filesStage != null) filesStage.failed(exception);
+                    throw exception;
+                } finally {
+                    if (filesStage != null) filesStage.close();
+                }
+                RuntimeMemoryProfiler.Stage commitsStage = stage(
+                        "DB_COMMITS", repositoryId, head
+                );
+                try {
+                    store.saveCommits(repositoryId, commits);
+                } catch (RuntimeException exception) {
+                    if (commitsStage != null) commitsStage.failed(exception);
+                    throw exception;
+                } finally {
+                    if (commitsStage != null) commitsStage.close();
+                }
+                RuntimeMemoryProfiler.Stage graphDbStage = stage(
+                        "DB_CODE_GRAPH", repositoryId, head
+                );
+                try {
+                    store.replaceCodeGraph(repositoryId, codeGraph);
+                } catch (RuntimeException exception) {
+                    if (graphDbStage != null) graphDbStage.failed(exception);
+                    throw exception;
+                } finally {
+                    if (graphDbStage != null) graphDbStage.close();
+                }
                 store.markReady(repositoryId, head);
                 if (syncStage != null) {
                     syncStage.attribute("fileCount", files.size());
@@ -210,37 +269,54 @@ public class GitRepositoryStorageService {
     }
 
     private Git openOrClone(
+            UUID repositoryId,
             Path directory,
             String remoteUrl,
             String defaultBranch
     ) throws Exception {
-        if (Files.isDirectory(directory.resolve(".git"))) {
-            Git git = Git.open(directory.toFile());
-            git.fetch()
-                    .setRemoveDeletedRefs(true)
+        RuntimeMemoryProfiler.Stage transferStage = stage(
+                "GIT_TRANSFER", repositoryId, null
+        );
+        try {
+            if (Files.isDirectory(directory.resolve(".git"))) {
+                if (transferStage != null) {
+                    transferStage.attribute("operation", "fetch");
+                }
+                Git git = Git.open(directory.toFile());
+                git.fetch()
+                        .setRemoveDeletedRefs(true)
+                        .setTimeout(properties.timeoutSeconds())
+                        .call();
+                String remoteRef = "refs/remotes/origin/" + defaultBranch;
+                if (git.getRepository().resolve(remoteRef) == null) {
+                    git.close();
+                    throw new IllegalArgumentException(
+                            "Default branch does not exist: " + defaultBranch
+                    );
+                }
+                git.reset().setMode(ResetCommand.ResetType.HARD)
+                        .setRef(remoteRef).call();
+                return git;
+            }
+            if (Files.exists(directory)) {
+                deleteDirectory(directory);
+            }
+            if (transferStage != null) {
+                transferStage.attribute("operation", "clone");
+            }
+            return Git.cloneRepository()
+                    .setURI(remoteUrl)
+                    .setDirectory(directory.toFile())
+                    .setBranch(defaultBranch)
+                    .setCloneAllBranches(false)
                     .setTimeout(properties.timeoutSeconds())
                     .call();
-            String remoteRef = "refs/remotes/origin/" + defaultBranch;
-            if (git.getRepository().resolve(remoteRef) == null) {
-                git.close();
-                throw new IllegalArgumentException(
-                        "Default branch does not exist: " + defaultBranch
-                );
-            }
-            git.reset().setMode(ResetCommand.ResetType.HARD)
-                    .setRef(remoteRef).call();
-            return git;
+        } catch (Exception exception) {
+            if (transferStage != null) transferStage.failed(exception);
+            throw exception;
+        } finally {
+            if (transferStage != null) transferStage.close();
         }
-        if (Files.exists(directory)) {
-            deleteDirectory(directory);
-        }
-        return Git.cloneRepository()
-                .setURI(remoteUrl)
-                .setDirectory(directory.toFile())
-                .setBranch(defaultBranch)
-                .setCloneAllBranches(false)
-                .setTimeout(properties.timeoutSeconds())
-                .call();
     }
 
     List<GitRepositoryFileProjection> scanFiles(Repository repository)
