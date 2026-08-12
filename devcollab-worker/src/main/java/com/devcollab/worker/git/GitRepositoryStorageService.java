@@ -164,40 +164,9 @@ public class GitRepositoryStorageService {
                 } finally {
                     if (graphStage != null) graphStage.close();
                 }
-                RuntimeMemoryProfiler.Stage filesStage = stage(
-                        "DB_FILES", repositoryId, head
+                store.publishProjection(
+                        repositoryId, files, commits, codeGraph, head
                 );
-                try {
-                    store.replaceFiles(repositoryId, files);
-                } catch (RuntimeException exception) {
-                    if (filesStage != null) filesStage.failed(exception);
-                    throw exception;
-                } finally {
-                    if (filesStage != null) filesStage.close();
-                }
-                RuntimeMemoryProfiler.Stage commitsStage = stage(
-                        "DB_COMMITS", repositoryId, head
-                );
-                try {
-                    store.saveCommits(repositoryId, commits);
-                } catch (RuntimeException exception) {
-                    if (commitsStage != null) commitsStage.failed(exception);
-                    throw exception;
-                } finally {
-                    if (commitsStage != null) commitsStage.close();
-                }
-                RuntimeMemoryProfiler.Stage graphDbStage = stage(
-                        "DB_CODE_GRAPH", repositoryId, head
-                );
-                try {
-                    store.replaceCodeGraph(repositoryId, codeGraph);
-                } catch (RuntimeException exception) {
-                    if (graphDbStage != null) graphDbStage.failed(exception);
-                    throw exception;
-                } finally {
-                    if (graphDbStage != null) graphDbStage.close();
-                }
-                store.markReady(repositoryId, head);
                 if (syncStage != null) {
                     syncStage.attribute("fileCount", files.size());
                     syncStage.attribute("commitCount", commits.size());
