@@ -250,7 +250,7 @@ public class GitRepositoryStorageService {
         return target;
     }
 
-    private Git openOrClone(
+    Git openOrClone(
             UUID repositoryId,
             Path directory,
             String remoteUrl,
@@ -290,6 +290,7 @@ public class GitRepositoryStorageService {
                     .setURI(remoteUrl)
                     .setDirectory(directory.toFile())
                     .setBranch(defaultBranch)
+                    .setDepth(historyDepth())
                     .setCloneAllBranches(false)
                     .setTimeout(properties.timeoutSeconds())
                     .call();
@@ -568,6 +569,26 @@ public class GitRepositoryStorageService {
             case "proto" -> "Protocol Buffers";
             default -> null;
         };
+    }
+
+    /**
+     * Shallow clone depth: the {@code max-commits} newest commits plus one,
+     * because the diff of the {@code max-commits}-th commit still needs one
+     * more parent. Rejects non-positive configurations and safely handles
+     * {@link Integer#MAX_VALUE}.
+     */
+    static int historyDepth(int maxCommits) {
+        if (maxCommits <= 0) {
+            throw new IllegalArgumentException(
+                    "max-commits must be positive: " + maxCommits
+            );
+        }
+        return maxCommits == Integer.MAX_VALUE
+                ? Integer.MAX_VALUE : maxCommits + 1;
+    }
+
+    private int historyDepth() {
+        return historyDepth(properties.maxCommits());
     }
 
     /**
