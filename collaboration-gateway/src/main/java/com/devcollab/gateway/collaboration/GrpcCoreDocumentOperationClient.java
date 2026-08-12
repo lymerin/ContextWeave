@@ -107,6 +107,8 @@ public class GrpcCoreDocumentOperationClient
                 );
             }
             throw exception;
+        } catch (IllegalArgumentException exception) {
+            return CoreDocumentOperationResult.rejected(exception.getMessage());
         }
     }
 

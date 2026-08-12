@@ -2,7 +2,6 @@ package com.devcollab.gateway.collaboration;
 
 import io.grpc.ConnectivityState;
 import io.grpc.StatusRuntimeException;
-import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -58,16 +57,16 @@ public class CoreGrpcClientMetrics {
             status = "CLIENT_ERROR";
             throw exception;
         } finally {
-            Counter.builder(REQUESTS_METRIC)
-                    .description("Knowledge Core gRPC client calls")
-                    .tags("method", method, "status", status)
-                    .register(registry)
-                    .increment();
-            sample.stop(Timer.builder(DURATION_METRIC)
-                    .description("Knowledge Core gRPC client call duration")
-                    .tags("method", method, "status", status)
-                    .publishPercentileHistogram()
-                    .register(registry));
+            registry.counter(
+                    REQUESTS_METRIC,
+                    "method", method,
+                    "status", status
+            ).increment();
+            sample.stop(registry.timer(
+                    DURATION_METRIC,
+                    "method", method,
+                    "status", status
+            ));
         }
     }
 }

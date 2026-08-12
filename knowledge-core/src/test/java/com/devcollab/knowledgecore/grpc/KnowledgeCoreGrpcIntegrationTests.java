@@ -209,6 +209,37 @@ class KnowledgeCoreGrpcIntegrationTests {
     }
 
     @Test
+    void delegationTokenWithoutGrpcToolIsPermissionDenied() throws Exception {
+        Fixture fixture = fixture();
+        String restrictedToken = jwtTokenService.issueAgentDelegationToken(
+                UUID.fromString(fixture.userId()),
+                UUID.randomUUID(),
+                UUID.fromString(fixture.workspaceId()),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "abc1234",
+                List.of("devcollab.repository.list_files"),
+                Duration.ofMinutes(5)
+        );
+
+        assertThatThrownBy(() -> authenticatedStub(restrictedToken)
+                .applyDocumentOperation(
+                        ApplyDocumentOperationRequest.newBuilder()
+                                .setDocumentId(fixture.documentId())
+                                .setClientOperationId(UUID.randomUUID().toString())
+                                .setOperationType(DocumentOperationType.UPDATE_TEXT)
+                                .setBlockId(fixture.blockId())
+                                .setExpectedVersion(0)
+                                .setText("blocked")
+                                .build()
+                )).isInstanceOfSatisfying(
+                StatusRuntimeException.class,
+                exception -> assertThat(exception.getStatus().getCode())
+                        .isEqualTo(Status.Code.PERMISSION_DENIED)
+        );
+    }
+
+    @Test
     void invalidUuidIsInvalidArgumentWithStableErrorCode() throws Exception {
         String token = delegationTokenFor(registerAndGetAccessToken());
 
@@ -275,13 +306,14 @@ class KnowledgeCoreGrpcIntegrationTests {
                                 """))
                 .andExpect(status().isCreated())
                 .andReturn()).get("id").asText();
+        String userId = responseJson(mockMvc.perform(
+                        get("/api/v1/auth/me")
+                                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                )
+                .andExpect(status().isOk())
+                .andReturn()).get("userId").asText();
         String delegationToken = jwtTokenService.issueAgentDelegationToken(
-                UUID.fromString(responseJson(mockMvc.perform(
-                                get("/api/v1/auth/me")
-                                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
-                        )
-                        .andExpect(status().isOk())
-                        .andReturn()).get("userId").asText()),
+                UUID.fromString(userId),
                 UUID.randomUUID(),
                 UUID.fromString(workspaceId),
                 UUID.randomUUID(),
@@ -290,7 +322,7 @@ class KnowledgeCoreGrpcIntegrationTests {
                 List.of("devcollab.grpc.collaboration"),
                 Duration.ofMinutes(5)
         );
-        return new Fixture(delegationToken, workspaceId, documentId, blockId);
+        return new Fixture(delegationToken, userId, workspaceId, documentId, blockId);
     }
 
     private String delegationTokenFor(String accessToken) throws Exception {
@@ -342,6 +374,7 @@ class KnowledgeCoreGrpcIntegrationTests {
 
     private record Fixture(
             String token,
+            String userId,
             String workspaceId,
             String documentId,
             String blockId

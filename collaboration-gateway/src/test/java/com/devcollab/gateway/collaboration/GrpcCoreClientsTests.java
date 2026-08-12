@@ -216,6 +216,24 @@ class GrpcCoreClientsTests {
     }
 
     @Test
+    void operationClientRejectsInvalidLocalEnumValues() {
+        var rejected = operationClient.apply(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "operation-token",
+                "NOT_A_REAL_OPERATION",
+                "text",
+                0L,
+                null,
+                null
+        );
+
+        assertThat(rejected.status()).isEqualTo("REJECTED");
+        assertThat(rejected.message()).contains("NOT_A_REAL_OPERATION");
+    }
+
+    @Test
     void deadlineExceededIsNotConvertedToBusinessRejection() {
         CoreGrpcClientProperties shortDeadline = properties(
                 Duration.ofMillis(30)

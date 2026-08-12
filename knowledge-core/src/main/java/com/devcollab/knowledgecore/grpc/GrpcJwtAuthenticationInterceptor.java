@@ -13,6 +13,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class GrpcJwtAuthenticationInterceptor implements ServerInterceptor {
 
+    public static final String REQUIRED_TOOL = "devcollab.grpc.collaboration";
+
     public static final Metadata.Key<String> AUTHORIZATION =
             Metadata.Key.of(
                     "authorization",
@@ -47,10 +49,20 @@ public class GrpcJwtAuthenticationInterceptor implements ServerInterceptor {
             var claims = tokenService.verify(authorization.substring(7));
             if (!JwtTokenService.TOKEN_TYPE_AGENT_DELEGATION.equals(
                     claims.tokenType()
-            ) || claims.allowedTools().isEmpty()) {
+            )) {
                 throw new IllegalArgumentException(
                         "Agent delegation token is required"
                 );
+            }
+            if (!claims.allowedTools().contains(REQUIRED_TOOL)) {
+                call.close(
+                        Status.PERMISSION_DENIED.withDescription(
+                                "gRPC collaboration tool is not allowed"
+                        ),
+                        new Metadata()
+                );
+                return new ServerCall.Listener<>() {
+                };
             }
             Context context = Context.current().withValue(
                     GrpcAuthenticationContext.TOKEN_CLAIMS,
