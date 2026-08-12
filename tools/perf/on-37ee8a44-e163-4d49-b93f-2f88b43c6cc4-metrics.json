@@ -1,0 +1,157 @@
+{
+  "job_id": "37ee8a44-e163-4d49-b93f-2f88b43c6cc4",
+  "workspace_id": "00405c1e-a85a-4737-bfbf-fb8ac6f159ad",
+  "repository_id": "4a2b56ea-efb6-4790-9b0e-9a6ad1042229",
+  "revision": "88e37c15cf6fc8490b01bc3e8e2c800cec1ac272",
+  "status": "PARTIALLY_COMPLETED",
+  "created_at": "2026-08-10T13:20:34.994746Z",
+  "started_at": "2026-08-10T13:20:36.143907Z",
+  "updated_at": "2026-08-10T13:40:11.639247Z",
+  "total_units": 41,
+  "completed_units": 38,
+  "failed_units": 3,
+  "metrics": {
+    "schema_version": 1,
+    "started_at": "2026-08-10T13:44:11Z",
+    "generated_at": "2026-08-10T13:44:11Z",
+    "counters": {
+      "delegation_exchange_count": 114,
+      "session_initialize_count": 42,
+      "mcp_tool_calls": 285,
+      "code_read_batch_calls": 41,
+      "retry_count": 36,
+      "retry_backoff_ms_total": 10800000
+    },
+    "mcp": {
+      "tool_calls": 285,
+      "session_initialize_count": 42,
+      "duration_ms": {
+        "count": 285,
+        "p50": 26.774,
+        "p95": 74.951,
+        "p99": 119.094,
+        "mean": 33.581
+      },
+      "by_tool": {
+        "devcollab.binding.list_batch": {
+          "count": 42,
+          "duration_ms": {
+            "count": 42,
+            "p50": 21.465,
+            "p95": 31.169,
+            "p99": 47.982,
+            "mean": 23.557
+          }
+        },
+        "devcollab.code.read_batch": {
+          "count": 41,
+          "duration_ms": {
+            "count": 41,
+            "p50": 15.569,
+            "p95": 75.026,
+            "p99": 86.075,
+            "mean": 24.264
+          }
+        },
+        "devcollab.document.find_candidates_batch": {
+          "count": 41,
+          "duration_ms": {
+            "count": 41,
+            "p50": 19.005,
+            "p95": 67.6,
+            "p99": 131.698,
+            "mean": 27.454
+          }
+        },
+        "devcollab.document.get_structure_batch": {
+          "count": 36,
+          "duration_ms": {
+            "count": 36,
+            "p50": 32.658,
+            "p95": 56.491,
+            "p99": 59.274,
+            "mean": 36.102
+          }
+        },
+        "devcollab.repository.inspect_code_metadata": {
+          "count": 1,
+          "duration_ms": {
+            "count": 1,
+            "p50": 83.698,
+            "p95": 83.698,
+            "p99": 83.698,
+            "mean": 83.698
+          }
+        },
+        "devcollab.repository.list_files": {
+          "count": 42,
+          "duration_ms": {
+            "count": 42,
+            "p50": 28.072,
+            "p95": 45.144,
+            "p99": 104.651,
+            "mean": 33.521
+          }
+        },
+        "devcollab.review.submit_document_change": {
+          "count": 41,
+          "duration_ms": {
+            "count": 41,
+            "p50": 24.21,
+            "p95": 82.874,
+            "p99": 131.399,
+            "mean": 33.032
+          }
+        },
+        "devcollab.workspace.get_context": {
+          "count": 41,
+          "duration_ms": {
+            "count": 41,
+            "p50": 50.843,
+            "p95": 88.709,
+            "p99": 94.971,
+            "mean": 56.468
+          }
+        }
+      }
+    },
+    "delegation": {
+      "exchange_count": 114
+    },
+    "retry": {
+      "rate_limit_429_count": 0,
+      "retry_count": 36,
+      "backoff_ms_total": 10800000
+    },
+    "stages": {
+      "model_call": {
+        "count": 37,
+        "p50": 41540.491,
+        "p95": 80861.308,
+        "p99": 108040.748,
+        "mean": 44777.581
+      },
+      "read": {
+        "count": 41,
+        "p50": 121.775,
+        "p95": 240.767,
+        "p99": 261.872,
+        "mean": 141.599
+      },
+      "parse": {
+        "count": 41,
+        "p50": 0.954,
+        "p95": 29.652,
+        "p99": 83.626,
+        "mean": 6.931
+      },
+      "submit": {
+        "count": 36,
+        "p50": 26.819,
+        "p95": 43.465,
+        "p99": 45.619,
+        "mean": 28.735
+      }
+    }
+  }
+}

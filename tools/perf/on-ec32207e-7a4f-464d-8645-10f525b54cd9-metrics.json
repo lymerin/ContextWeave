@@ -1,0 +1,55 @@
+{
+  "job_id": "ec32207e-7a4f-464d-8645-10f525b54cd9",
+  "workspace_id": "6facf32e-243f-4b2f-b166-23115858e960",
+  "repository_id": "606cbb6e-97d3-4f02-804d-600828664cc0",
+  "revision": "88e37c15cf6fc8490b01bc3e8e2c800cec1ac272",
+  "status": "FAILED",
+  "created_at": "2026-08-10T13:12:00.986316Z",
+  "started_at": "2026-08-10T13:12:01.137779Z",
+  "updated_at": "2026-08-10T13:12:01.442377Z",
+  "total_units": 1,
+  "completed_units": 0,
+  "failed_units": 1,
+  "metrics": {
+    "schema_version": 1,
+    "started_at": "2026-08-10T13:12:43Z",
+    "generated_at": "2026-08-10T13:12:43Z",
+    "counters": {
+      "delegation_exchange_count": 1,
+      "session_initialize_count": 1,
+      "mcp_tool_calls": 1
+    },
+    "mcp": {
+      "tool_calls": 1,
+      "session_initialize_count": 1,
+      "duration_ms": {
+        "count": 1,
+        "p50": 172.716,
+        "p95": 172.716,
+        "p99": 172.716,
+        "mean": 172.716
+      },
+      "by_tool": {
+        "devcollab.repository.list_files": {
+          "count": 1,
+          "duration_ms": {
+            "count": 1,
+            "p50": 172.716,
+            "p95": 172.716,
+            "p99": 172.716,
+            "mean": 172.716
+          }
+        }
+      }
+    },
+    "delegation": {
+      "exchange_count": 1
+    },
+    "retry": {
+      "rate_limit_429_count": 0,
+      "retry_count": 0,
+      "backoff_ms_total": 0
+    },
+    "stages": {}
+  }
+}

@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-08-10T10:09:33.090788+00:00",
+  "completed_at": "2026-08-10T10:52:03.836180+00:00",
+  "code_commit": "22e7824",
+  "agent_branch": "main",
+  "base_url": "http://localhost:8088",
+  "agent_prefix": "/agent-api",
+  "repo_url": "https://github.com/XMU-Linjer/devcolab.git",
+  "repo_branch": "main",
+  "workspace_id": "7ccdc4d9-b812-4710-bdb3-2a5c9be38702",
+  "repository_id": "a0ae4ad5-db33-4866-bc1a-1ccb6d53c290",
+  "target_revision": "e766c1ce1cac74ae8fa13906a8ca59afd6efae50",
+  "actual_file_count": 991,
+  "switch_mode": "off",
+  "rounds_per_config": 1,
+  "switch_application": {
+    "switches": [
+      "AGENT_MCP_SESSION_POOL_ENABLED",
+      "AGENT_DELEGATION_TOKEN_CACHE_ENABLED",
+      "AGENT_BATCH_TOOLS_ENABLED",
+      "AGENT_INCREMENTAL_READ_ENABLED",
+      "AGENT_CODE_READ_BATCH_ENABLED",
+      "AGENT_STAGED_PIPELINE_ENABLED",
+      "DEVCOLLAB_CODE_METADATA_CACHE_ENABLED"
+    ],
+    "restart_command_provided": false,
+    "note": "Agent and knowledge-core switches are process settings. Provide --restart-command, or restart services externally between configs, so each listed environment is effective."
+  },
+  "configs": [
+    {
+      "name": "off",
+      "environment": {
+        "AGENT_MCP_SESSION_POOL_ENABLED": "false",
+        "AGENT_DELEGATION_TOKEN_CACHE_ENABLED": "false",
+        "AGENT_BATCH_TOOLS_ENABLED": "false",
+        "AGENT_INCREMENTAL_READ_ENABLED": "false",
+        "AGENT_CODE_READ_BATCH_ENABLED": "false",
+        "AGENT_STAGED_PIPELINE_ENABLED": "false",
+        "DEVCOLLAB_CODE_METADATA_CACHE_ENABLED": "false"
+      },
+      "records": [
+        {
+          "schema_version": 1,
+          "scenario": "off",
+          "phase": "measure",
+          "round": 1,
+          "status": "ERROR",
+          "result": null,
+          "code_commit": "22e7824",
+          "job_revision": null,
+          "tool_calls": 0,
+          "session_init_count": 0,
+          "delegation_exchange_count": 0,
+          "mcp_p95_ms": 0.0,
+          "unit_throughput_per_s": 0.0,
+          "queue_wait_s": 0.0,
+          "peak_rss_bytes": 0,
+          "total_duration_s": 0.0,
+          "output_bytes": 0,
+          "rate_limit_429_count": 0,
+          "retry_count": 0,
+          "retry_backoff_ms_total": 0,
+          "total_units": 0,
+          "completed_units": 0,
+          "failed_units": 0,
+          "error": "Timed out waiting for condition"
+        }
+      ],
+      "metric_summary": {
+        "tool_calls": {
+          "sample_count": 0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "mean": 0.0
+        },
+        "session_init_count": {
+          "sample_count": 0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "mean": 0.0
+        },
+        "delegation_exchange_count": {
+          "sample_count": 0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "mean": 0.0
+        },
+        "mcp_p95_ms": {
+          "sample_count": 0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "mean": 0.0
+        },
+        "unit_throughput_per_s": {
+          "sample_count": 0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "mean": 0.0
+        },
+        "queue_wait_s": {
+          "sample_count": 0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "mean": 0.0
+        },
+        "peak_rss_bytes": {
+          "sample_count": 0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "mean": 0.0
+        },
+        "total_duration_s": {
+          "sample_count": 0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "mean": 0.0
+        },
+        "output_bytes": {
+          "sample_count": 0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "mean": 0.0
+        },
+        "rate_limit_429_count": {
+          "sample_count": 0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "mean": 0.0
+        },
+        "retry_count": {
+          "sample_count": 0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "mean": 0.0
+        },
+        "retry_backoff_ms_total": {
+          "sample_count": 0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "mean": 0.0
+        },
+        "counters": {
+          "code_read_batch_calls": {
+            "sample_count": 0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "mean": 0.0
+          },
+          "code_read_batch_continuations": {
+            "sample_count": 0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "mean": 0.0
+          },
+          "metadata_cache_hit_count": {
+            "sample_count": 0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "mean": 0.0
+          },
+          "metadata_cache_miss_count": {
+            "sample_count": 0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "mean": 0.0
+          },
+          "code_metadata_cache_hit_count": {
+            "sample_count": 0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "mean": 0.0
+          },
+          "code_metadata_cache_miss_count": {
+            "sample_count": 0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "mean": 0.0
+          },
+          "incremental_read_skipped_files": {
+            "sample_count": 0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "mean": 0.0
+          },
+          "incremental_read_skip_count": {
+            "sample_count": 0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "mean": 0.0
+          }
+        },
+        "mcp_by_tool": {}
+      },
+      "job_result_summary": [
+        {
+          "round": 1,
+          "job_id": null,
+          "status": "ERROR",
+          "result": null,
+          "job_revision": null,
+          "total_units": 0,
+          "completed_units": 0,
+          "failed_units": 0,
+          "output_bytes": 0,
+          "error": "Timed out waiting for condition"
+        }
+      ],
+      "error": "Timed out waiting for condition"
+    }
+  ],
+  "stop_reason": null
+}

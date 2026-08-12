@@ -1,0 +1,111 @@
+{
+  "job_id": "e1ebb4ad-8f0a-4dc4-af2c-df1015373472",
+  "workspace_id": "9a4bbfda-fc40-4950-a76a-4a37711e63a1",
+  "repository_id": "62d02bb7-3722-414b-8c29-87508613e665",
+  "revision": "88e37c15cf6fc8490b01bc3e8e2c800cec1ac272",
+  "status": "FAILED",
+  "created_at": "2026-08-10T12:17:32.029205Z",
+  "started_at": "2026-08-10T12:17:33.045715Z",
+  "updated_at": "2026-08-10T12:18:45.665620Z",
+  "total_units": 5,
+  "completed_units": 0,
+  "failed_units": 5,
+  "metrics": {
+    "schema_version": 1,
+    "started_at": "2026-08-10T12:19:23Z",
+    "generated_at": "2026-08-10T12:19:23Z",
+    "counters": {
+      "delegation_exchange_count": 6,
+      "session_initialize_count": 6,
+      "mcp_tool_calls": 18,
+      "code_read_batch_calls": 5
+    },
+    "mcp": {
+      "tool_calls": 18,
+      "session_initialize_count": 6,
+      "duration_ms": {
+        "count": 18,
+        "p50": 45.348,
+        "p95": 81.126,
+        "p99": 83.916,
+        "mean": 46.207
+      },
+      "by_tool": {
+        "devcollab.binding.list_batch": {
+          "count": 1,
+          "duration_ms": {
+            "count": 1,
+            "p50": 23.653,
+            "p95": 23.653,
+            "p99": 23.653,
+            "mean": 23.653
+          }
+        },
+        "devcollab.code.read_batch": {
+          "count": 5,
+          "duration_ms": {
+            "count": 5,
+            "p50": 7.503,
+            "p95": 39.202,
+            "p99": 43.467,
+            "mean": 16.337
+          }
+        },
+        "devcollab.repository.inspect_code_metadata": {
+          "count": 1,
+          "duration_ms": {
+            "count": 1,
+            "p50": 75.708,
+            "p95": 75.708,
+            "p99": 75.708,
+            "mean": 75.708
+          }
+        },
+        "devcollab.repository.list_files": {
+          "count": 6,
+          "duration_ms": {
+            "count": 6,
+            "p50": 44.868,
+            "p95": 72.975,
+            "p99": 79.004,
+            "mean": 47.452
+          }
+        },
+        "devcollab.workspace.get_context": {
+          "count": 5,
+          "duration_ms": {
+            "count": 5,
+            "p50": 79.795,
+            "p95": 83.698,
+            "p99": 84.43,
+            "mean": 73.194
+          }
+        }
+      }
+    },
+    "delegation": {
+      "exchange_count": 6
+    },
+    "retry": {
+      "rate_limit_429_count": 0,
+      "retry_count": 0,
+      "backoff_ms_total": 0
+    },
+    "stages": {
+      "model_call": {
+        "count": 1,
+        "p50": 71681.81,
+        "p95": 71681.81,
+        "p99": 71681.81,
+        "mean": 71681.81
+      },
+      "read": {
+        "count": 5,
+        "p50": 165.452,
+        "p95": 195.492,
+        "p99": 199.105,
+        "mean": 162.181
+      }
+    }
+  }
+}
