@@ -10,7 +10,7 @@ The implementation must preserve this central interaction:
 
 > Selecting a code anchor focuses the corresponding document Block; selecting a document Block focuses the corresponding code range. Issues, evidence, review state, and drift warnings are shared across both sides.
 
-The HTML prototype in this directory is the authoritative interaction reference.
+The legacy standalone HTML prototype has been removed. The current Vue workbench implementation is the visual authority; this document now describes the interaction contract and product constraints that implementation must preserve.
 
 ## 2. Non-negotiable layout
 
