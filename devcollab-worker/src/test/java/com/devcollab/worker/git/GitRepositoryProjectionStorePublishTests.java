@@ -233,6 +233,7 @@ class GitRepositoryProjectionStorePublishTests {
         store.publishProjection(
                 repositoryId,
                 List.of(file("a/One.java", "sha1"), file("a/Two.java", "sha2")),
+                List.of(),
                 List.of(commit("c1", "first", List.of(diff("a/One.java", "ADDED")))),
                 graph(),
                 "c1"
@@ -274,6 +275,7 @@ class GitRepositoryProjectionStorePublishTests {
         store.publishProjection(
                 repositoryId,
                 List.of(file("a/Keep.java", "keep-sha")),
+                List.of(),
                 List.of(commit("keep", "kept", List.of())),
                 new CodeGraphProjection(List.of(), List.of(), List.of(), List.of()),
                 "keep"
@@ -282,6 +284,7 @@ class GitRepositoryProjectionStorePublishTests {
         assertThatThrownBy(() -> store.publishProjection(
                 repositoryId,
                 List.of(file("b/Bomb.java", "bomb-sha")),
+                List.of(),
                 List.of(commit("bomb", "x".repeat(501), List.of())),
                 graph(),
                 "bomb"
@@ -313,6 +316,7 @@ class GitRepositoryProjectionStorePublishTests {
         store.publishProjection(
                 repositoryId,
                 List.of(file("a/One.java", "sha1")),
+                List.of(),
                 List.of(commit("c1", "first", List.of(diff("a/One.java", "ADDED")))),
                 new CodeGraphProjection(List.of(), List.of(), List.of(), List.of()),
                 "c1"
@@ -320,6 +324,7 @@ class GitRepositoryProjectionStorePublishTests {
         store.publishProjection(
                 repositoryId,
                 List.of(file("a/One.java", "sha1"), file("a/Two.java", "sha2")),
+                List.of(),
                 List.of(commit("c1", "first",
                         List.of(diff("a/One.java", "MODIFIED"), diff("a/Two.java", "ADDED")))),
                 new CodeGraphProjection(List.of(), List.of(), List.of(), List.of()),
@@ -344,7 +349,7 @@ class GitRepositoryProjectionStorePublishTests {
             files.add(file("dir/f" + i + ".txt", "sha" + i));
         }
         store.publishProjection(
-                repositoryId, files,
+                repositoryId, files, List.of(),
                 List.of(commit("big", "big", List.of())),
                 new CodeGraphProjection(List.of(), List.of(), List.of(), List.of()),
                 "big"
@@ -352,5 +357,76 @@ class GitRepositoryProjectionStorePublishTests {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM git_repository_files WHERE repository_id = ?",
                 Integer.class, repositoryId)).isEqualTo(1200);
+    }
+
+    @Test
+    void incrementalPublishPreservesUnchangedContentAndDeletesRemovedPaths() {
+        store.publishProjection(
+                repositoryId,
+                List.of(file("a/Keep.java", "keep-sha"), file("b/Gone.java", "gone-sha")),
+                List.of(),
+                List.of(commit("c1", "first", List.of())),
+                new CodeGraphProjection(List.of(), List.of(), List.of(), List.of()),
+                "c1"
+        );
+        // Pretend the untouched row holds content an earlier version wrote;
+        // the incremental publish must not rewrite it.
+        jdbc.update("""
+                UPDATE git_repository_files
+                   SET content_text = 'MARKER'
+                 WHERE repository_id = ? AND path = 'a/Keep.java'
+                """, repositoryId);
+
+        store.publishProjection(
+                repositoryId,
+                List.of(file("c/New.java", "new-sha")),
+                List.of("b/Gone.java"),
+                List.of(commit("c2", "second", List.of())),
+                new CodeGraphProjection(List.of(), List.of(), List.of(), List.of()),
+                "c2"
+        );
+
+        assertThat(jdbc.queryForObject(
+                "SELECT content_text FROM git_repository_files WHERE repository_id = ? AND path = 'a/Keep.java'",
+                String.class, repositoryId)).isEqualTo("MARKER");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM git_repository_files WHERE repository_id = ? AND path = 'b/Gone.java'",
+                Integer.class, repositoryId)).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT blob_sha FROM git_repository_files WHERE repository_id = ? AND path = 'c/New.java'",
+                String.class, repositoryId)).isEqualTo("new-sha");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM git_repository_files WHERE repository_id = ?",
+                Integer.class, repositoryId)).isEqualTo(2);
+    }
+
+    @Test
+    void incrementalPublishUpsertsChangedPathInPlace() {
+        store.publishProjection(
+                repositoryId,
+                List.of(file("a/One.java", "sha-v1")),
+                List.of(),
+                List.of(commit("c1", "first", List.of())),
+                new CodeGraphProjection(List.of(), List.of(), List.of(), List.of()),
+                "c1"
+        );
+        store.publishProjection(
+                repositoryId,
+                List.of(file("a/One.java", "sha-v2")),
+                List.of(),
+                List.of(commit("c2", "second", List.of())),
+                new CodeGraphProjection(List.of(), List.of(), List.of(), List.of()),
+                "c2"
+        );
+
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM git_repository_files WHERE repository_id = ?",
+                Integer.class, repositoryId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT blob_sha FROM git_repository_files WHERE repository_id = ? AND path = 'a/One.java'",
+                String.class, repositoryId)).isEqualTo("sha-v2");
+        assertThat(jdbc.queryForObject(
+                "SELECT content_text FROM git_repository_files WHERE repository_id = ? AND path = 'a/One.java'",
+                String.class, repositoryId)).isEqualTo("code");
     }
 }

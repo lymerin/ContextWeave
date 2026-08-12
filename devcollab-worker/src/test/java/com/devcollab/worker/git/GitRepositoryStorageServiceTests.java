@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -212,6 +213,7 @@ class GitRepositoryStorageServiceTests {
     @Test
     void projectsReadableSourceButSkipsBinaryAndOversizedFiles() throws Exception {
         GitRepositoryProjectionStore store = mock(GitRepositoryProjectionStore.class);
+        when(store.loadFileFingerprints(any())).thenReturn(Map.of());
         GitRepositoryStorageService service = service(store);
         Path repositoryDirectory = tempDir.resolve("source-fixture");
         Files.createDirectories(repositoryDirectory);
@@ -237,7 +239,7 @@ class GitRepositoryStorageServiceTests {
                 git.commit().setMessage("source fixture").call();
 
                 Map<String, GitRepositoryFileProjection> projected = service
-                        .scanFiles(repository).stream()
+                        .scanFiles(repository, UUID.randomUUID()).changed().stream()
                         .collect(Collectors.toMap(
                                 GitRepositoryFileProjection::path,
                                 value -> value

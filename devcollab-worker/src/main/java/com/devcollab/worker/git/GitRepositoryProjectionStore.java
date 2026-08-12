@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +59,24 @@ public class GitRepositoryProjectionStore {
                 ), repositoryId);
     }
 
+    /**
+     * Current file fingerprints ({@code path -> blob_sha}) for incremental
+     * scanning: files whose SHA matches are skipped (content, decoding and
+     * DB rewrite), anything else is treated as changed.
+     */
+    public Map<String, String> loadFileFingerprints(UUID repositoryId) {
+        return jdbcTemplate.query("""
+                SELECT path, blob_sha
+                  FROM git_repository_files
+                 WHERE repository_id = ?
+                """, (rs, rowNum) -> Map.entry(
+                        rs.getString("path"), rs.getString("blob_sha")
+                ), repositoryId).stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey, Map.Entry::getValue
+                ));
+    }
+
     public boolean markSyncing(UUID repositoryId) {
         return jdbcTemplate.update("""
                 UPDATE git_repositories
@@ -68,19 +87,23 @@ public class GitRepositoryProjectionStore {
     }
 
     /**
-     * Publish a complete projection in a single transaction. Readers only see
-     * the previous projection (and previous checkpoint) until the commit
+     * Publish a projection in a single transaction. Files are applied
+     * incrementally: only {@code changedFiles} are upserted and only
+     * {@code deletedPaths} are removed; every other row keeps its content.
+     * Commits are upserted by SHA and history is never deleted. Readers only
+     * see the previous projection (and previous checkpoint) until the commit
      * succeeds; on failure everything rolls back together.
      */
     @Transactional
     public void publishProjection(
             UUID repositoryId,
-            List<GitRepositoryFileProjection> files,
+            List<GitRepositoryFileProjection> changedFiles,
+            List<String> deletedPaths,
             List<GitCommitProjection> commits,
             CodeGraphProjection graph,
             String headCommit
     ) {
-        stageFiles(repositoryId, files, headCommit);
+        stageFiles(repositoryId, changedFiles, deletedPaths, headCommit);
         stageCommits(repositoryId, commits, headCommit);
         stageGraph(repositoryId, graph, headCommit);
         markReady(repositoryId, headCommit);
@@ -88,12 +111,13 @@ public class GitRepositoryProjectionStore {
 
     private void stageFiles(
             UUID repositoryId,
-            List<GitRepositoryFileProjection> files,
+            List<GitRepositoryFileProjection> changedFiles,
+            List<String> deletedPaths,
             String head
     ) {
         RuntimeMemoryProfiler.Stage stage = stage("DB_FILES", repositoryId, head);
         try {
-            replaceFiles(repositoryId, files);
+            applyFileChanges(repositoryId, changedFiles, deletedPaths);
         } catch (RuntimeException exception) {
             if (stage != null) stage.failed(exception);
             throw exception;
@@ -144,29 +168,87 @@ public class GitRepositoryProjectionStore {
         );
     }
 
-    private void replaceFiles(
+    /**
+     * Upsert changed rows and delete removed paths; untouched rows stay
+     * byte-identical, including {@code content_text}.
+     */
+    private void applyFileChanges(
             UUID repositoryId,
-            List<GitRepositoryFileProjection> files
+            List<GitRepositoryFileProjection> changed,
+            List<String> deletedPaths
     ) {
-        jdbcTemplate.update(
-                "DELETE FROM git_repository_files WHERE repository_id = ?",
-                repositoryId
-        );
-        if (files.isEmpty()) {
-            return;
+        Map<String, UUID> existingIds = new HashMap<>();
+        for (int start = 0; start < changed.size(); start += BATCH_CHUNK_SIZE) {
+            List<GitRepositoryFileProjection> chunk = changed.subList(
+                    start, Math.min(start + BATCH_CHUNK_SIZE, changed.size())
+            );
+            String placeholders = chunk.stream().map(id -> "?")
+                    .collect(Collectors.joining(", "));
+            Object[] args = new Object[chunk.size() + 1];
+            args[0] = repositoryId;
+            for (int i = 0; i < chunk.size(); i++) {
+                args[i + 1] = chunk.get(i).path();
+            }
+            jdbcTemplate.query("""
+                    SELECT path, id
+                      FROM git_repository_files
+                     WHERE repository_id = ? AND path IN (%s)
+                    """.formatted(placeholders),
+                    (rs, rowNum) -> Map.entry(
+                            rs.getString("path"), rs.getObject("id", UUID.class)
+                    ), args)
+                    .forEach(entry -> existingIds.put(
+                            entry.getKey(), entry.getValue()
+                    ));
         }
-        batchInsert("""
-                INSERT INTO git_repository_files
-                    (id, repository_id, path, blob_sha, size_bytes, language,
-                     content_text)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, files.stream()
-                .map(file -> new Object[]{
+        List<Object[]> inserts = new ArrayList<>();
+        List<Object[]> updates = new ArrayList<>();
+        for (GitRepositoryFileProjection file : changed) {
+            UUID id = existingIds.get(file.path());
+            if (id == null) {
+                inserts.add(new Object[]{
                         UUID.randomUUID(), repositoryId, file.path(),
                         file.blobSha(), file.sizeBytes(), file.language(),
                         file.contentText()
-                })
-                .toList());
+                });
+            } else {
+                updates.add(new Object[]{
+                        file.blobSha(), file.sizeBytes(), file.language(),
+                        file.contentText(), id
+                });
+            }
+        }
+        if (!inserts.isEmpty()) {
+            batchInsert("""
+                    INSERT INTO git_repository_files
+                        (id, repository_id, path, blob_sha, size_bytes, language,
+                         content_text)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, inserts);
+        }
+        if (!updates.isEmpty()) {
+            jdbcTemplate.batchUpdate("""
+                    UPDATE git_repository_files
+                       SET blob_sha = ?, size_bytes = ?, language = ?,
+                           content_text = ?
+                     WHERE id = ?
+                    """, updates);
+        }
+        for (int start = 0; start < deletedPaths.size();
+             start += BATCH_CHUNK_SIZE) {
+            List<String> chunk = deletedPaths.subList(
+                    start, Math.min(start + BATCH_CHUNK_SIZE, deletedPaths.size())
+            );
+            String placeholders = chunk.stream().map(id -> "?")
+                    .collect(Collectors.joining(", "));
+            Object[] args = new Object[chunk.size() + 1];
+            args[0] = repositoryId;
+            System.arraycopy(chunk.toArray(), 0, args, 1, chunk.size());
+            jdbcTemplate.update("""
+                    DELETE FROM git_repository_files
+                     WHERE repository_id = ? AND path IN (%s)
+                    """.formatted(placeholders), args);
+        }
     }
 
     private void saveCommits(

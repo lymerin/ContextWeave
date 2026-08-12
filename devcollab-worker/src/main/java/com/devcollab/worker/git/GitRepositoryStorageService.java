@@ -32,8 +32,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -108,19 +111,22 @@ public class GitRepositoryStorageService {
                     }
                     return;
                 }
-                List<GitRepositoryFileProjection> files;
+                FileScanResult scan;
                 RuntimeMemoryProfiler.Stage scanStage = stage(
                         "FILE_SCAN", repositoryId, head
                 );
                 try {
-                    files = scanFiles(repository);
+                    scan = scanFiles(repository, repositoryId);
                     if (scanStage != null) {
-                        scanStage.attribute("fileCount", files.size());
-                        scanStage.attribute("javaFileCount", files.stream()
+                        scanStage.attribute("fileCount", scan.currentMetadata().size());
+                        scanStage.attribute("javaFileCount", scan.currentMetadata().stream()
                                 .filter(file -> "Java".equals(file.language()))
                                 .count());
-                        scanStage.attribute("sourceBytes", files.stream()
+                        scanStage.attribute("sourceBytes", scan.changed().stream()
                                 .mapToLong(GitRepositoryFileProjection::sizeBytes).sum());
+                        scanStage.attribute("changedCount", scan.changed().size());
+                        scanStage.attribute("deletedCount", scan.deletedPaths().size());
+                        scanStage.attribute("unchangedCount", scan.unchangedCount());
                     }
                 } catch (RuntimeException | IOException exception) {
                     if (scanStage != null) scanStage.failed(exception);
@@ -133,7 +139,9 @@ public class GitRepositoryStorageService {
                         "COMMIT_SCAN", repositoryId, head
                 );
                 try {
-                    commits = scanCommits(git, repository);
+                    commits = scanCommits(
+                            git, repository, checkpoint.lastSyncedCommit()
+                    );
                     if (commitStage != null) {
                         commitStage.attribute("commitCount", commits.size());
                         commitStage.attribute("diffCount", commits.stream()
@@ -150,9 +158,11 @@ public class GitRepositoryStorageService {
                         "CODE_GRAPH", repositoryId, head
                 );
                 try {
-                    codeGraph = codeGraphAnalyzer.analyze(repositoryDirectory, files);
+                    codeGraph = codeGraphAnalyzer.analyze(
+                            repositoryDirectory, scan.currentMetadata()
+                    );
                     if (graphStage != null) {
-                        graphStage.attribute("fileCount", files.size());
+                        graphStage.attribute("fileCount", scan.currentMetadata().size());
                         graphStage.attribute("symbolCount", codeGraph.symbols().size());
                         graphStage.attribute("dependencyCount",
                                 codeGraph.fileDependencies().size()
@@ -165,10 +175,11 @@ public class GitRepositoryStorageService {
                     if (graphStage != null) graphStage.close();
                 }
                 store.publishProjection(
-                        repositoryId, files, commits, codeGraph, head
+                        repositoryId, scan.changed(), scan.deletedPaths(),
+                        commits, codeGraph, head
                 );
                 if (syncStage != null) {
-                    syncStage.attribute("fileCount", files.size());
+                    syncStage.attribute("fileCount", scan.currentMetadata().size());
                     syncStage.attribute("commitCount", commits.size());
                 }
             }
@@ -302,18 +313,37 @@ public class GitRepositoryStorageService {
         }
     }
 
-    List<GitRepositoryFileProjection> scanFiles(Repository repository)
+    /**
+     * Result of an incremental file scan: {@code changed} carries the new
+     * content for added or modified files, {@code deletedPaths} lists
+     * previously projected paths absent from HEAD, and
+     * {@code currentMetadata} describes every file at HEAD (content may be
+     * null) for the code graph analyzer.
+     */
+    record FileScanResult(
+            List<GitRepositoryFileProjection> changed,
+            List<String> deletedPaths,
+            List<GitRepositoryFileProjection> currentMetadata,
+            int unchangedCount
+    ) {
+    }
+
+    FileScanResult scanFiles(Repository repository, UUID repositoryId)
             throws IOException {
         ObjectId treeId = repository.resolve("HEAD^{tree}");
         if (treeId == null) {
             throw new IllegalStateException("Repository HEAD tree is unavailable");
         }
-        List<GitRepositoryFileProjection> files = new ArrayList<>();
+        Map<String, String> existing = store.loadFileFingerprints(repositoryId);
+        List<GitRepositoryFileProjection> changed = new ArrayList<>();
+        List<GitRepositoryFileProjection> metadata = new ArrayList<>();
+        Set<String> currentPaths = new HashSet<>();
+        int unchanged = 0;
         try (TreeWalk walk = new TreeWalk(repository)) {
             walk.addTree(treeId);
             walk.setRecursive(true);
             while (walk.next()) {
-                if (files.size() >= properties.maxFiles()) {
+                if (metadata.size() >= properties.maxFiles()) {
                     throw new IllegalStateException(
                             "Repository file count exceeds limit " + properties.maxFiles()
                     );
@@ -321,13 +351,29 @@ public class GitRepositoryStorageService {
                 ObjectId objectId = walk.getObjectId(0);
                 ObjectLoader loader = repository.open(objectId);
                 String path = walk.getPathString();
-                files.add(new GitRepositoryFileProjection(
-                        path, objectId.name(), loader.getSize(), language(path),
+                String blobSha = objectId.name();
+                currentPaths.add(path);
+                GitRepositoryFileProjection current = new GitRepositoryFileProjection(
+                        path, blobSha, loader.getSize(), language(path)
+                );
+                metadata.add(current);
+                if (blobSha.equals(existing.get(path))) {
+                    unchanged++;
+                    continue;
+                }
+                changed.add(new GitRepositoryFileProjection(
+                        path, blobSha, loader.getSize(), language(path),
                         readableContent(path, loader)
                 ));
             }
         }
-        return List.copyOf(files);
+        List<String> deleted = existing.keySet().stream()
+                .filter(path -> !currentPaths.contains(path))
+                .toList();
+        return new FileScanResult(
+                List.copyOf(changed), List.copyOf(deleted),
+                List.copyOf(metadata), unchanged
+        );
     }
 
     private String readableContent(String path, ObjectLoader loader)
@@ -374,15 +420,67 @@ public class GitRepositoryStorageService {
 
     List<GitCommitProjection> scanCommits(Git git, Repository repository)
             throws Exception {
+        return scanCommits(git, repository, null);
+    }
+
+    /**
+     * Scan at most {@code maxCommits} commits. When {@code oldHead} is a
+     * reachable ancestor of HEAD only the commits since it are scanned;
+     * otherwise (first sync, force-push, history cut by the shallow
+     * boundary) the full recent history is rescanned.
+     */
+    List<GitCommitProjection> scanCommits(
+            Git git, Repository repository, String oldHead
+    ) throws Exception {
+        if (oldHead != null) {
+            ObjectId old = repository.resolve(oldHead);
+            if (old != null) {
+                // isMergedInto runs its own walk; the range walk stays
+                // independent so the ancestor check cannot disturb it.
+                boolean ancestor;
+                try (RevWalk mergeWalk = new RevWalk(repository)) {
+                    RevCommit oldCommit = mergeWalk.parseCommit(old);
+                    RevCommit headCommit = mergeWalk.parseCommit(
+                            repository.resolve("HEAD")
+                    );
+                    ancestor = mergeWalk.isMergedInto(oldCommit, headCommit);
+                }
+                if (ancestor) {
+                    try (RevWalk rangeWalk = new RevWalk(repository)) {
+                        rangeWalk.markUninteresting(rangeWalk.parseCommit(old));
+                        rangeWalk.markStart(rangeWalk.parseCommit(
+                                repository.resolve("HEAD")
+                        ));
+                        List<RevCommit> newCommits = new ArrayList<>();
+                        for (RevCommit commit : rangeWalk) {
+                            if (newCommits.size() >= properties.maxCommits()) {
+                                break;
+                            }
+                            newCommits.add(commit);
+                        }
+                        return toCommitProjections(repository, newCommits);
+                    }
+                }
+            }
+        }
+        List<RevCommit> commits = new ArrayList<>();
+        git.log().setMaxCount(properties.maxCommits()).call()
+                .forEach(commits::add);
+        return toCommitProjections(repository, commits);
+    }
+
+    private List<GitCommitProjection> toCommitProjections(
+            Repository repository,
+            List<RevCommit> sourceCommits
+    ) throws Exception {
         List<GitCommitProjection> commits = new ArrayList<>();
-        Iterable<RevCommit> log = git.log()
-                .setMaxCount(properties.maxCommits())
-                .call();
         try (RevWalk revWalk = new RevWalk(repository);
              DiffFormatter formatter = new DiffFormatter(DisabledOutputStream.INSTANCE)) {
             formatter.setRepository(repository);
             formatter.setDetectRenames(true);
-            for (RevCommit commit : log) {
+            for (RevCommit source : sourceCommits) {
+                // Re-parse so the projection never depends on a closed walk.
+                RevCommit commit = revWalk.parseCommit(source.getId());
                 AbstractTreeIterator previous = commit.getParentCount() == 0
                         ? new EmptyTreeIterator()
                         : treeIterator(repository, revWalk.parseCommit(
