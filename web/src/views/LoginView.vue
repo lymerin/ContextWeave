@@ -18,8 +18,8 @@
 
       <PlatformNavigation active="account" />
 
-      <div class="login-topbar-status" aria-label="当前为安全登录页面">
-        <span class="login-secure-copy"><span aria-hidden="true" />安全登录</span>
+      <div class="login-topbar-status" aria-label="当前未登录">
+        <span class="login-secure-copy"><span aria-hidden="true" />未登录</span>
         <span class="login-account-mark" aria-hidden="true">↗</span>
       </div>
     </header>
@@ -181,6 +181,8 @@ async function submit() {
   --login-cyan: #18c7ea;
   --login-muted: #69777e;
   position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 100svh;
   overflow: hidden;
   background:
@@ -343,6 +345,7 @@ async function submit() {
   gap: 12px;
   color: #6d777c;
   font-size: 13px;
+  line-height: 1;
 }
 
 .login-secure-copy { gap: 7px; }
@@ -350,8 +353,8 @@ async function submit() {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #18c58b;
-  box-shadow: 0 0 0 5px rgb(24 197 139 / 10%);
+  background: #9aa5ad;
+  box-shadow: 0 0 0 5px rgb(154 165 173 / 12%);
 }
 
 .login-account-mark {
@@ -361,18 +364,22 @@ async function submit() {
   place-items: center;
   border-radius: 50%;
   background: var(--login-ink);
-  color: var(--login-cyan);
+  color: #18c9ef;
+  font-family: inherit;
   font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .login-stage {
   position: relative;
   z-index: 1;
+  align-self: center;
   display: grid;
   grid-template-columns: minmax(0, 1.12fr) minmax(380px, .88fr);
   width: min(1280px, calc(100% - 64px));
   min-height: min(690px, calc(100svh - 124px));
-  margin: 26px auto;
+  margin: 24px auto;
   overflow: hidden;
   border: 1px solid rgb(255 255 255 / 72%);
   border-radius: 24px;
@@ -590,7 +597,7 @@ async function submit() {
 }
 
 @media (max-width: 820px), (orientation: portrait) {
-  .login-page { overflow: auto; }
+  .login-page { display: block; overflow: auto; }
   .login-topbar {
     grid-template-columns: auto auto;
     gap: 12px;

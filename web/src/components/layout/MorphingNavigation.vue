@@ -6,6 +6,7 @@
     :style="{
       '--active-slot': visualSlot,
       '--active-order': visualOrder,
+      '--visible-count': items.length,
     }"
     :aria-label="displayMode === 'platform' ? '平台导航' : '当前工作区导航'"
     :aria-busy="transitioning"
@@ -75,26 +76,31 @@ let transitionSequence = 0;
 const workspaceId = computed(() => String(route.params.workspaceId || ''));
 const items = computed<NavigationItem[]>(() => {
   if (displayMode.value === 'platform') {
-    return [
+    const platformItems: NavigationItem[] = [
       { key: 'home', label: '首页', slot: 0, target: '/', targetMode: 'platform' },
       { key: 'spaces', label: '协作空间', slot: 1, target: '/workspaces', targetMode: 'platform' },
-      {
+    ];
+    if (!authStore.isAuthenticated) {
+      platformItems.push({
         key: 'account',
-        label: authStore.isAuthenticated ? '账户' : '登录',
+        label: '登录',
         slot: 2,
-        target: authStore.isAuthenticated ? '/workspaces?panel=profile' : '/login',
+        target: '/login',
         targetMode: 'platform',
-      },
+      });
+    }
+    platformItems.push(
       {
         key: 'settings',
         label: '设置',
-        slot: 3,
+        slot: authStore.isAuthenticated ? 2 : 3,
         target: '',
         targetMode: 'platform',
         disabled: true,
         title: '接入设置将在后端接口就绪后开放',
       },
-    ];
+    );
+    return platformItems;
   }
 
   return [
@@ -172,6 +178,8 @@ async function navigate(item: NavigationItem) {
     await wait(reducedMotion() ? 0 : 190);
   }
   await router.push(item.target);
+  displayMode.value = modeForRoute(router.currentRoute.value);
+  visualSlot.value = activeSlotForRoute(router.currentRoute.value);
 }
 
 async function closeNavigation(nextMode: NavigationMode) {
@@ -237,8 +245,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .morph-navigation {
   --item-width: 112px;
-  --shell-width: 460px;
-  --stage-width: 572px;
+  --shell-width: calc(var(--visible-count) * var(--item-width) + 12px);
+  --stage-width: calc(var(--shell-width) + var(--item-width));
   --navigation-ink: #090c0e;
   --navigation-paper: #f0f2f3;
   --navigation-muted: #78838c;
@@ -248,7 +256,7 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 80;
   top: 10px;
-  left: calc(50% - 230px);
+  left: calc(50% - var(--shell-width) / 2);
   width: var(--stage-width);
   height: 52px;
   overflow: hidden;

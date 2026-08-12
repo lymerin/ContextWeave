@@ -88,13 +88,16 @@ function formatTime(value: string) {
 .linked-inspector { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto minmax(0, 1fr); border-left: 1px solid #dfe6f0; background: #fff; }
 .linked-inspector > header { display: flex; min-height: 58px; align-items: center; justify-content: space-between; padding: 9px 13px; border-bottom: 1px solid #e4e9f1; }
 .linked-inspector header div { display: grid; gap: 2px; }
-.linked-inspector header button { display: grid; width: 28px; height: 28px; place-items: center; border: 0; border-radius: 5px; background: #f2f4f7; color: #475467; font-size: 20px; cursor: pointer; }
+.linked-inspector header button { display: grid; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 8px; background: #f2f4f7; color: #475467; font-size: 20px; cursor: pointer; }
+.linked-inspector header button:focus-visible, .evidence-item:focus-visible { outline: 2px solid #18d1ff; outline-offset: 2px; }
 .inspector-tabs { display: flex; min-height: 0; flex-direction: column; }
 .inspector-tabs :deep(.el-tabs__header) { flex: 0 0 auto; margin: 0; padding-inline: 10px; }
-.inspector-tabs :deep(.el-tabs__nav-wrap) { overflow-x: auto; }
+.inspector-tabs :deep(.el-tabs__nav-wrap) { overflow-x: auto; scrollbar-width: thin; }
+.inspector-tabs :deep(.el-tabs__nav-scroll) { min-width: max-content; overflow: visible; }
+.inspector-tabs :deep(.el-tabs__item) { flex: 0 0 auto; padding-inline: 14px; }
 .inspector-tabs :deep(.el-tabs__content) { min-height: 0; flex: 1; overflow: auto; padding: 12px; }
 .inspector-card, .version-list article { display: grid; gap: 8px; border: 1px solid #e4e9f1; border-radius: 8px; padding: 12px; }
-.issue-card { border-left: 3px solid #d92d20; }
+.issue-card { border-color: #f2b8c0; background: #fffafb; }
 .issue-card > div { display: flex; align-items: center; justify-content: space-between; color: #667085; font-size: 11px; }
 .issue-card p { margin: 0; color: #475467; font-size: 12px; line-height: 1.6; }
 .evidence-item { display: grid; width: 100%; gap: 6px; margin-bottom: 8px; border: 1px solid #e4e9f1; border-radius: 8px; padding: 10px; background: #fff; color: #344054; text-align: left; cursor: pointer; }

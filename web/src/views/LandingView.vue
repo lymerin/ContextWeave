@@ -21,21 +21,61 @@
       <div class="landing-account">
         <span
           class="landing-online"
-          title="演示数据，待接入实时在线接口"
+          :class="{ 'is-guest': !authStore.isAuthenticated }"
         >
           <span aria-hidden="true" />
-          {{ metrics[1].value }} 在线
+          {{ accountStatusLabel }}
         </span>
         <button
           class="landing-avatar"
           type="button"
-          aria-label="登录或打开账户"
-          @click="enterProtected('/workspaces?panel=profile')"
+          :class="{ 'is-login-entry': !authStore.isAuthenticated }"
+          :aria-expanded="authStore.isAuthenticated ? accountMenuOpen : undefined"
+          :aria-label="authStore.isAuthenticated ? '打开账户菜单' : '登录'"
+          @click="handleAccountClick"
         >
-          林
+          {{ accountButtonLabel }}
         </button>
+        <div
+          v-if="authStore.isAuthenticated && accountMenuOpen"
+          class="landing-account-menu"
+          role="menu"
+          aria-label="账户菜单"
+        >
+          <div class="landing-account-menu-user">
+            <span>{{ accountInitial }}</span>
+            <div>
+              <strong>{{ accountName }}</strong>
+              <small>当前账号已登录</small>
+            </div>
+          </div>
+          <button type="button" role="menuitem" @click="enterProtected('/workspaces')">进入协作空间</button>
+          <button type="button" role="menuitem" class="is-danger" @click="openLogoutConfirm">退出登录</button>
+        </div>
       </div>
     </header>
+
+    <div
+      v-if="logoutConfirmOpen"
+      class="landing-logout-scrim"
+      role="presentation"
+      @click.self="logoutConfirmOpen = false"
+    >
+      <section
+        class="landing-logout-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="landing-logout-title"
+      >
+        <p>ACCOUNT / SIGN OUT</p>
+        <h2 id="landing-logout-title">退出当前账号？</h2>
+        <span>退出后你将回到公开首页，协作空间、文档编辑和审阅入口需要重新登录后访问。</span>
+        <div class="landing-logout-actions">
+          <button type="button" @click="logoutConfirmOpen = false">取消</button>
+          <button type="button" class="is-danger" @click="confirmLogout">退出登录</button>
+        </div>
+      </section>
+    </div>
 
     <div class="landing-content">
       <section class="landing-hero-layout" aria-label="产品总览">
@@ -202,7 +242,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { listDocumentTree, type DocumentTreeNode } from '@/api/document';
@@ -233,6 +273,8 @@ const authStore = useAuthStore();
 const router = useRouter();
 const workspaceLoading = ref(false);
 const workspaceLoadFailed = ref(false);
+const accountMenuOpen = ref(false);
+const logoutConfirmOpen = ref(false);
 
 
 const metrics = ref<LandingMetric[]>([
@@ -281,6 +323,10 @@ const workflowSteps = [
 ];
 
 const workspacePreviews = ref<LandingWorkspaceCard[]>([]);
+const accountName = computed(() => authStore.currentUser?.displayName || authStore.currentUser?.username || '账户');
+const accountInitial = computed(() => accountName.value.trim().slice(0, 1).toUpperCase() || 'U');
+const accountStatusLabel = computed(() => authStore.isAuthenticated ? '已登录' : '未登录');
+const accountButtonLabel = computed(() => authStore.isAuthenticated ? accountInitial.value : '↗');
 
 onMounted(async () => {
   if (!authStore.isAuthenticated) {
@@ -304,6 +350,31 @@ async function enterProtected(target: string) {
     name: 'login',
     query: { redirect: '/' },
   });
+}
+
+async function handleAccountClick() {
+  if (!authStore.isAuthenticated) {
+    await router.push({
+      name: 'login',
+      query: { redirect: '/' },
+    });
+    return;
+  }
+
+  accountMenuOpen.value = !accountMenuOpen.value;
+}
+
+function openLogoutConfirm() {
+  accountMenuOpen.value = false;
+  logoutConfirmOpen.value = true;
+}
+
+async function confirmLogout() {
+  await authStore.logout();
+  logoutConfirmOpen.value = false;
+  accountMenuOpen.value = false;
+  workspacePreviews.value = [];
+  await router.push('/');
 }
 
 async function loadLandingWorkspaces() {
@@ -592,6 +663,8 @@ function scrollToTop() {
 .landing-brand:focus-visible,
 .landing-nav-item:focus-visible,
 .landing-avatar:focus-visible,
+.landing-account-menu button:focus-visible,
+.landing-logout-actions button:focus-visible,
 .landing-primary-action:focus-visible,
 .landing-metric:focus-visible,
 .landing-text-action:focus-visible,
@@ -601,6 +674,7 @@ function scrollToTop() {
 }
 
 .landing-account {
+  position: relative;
   grid-column: 3;
   justify-content: flex-end;
   gap: 12px;
@@ -608,8 +682,9 @@ function scrollToTop() {
 
 .landing-online {
   gap: 7px;
-  color: #4b565b;
-  font-size: 12px;
+  color: #6d777c;
+  font-size: 13px;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -621,14 +696,179 @@ function scrollToTop() {
   box-shadow: 0 0 0 4px rgb(21 199 131 / 11%);
 }
 
+.landing-online.is-guest > span {
+  background: #9aa5ad;
+  box-shadow: 0 0 0 5px rgb(154 165 173 / 12%);
+}
+
 .landing-avatar {
+  display: grid;
   width: 38px;
   height: 38px;
+  place-items: center;
   border: 0;
   border-radius: 50%;
+  padding: 0;
   background: var(--landing-ink);
   color: #fff;
   cursor: pointer;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.landing-avatar.is-login-entry {
+  border-radius: 50%;
+  color: var(--landing-cyan);
+}
+
+.landing-account-menu {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 12px);
+  right: 0;
+  display: grid;
+  width: 260px;
+  gap: 6px;
+  border: 1px solid #e2e8eb;
+  border-radius: 14px;
+  padding: 10px;
+  background: #fff;
+  box-shadow: 0 20px 50px rgb(35 57 68 / 16%);
+}
+
+.landing-account-menu::before {
+  position: absolute;
+  top: -6px;
+  right: 19px;
+  width: 12px;
+  height: 12px;
+  border-top: 1px solid #e2e8eb;
+  border-left: 1px solid #e2e8eb;
+  background: #fff;
+  content: "";
+  transform: rotate(45deg);
+}
+
+.landing-account-menu-user {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 8px 12px;
+  border-bottom: 1px solid #edf1f3;
+}
+
+.landing-account-menu-user > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--landing-ink);
+  color: #fff;
+  font-weight: 700;
+}
+
+.landing-account-menu-user strong {
+  display: block;
+  color: var(--landing-ink);
+  font-size: 13px;
+}
+
+.landing-account-menu-user small {
+  color: #7b878d;
+  font-size: 11px;
+}
+
+.landing-account-menu button,
+.landing-logout-actions button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: transparent;
+  color: #4f5c63;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+}
+
+.landing-account-menu button:hover {
+  background: #f3f7f8;
+  color: var(--landing-ink);
+}
+
+.landing-account-menu button.is-danger {
+  color: #b42318;
+}
+
+.landing-account-menu button.is-danger:hover {
+  background: #fff3f2;
+}
+
+.landing-logout-scrim {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(8 15 20 / 30%);
+  backdrop-filter: blur(5px);
+}
+
+.landing-logout-panel {
+  display: grid;
+  width: min(420px, 100%);
+  gap: 12px;
+  border: 1px solid rgb(255 255 255 / 75%);
+  border-radius: 16px;
+  padding: 26px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgb(8 15 20 / 22%);
+}
+
+.landing-logout-panel p {
+  margin: 0;
+  color: #2a6b7d;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: .14em;
+}
+
+.landing-logout-panel h2 {
+  margin: 0;
+  color: var(--landing-ink);
+  font-size: 24px;
+  letter-spacing: -.04em;
+}
+
+.landing-logout-panel > span {
+  color: #66737a;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.landing-logout-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.landing-logout-actions button {
+  min-width: 88px;
+  text-align: center;
+  background: #f2f5f6;
+}
+
+.landing-logout-actions button.is-danger {
+  background: var(--landing-ink);
+  color: #fff;
 }
 
 .landing-content {

@@ -34,30 +34,44 @@ const props = defineProps<{ active?: PlatformNavigationKey | null }>();
 const router = useRouter();
 const authStore = useAuthStore();
 const visualActive = ref<PlatformNavigationKey | null>(props.active ?? null);
-const activeIndex = computed(() => ({ home: 0, spaces: 1, account: 2, settings: 3 })[visualActive.value ?? 'home']);
 const items = computed(() => [
   { key: 'home' as const, label: '首页', target: '/', disabled: false },
   { key: 'spaces' as const, label: '协作空间', target: '/workspaces', disabled: false },
-  {
-    key: 'account' as const,
-    label: authStore.isAuthenticated ? '账户' : '登录',
-    target: authStore.isAuthenticated ? '/workspaces?panel=profile' : '/login',
-    disabled: false,
-  },
+  ...authStore.isAuthenticated
+    ? []
+    : [{ key: 'account' as const, label: '登录', target: '/login', disabled: false }],
   { key: 'settings' as const, label: '设置', target: '', disabled: true },
 ]);
+const activeIndex = computed(() => Math.max(0, items.value.findIndex(item => item.key === (visualActive.value ?? 'home'))));
 
 async function navigate(key: PlatformNavigationKey, target: string) {
   if (!target || key === visualActive.value) return;
   visualActive.value = key;
   await new Promise(resolve => window.setTimeout(resolve, 190));
   await router.push(target);
+  visualActive.value = props.active ?? activeKeyForRoute(currentRouteName());
 }
+
+function activeKeyForRoute(name: unknown): PlatformNavigationKey | null {
+  if (name === 'landing') return 'home';
+  if (name === 'workspaces') return 'spaces';
+  if (name === 'login' || name === 'register') return 'account';
+  return props.active ?? null;
+}
+
+function currentRouteName() {
+  return (router as { currentRoute?: { value?: { name?: unknown } } }).currentRoute?.value?.name;
+}
+
 watch(() => props.active, value => { visualActive.value = value ?? null; });
+watch(
+  () => currentRouteName(),
+  value => { visualActive.value = props.active ?? activeKeyForRoute(value); },
+);
 </script>
 
 <style scoped>
-.platform-navigation { --item-width:112px; position:absolute; z-index:4; top:50%; left:50%; display:grid; width:max-content; grid-template-columns:repeat(4,var(--item-width)); align-items:center; border:1px solid #e3e8eb; border-radius:999px; padding:5px; background:#f0f2f3; transform:translate(-50%,-50%); }
+.platform-navigation { --item-width:112px; position:absolute; z-index:4; top:50%; left:50%; display:grid; width:max-content; grid-template-columns:repeat(v-bind('items.length'),var(--item-width)); align-items:center; border:1px solid #e3e8eb; border-radius:999px; padding:5px; background:#f0f2f3; transform:translate(-50%,-50%); }
 .platform-navigation-indicator { position:absolute; z-index:0; top:5px; left:5px; width:var(--item-width); height:calc(100% - 10px); border-radius:999px; background:#090c0e; box-shadow:0 6px 14px rgb(8 15 20 / 17%); transform:translateX(calc(var(--active-index) * var(--item-width))); transition:transform 190ms cubic-bezier(.22,.8,.24,1); }
 button { position:relative; z-index:1; min-height:40px; border:0; border-radius:999px; padding:0 14px; background:transparent; color:#78838c; cursor:pointer; font:inherit; font-size:14px; transition:color .18s ease,transform .18s ease; }
 button:hover:not(:disabled) { color:#090c0e; }

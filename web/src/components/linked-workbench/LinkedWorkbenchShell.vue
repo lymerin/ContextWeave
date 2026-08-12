@@ -1,5 +1,15 @@
 <template>
   <section class="linked-workbench-shell">
+    <LinkedWorkbenchHeader
+      :workspace-name="workspaceName"
+      :repository-name="repositoryName"
+      :branch="branch"
+      :commit-sha="commitSha"
+      :mode="mode"
+      :inspector-open="inspectorOpen"
+      @set-mode="emit('set-mode', $event)"
+      @toggle-inspector="emit('toggle-inspector')"
+    />
     <LinkedWorkbenchContent
       ref="contentRef"
       v-bind="contentProps"
@@ -14,6 +24,12 @@
       @request-agent-check="emit('request-agent-check')"
       @close-inspector="emit('toggle-inspector')"
     />
+    <LinkedWorkbenchStatusBar
+      :collaboration-connected="collaborationConnected"
+      :members-count="membersCount"
+      :links-count="links.length"
+      :active-anchor="activeAnchor"
+    />
   </section>
 </template>
 
@@ -22,6 +38,8 @@ import { computed, ref } from 'vue';
 import type { DocumentBlock, DocumentBlockContent } from '@/api/block';
 import type { DocumentSummary, DocumentVersion } from '@/api/document';
 import LinkedWorkbenchContent from './LinkedWorkbenchContent.vue';
+import LinkedWorkbenchHeader from './LinkedWorkbenchHeader.vue';
+import LinkedWorkbenchStatusBar from './LinkedWorkbenchStatusBar.vue';
 import type { EditingState } from '@/composables/useDocumentCollaboration';
 import type { CodeAnchor, CodeDocumentLink, EngineeringIssue, LinkedEvidence, WorkbenchMode } from '@/types/linkedWorkbench';
 
@@ -57,5 +75,5 @@ defineExpose({ focusAnchor, focusBlock, clearBlockFocus, confirmDocumentLeave })
 </script>
 
 <style scoped>
-.linked-workbench-shell { display: grid; min-width: 0; min-height: 0; grid-template-rows: minmax(0, 1fr); overflow: hidden; border: 1px solid #dfe6f0; border-radius: 10px; background: #fff; }
+.linked-workbench-shell { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; border: 1px solid #dfe6f0; border-radius: 10px; background: #fff; }
 </style>

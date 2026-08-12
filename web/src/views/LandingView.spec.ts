@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
+  logout: vi.fn(),
   isAuthenticated: false,
+  currentUser: null as null | { username: string; displayName?: string },
   listWorkspaces: vi.fn(),
   listDocumentTree: vi.fn(),
   getPendingDocumentChangeCount: vi.fn(),
@@ -18,6 +20,10 @@ vi.mock('@/stores/auth', () => ({
     get isAuthenticated() {
       return mocks.isAuthenticated;
     },
+    get currentUser() {
+      return mocks.currentUser;
+    },
+    logout: mocks.logout,
   }),
 }));
 
@@ -38,7 +44,9 @@ import LandingView from './LandingView.vue';
 describe('LandingView protected entry points', () => {
   beforeEach(() => {
     mocks.routerPush.mockReset();
+    mocks.logout.mockReset();
     mocks.isAuthenticated = false;
+    mocks.currentUser = null;
     mocks.listWorkspaces.mockReset();
     mocks.listDocumentTree.mockReset();
     mocks.getPendingDocumentChangeCount.mockReset();
@@ -73,6 +81,32 @@ describe('LandingView protected entry points', () => {
       name: 'login',
       query: { redirect: '/' },
     });
+  });
+
+  it('renders a guest account entry instead of a signed-in avatar', () => {
+    const wrapper = mount(LandingView);
+    expect(wrapper.get('.landing-online').classes()).toContain('is-guest');
+    expect(wrapper.get('.landing-avatar').classes()).toContain('is-login-entry');
+    expect(wrapper.get('.landing-online').text()).toContain('未登录');
+    expect(wrapper.get('.landing-avatar').text()).toBe('↗');
+  });
+
+  it('opens the signed-in account menu and confirms logout', async () => {
+    mocks.isAuthenticated = true;
+    mocks.currentUser = { username: 'lin', displayName: '林' };
+    const wrapper = mount(LandingView);
+
+    await wrapper.get('.landing-avatar').trigger('click');
+    expect(wrapper.find('.landing-account-menu').exists()).toBe(true);
+
+    await wrapper.find('.landing-account-menu .is-danger').trigger('click');
+    expect(wrapper.find('.landing-logout-panel').exists()).toBe(true);
+
+    await wrapper.find('.landing-logout-actions .is-danger').trigger('click');
+    await flushPromises();
+
+    expect(mocks.logout).toHaveBeenCalledTimes(1);
+    expect(mocks.routerPush).toHaveBeenCalledWith('/');
   });
 
   it('opens the protected target directly for authenticated users', async () => {

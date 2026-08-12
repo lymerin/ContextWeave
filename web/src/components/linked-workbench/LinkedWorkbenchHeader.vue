@@ -13,6 +13,7 @@
           :key="item.value"
           type="button"
           :class="{ 'is-active': mode === item.value }"
+          :aria-pressed="mode === item.value"
           @click="emit('set-mode', item.value)"
         >{{ item.label }}</button>
       </div>
@@ -47,6 +48,7 @@ const modes: Array<{ value: WorkbenchMode; label: string }> = [
   { value: 'LINKED', label: '关联对照' },
   { value: 'CODE_FOCUS', label: '代码聚焦' },
   { value: 'DOCUMENT_FOCUS', label: '文档聚焦' },
+  { value: 'DRIFT_REVIEW', label: '漂移审查' },
 ];
 </script>
 

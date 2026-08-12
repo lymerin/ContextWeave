@@ -114,7 +114,7 @@
         :branch="activeRepository?.defaultBranch"
         :commit-sha="selectedSource?.commitSha || activeRepository?.lastSyncedCommit"
         :mode="mode"
-        :inspector-open="false"
+        :inspector-open="inspectorOpen"
         :source-content="selectedSource?.content || ''"
         :source-path="selectedSource?.path || selectedFilePath"
         :source-language="selectedSource?.language"
@@ -140,6 +140,8 @@
         :versions="versions"
         :collaboration-connected="collaborationConnected"
         :members-count="collaborationMembers.length"
+        @set-mode="setMode"
+        @toggle-inspector="toggleInspector()"
         @activate-code="handleActivate($event, 'code')"
         @activate-rail="handleActivate($event, 'rail')"
         @activate-inspector="handleActivate($event, 'inspector')"
@@ -362,11 +364,9 @@ const {
   selectedBlockId,
   codeAnchors, documentBlocks, links, issues, activeLink, activeCodeAnchor, activeDocumentBlock,
   activeIssue, activeEvidence,
-  toggleInspector,
+  inspectorOpen, setMode, toggleInspector,
   unboundBlockId, clearUnboundBlock,
 } = state;
-
-toggleInspector(false);
 
 const currentUserName = computed(() => (
   authStore.currentUser?.displayName
@@ -1335,6 +1335,19 @@ function flattenDocumentTree(nodes: DocumentTreeNode[], depth = 0): LinkedDocume
 .project-scan-units span, .project-scan-hint { color: #64748b; font-size: 13px; }
 @media (max-width: 1180px) { .collaboration-topbar { grid-template-columns: auto 1fr auto; padding: 0 18px; } .collaboration-account { right: 18px; } .collaboration-brand-name, .collaboration-beta { display: none; } .collaboration-navigation-item { min-width: 0; padding-inline: 12px; } .collaboration-workspace-body { grid-template-columns: 220px minmax(0, 1fr); } .workspace-check-actions :deep(.el-button) { padding-inline: 12px; } }
 @media (max-width: 820px) { .linked-page-shell { height: auto; min-height: 100vh; overflow: visible; } .collaboration-page { grid-template-rows: auto auto; } .collaboration-topbar { grid-template-columns: auto auto; gap: 12px; padding: 12px 14px; } .collaboration-account { top: 12px; right: 14px; } .collaboration-navigation { grid-column: 1 / -1; grid-row: 2; overflow-x: auto; justify-self: stretch; } .collaboration-navigation-item { flex: 1 0 auto; } .collaboration-stage { overflow: visible; padding: 10px; } .collaboration-workspace-grid { height: auto; } .collaboration-workspace-header { align-items: flex-start; flex-direction: column; } .workspace-check-actions { width: 100%; overflow-x: auto; } .collaboration-workspace-body { grid-template-columns: 1fr; } .collaboration-tree-panel { max-height: 320px; border-right: 0; border-bottom: 1px solid #e1e7eb; } .linked-page-main { min-height: 720px; } }
+@media (max-width: 820px) {
+  .workspace-check-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    overflow: visible;
+  }
+
+  .workspace-check-actions :deep(.el-button) {
+    width: 100%;
+    padding-inline: 8px;
+  }
+}
 @media (orientation: portrait) and (max-width: 1024px) { .collaboration-workspace-header { align-items: flex-start; flex-direction: column; } .collaboration-workspace-body { grid-template-columns: 1fr; } .collaboration-tree-panel { max-height: 340px; border-right: 0; border-bottom: 1px solid #e1e7eb; } }
 @media (prefers-reduced-motion: reduce) { .collaboration-navigation-item, .linked-page-main :deep(.el-button) { transition: none !important; } }
 </style>

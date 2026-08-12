@@ -142,17 +142,33 @@ button:focus-visible {
 
 @media (max-width: 820px), (orientation: portrait) {
   .workspace-context-navigation {
-    --item-width: 96px;
     position: static;
     grid-column: 1 / -1;
     grid-row: 2;
+    display: flex;
+    width: 100%;
     max-width: 100%;
+    overflow-x: auto;
     transform: none;
   }
 
+  .workspace-navigation-indicator {
+    display: none;
+  }
+
   button {
+    flex: 0 0 auto;
+    min-width: 92px;
     padding-inline: 8px;
     font-size: 12px;
+  }
+
+  button.is-active,
+  button.is-active:hover {
+    background: var(--navigation-ink);
+    box-shadow:
+      0 6px 14px rgb(8 15 20 / 17%),
+      6px 7px 14px -10px rgb(24 201 239 / 82%);
   }
 }
 

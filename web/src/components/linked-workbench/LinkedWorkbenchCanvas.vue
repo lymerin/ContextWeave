@@ -103,4 +103,10 @@ defineExpose({ focusAnchor, focusBlock, clearBlockFocus, confirmDocumentLeave })
 .linked-canvas.mode-code-focus { grid-template-columns: minmax(0, 1fr); }
 .linked-canvas.mode-document-focus { grid-template-columns: minmax(0, 1fr); }
 @media (max-width: 1120px) { .linked-canvas { grid-template-columns: minmax(280px, .9fr) 50px minmax(340px, 1.1fr); } }
+@media (max-width: 820px) {
+  .linked-canvas { grid-template-columns: minmax(0, 1fr); }
+  .linked-canvas .anchor-rail { display: none; }
+  .linked-canvas:not(.mode-document-focus) .linked-document-pane { display: none !important; }
+  .linked-canvas.mode-document-focus .linked-code-pane { display: none !important; }
+}
 </style>
