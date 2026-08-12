@@ -1,5 +1,7 @@
 package com.devcollab.knowledgecore.documentchange.api;
 
+import com.devcollab.knowledgecore.agentdelegation.AgentDelegationException;
+import com.devcollab.knowledgecore.auth.infrastructure.JwtTokenService;
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeApplicationService;
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeViews.DetailView;
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeViews.PageView;
@@ -13,7 +15,9 @@ import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
 import com.devcollab.knowledgecore.git.domain.BindingRole;
 import com.devcollab.knowledgecore.security.CurrentUser;
 import com.devcollab.knowledgecore.security.DelegatedRestAccess;
+import com.devcollab.knowledgecore.security.JwtAuthenticationFilter;
 import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -59,8 +63,10 @@ public class DocumentChangeController {
     public ResponseEntity<CreateDocumentChangeResponse> create(
             @PathVariable UUID workspaceId,
             @AuthenticationPrincipal CurrentUser currentUser,
-            @Valid @RequestBody CreateDocumentChangeRequest request
+            @Valid @RequestBody CreateDocumentChangeRequest request,
+            HttpServletRequest httpRequest
     ) {
+        requireDelegatedRepositoryScope(httpRequest, request);
         CreateResult result = service.create(
                 workspaceId,
                 currentUser.userId(),
@@ -75,6 +81,47 @@ public class DocumentChangeController {
                         result.createdAt(),
                         result.idempotentReplay()
                 ));
+    }
+
+    private void requireDelegatedRepositoryScope(
+            HttpServletRequest httpRequest,
+            CreateDocumentChangeRequest request
+    ) {
+        Object rawClaims = httpRequest.getAttribute(
+                JwtAuthenticationFilter.TOKEN_CLAIMS_ATTRIBUTE
+        );
+        if (!(rawClaims instanceof JwtTokenService.TokenClaims claims)
+                || !JwtTokenService.TOKEN_TYPE_AGENT_DELEGATION.equals(
+                claims.tokenType())) {
+            return;
+        }
+        UUID allowedRepositoryId = claims.repositoryId();
+        for (BindingProposalRequest proposal : safeList(request.bindingProposals())) {
+            requireDelegatedRepositoryMatch(
+                    proposal.repositoryId(),
+                    allowedRepositoryId
+            );
+        }
+        for (EvidenceRequest evidence : safeList(request.evidence())) {
+            requireDelegatedRepositoryMatch(
+                    evidence.repositoryId(),
+                    allowedRepositoryId
+            );
+        }
+    }
+
+    private void requireDelegatedRepositoryMatch(UUID actual, UUID allowed) {
+        if (actual == null || allowed == null || !actual.equals(allowed)) {
+            throw new AgentDelegationException(
+                    HttpStatus.FORBIDDEN,
+                    "AGENT_DELEGATION_DENIED",
+                    "Agent delegation token is outside its allowed REST scope"
+            );
+        }
+    }
+
+    private static <T> List<T> safeList(List<T> items) {
+        return items == null ? List.of() : items;
     }
 
     @GetMapping

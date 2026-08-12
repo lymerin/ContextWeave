@@ -109,6 +109,66 @@ class DelegatedRestAccessIntegrationTests {
     }
 
     @Test
+    void delegatedTokenCannotOmitRepositoryOnRepositoryScopedEndpoint()
+            throws Exception {
+        Fixture fixture = fixture();
+
+        mockMvc.perform(get("/api/v1/workspaces/{workspaceId}/document-candidates",
+                        fixture.workspaceId())
+                        .queryParam("query", "api")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(
+                                delegationToken(
+                                        fixture.userId(),
+                                        fixture.workspaceId(),
+                                        UUID.randomUUID(),
+                                        List.of("devcollab.document.find_candidates")
+                                ))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AGENT_DELEGATION_DENIED"));
+    }
+
+    @Test
+    void delegatedTokenCannotSubmitDocumentChangeForDifferentRepository()
+            throws Exception {
+        Fixture fixture = fixture();
+        UUID allowedRepositoryId = UUID.randomUUID();
+        UUID requestedRepositoryId = UUID.randomUUID();
+
+        mockMvc.perform(post(
+                        "/api/v1/workspaces/{workspaceId}/document-change-requests",
+                        fixture.workspaceId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(
+                                delegationToken(
+                                        fixture.userId(),
+                                        fixture.workspaceId(),
+                                        allowedRepositoryId,
+                                        List.of("devcollab.review.submit_document_change")
+                                )))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "clientRequestId":"request-%s",
+                                  "summary":"Update binding",
+                                  "rationale":"Evidence points to a binding update",
+                                  "operations":[],
+                                  "bindingProposals":[{
+                                    "clientBindingProposalId":"binding-1",
+                                    "sequenceNumber":1,
+                                    "action":"UPSERT_BINDING",
+                                    "repositoryId":"%s",
+                                    "filePath":"src/App.java",
+                                    "reason":"Relevant source"
+                                  }]
+                                }
+                                """.formatted(
+                                UUID.randomUUID(),
+                                requestedRepositoryId
+                        )))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AGENT_DELEGATION_DENIED"));
+    }
+
+    @Test
     void delegatedTokenCannotCallUnannotatedRestEndpoint() throws Exception {
         Fixture fixture = fixture();
 

@@ -55,9 +55,7 @@ public class DelegatedRestAccessInterceptor implements HandlerInterceptor {
             if (repository == null) {
                 repository = request.getParameter(access.repository());
             }
-            if (repository != null) {
-                requireMatch(repository, claims.repositoryId());
-            }
+            requireMatch(repository, claims.repositoryId());
         }
         return true;
     }

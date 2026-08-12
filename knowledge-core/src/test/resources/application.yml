@@ -10,9 +10,6 @@ spring:
     enabled: true
 
 devcollab:
-  code-metadata-cache:
-    enabled: false
-    capacity: 1024
   agent-delegation:
     service-token: devcollab-test-agent-service-token-at-least-32-bytes
     delegation-ttl: PT24H
@@ -27,8 +24,15 @@ devcollab:
     invalidation:
       enabled: false
       group-id: devcollab-cache-test
+  redis:
+    coordination:
+      login-limit:
+        max-attempts: 5
+        window: PT15M
+      rate-limit:
+        max-operations: 120
+        window: PT1M
   search:
-    engine: postgres
     elasticsearch:
       enabled: false
       url: http://localhost:9200
