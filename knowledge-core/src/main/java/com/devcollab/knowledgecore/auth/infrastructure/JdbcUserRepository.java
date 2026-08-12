@@ -1,7 +1,6 @@
 package com.devcollab.knowledgecore.auth.infrastructure;
 
 import com.devcollab.knowledgecore.auth.domain.UserAccount;
-import com.devcollab.knowledgecore.auth.domain.UserRepository;
 import com.devcollab.knowledgecore.auth.domain.UserStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -12,7 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public class JdbcUserRepository implements UserRepository {
+public class JdbcUserRepository {
 
     private static final RowMapper<UserAccount> USER_ROW_MAPPER = (rs, rowNum) ->
             new UserAccount(
@@ -32,7 +31,6 @@ public class JdbcUserRepository implements UserRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    @Override
     public Optional<UserAccount> findById(UUID userId) {
         return jdbcTemplate.query(
                 "SELECT * FROM user_accounts WHERE id = ?",
@@ -41,7 +39,6 @@ public class JdbcUserRepository implements UserRepository {
         ).stream().findFirst();
     }
 
-    @Override
     public Optional<UserAccount> findByNormalizedUsername(String username) {
         return jdbcTemplate.query(
                 "SELECT * FROM user_accounts WHERE normalized_username = ?",
@@ -50,7 +47,6 @@ public class JdbcUserRepository implements UserRepository {
         ).stream().findFirst();
     }
 
-    @Override
     public boolean existsByNormalizedUsername(String username) {
         Long count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM user_accounts WHERE normalized_username = ?",
@@ -60,7 +56,6 @@ public class JdbcUserRepository implements UserRepository {
         return count != null && count > 0;
     }
 
-    @Override
     public UserAccount save(UserAccount user) {
         int updated = jdbcTemplate.update("""
                         UPDATE user_accounts

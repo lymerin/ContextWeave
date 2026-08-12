@@ -8,7 +8,6 @@ import org.springframework.boot.test.context.SpringBootTest;
         "spring.datasource.url=${devcollab.benchmark.db.url:jdbc:postgresql://localhost:5432/devcollab}",
         "spring.datasource.username=${devcollab.benchmark.db.username:devcollab}",
         "spring.datasource.password=${devcollab.benchmark.db.password:devcollab}",
-        "devcollab.search.engine=postgres",
         "devcollab.search.elasticsearch.enabled=false"
 })
 @AutoConfigureMockMvc

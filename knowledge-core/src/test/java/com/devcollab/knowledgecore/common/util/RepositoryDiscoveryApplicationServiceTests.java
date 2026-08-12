@@ -35,8 +35,7 @@ class RepositoryDiscoveryApplicationServiceTests {
         service = new GitKnowledgeApplicationService(
                 repository, workspaceService, mock(WorkspacePermissionPolicy.class),
                 mock(DocumentRepository.class), mock(DocumentBlockRepository.class),
-                mock(OutboxEventPublisher.class), new CodeMetadataInspector(), null,
-                new CodeMetadataCacheProperties(false, 1024)
+                mock(OutboxEventPublisher.class), new CodeMetadataInspector(), null
         );
         workspaceId = UUID.randomUUID();
         repositoryId = UUID.randomUUID();

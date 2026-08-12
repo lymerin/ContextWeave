@@ -25,14 +25,6 @@ public final class OutboxEventTypes {
     public static final String REVIEW_COMPLETED = "REVIEW_COMPLETED";
     public static final String REVIEW_FAILED = "REVIEW_FAILED";
 
-    public static final String REVIEW_ISSUE_CREATED = "REVIEW_ISSUE_CREATED";
-    public static final String REVIEW_ISSUE_RESOLVED = "REVIEW_ISSUE_RESOLVED";
-    public static final String REVIEW_ISSUE_ACCEPTED = "REVIEW_ISSUE_ACCEPTED";
-    public static final String REVIEW_ISSUE_REJECTED = "REVIEW_ISSUE_REJECTED";
-
-    public static final String NOTIFICATION_REQUESTED =
-            "NOTIFICATION_REQUESTED";
-
     public static final String GIT_CHANGE_SYNCED = "GIT_CHANGE_SYNCED";
     public static final String GIT_REPOSITORY_SYNC_REQUESTED =
             "GIT_REPOSITORY_SYNC_REQUESTED";

@@ -1,11 +1,11 @@
 package com.devcollab.knowledgecore.document.core.api;
 
+import com.devcollab.knowledgecore.document.collaboration.domain.DocumentOperationLog;
 import com.devcollab.knowledgecore.document.core.application.CreateDocumentCommand;
 import com.devcollab.knowledgecore.document.core.application.DocumentApplicationService;
-import com.devcollab.knowledgecore.document.core.application.MoveDocumentCommand;
-import com.devcollab.knowledgecore.document.review.application.ReviewDocumentCommand;
-import com.devcollab.knowledgecore.document.core.application.UpdateDocumentCommand;
+import com.devcollab.knowledgecore.document.core.domain.Document;
 import com.devcollab.knowledgecore.security.CurrentUser;
+import com.devcollab.knowledgecore.security.DelegatedRestAccess;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -21,10 +21,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.UUID;
-import com.devcollab.knowledgecore.document.block.api.DocumentStructureResponse;
-import com.devcollab.knowledgecore.document.version.api.DocumentVersionResponse;
-import com.devcollab.knowledgecore.document.collaboration.api.DocumentOperationLogResponse;
+import com.devcollab.knowledgecore.document.block.application.DocumentStructureDto;
 import com.devcollab.knowledgecore.document.review.api.ReviewDocumentRequest;
+import com.devcollab.knowledgecore.document.version.domain.DocumentVersion;
 
 @RestController
 public class DocumentController {
@@ -39,12 +38,12 @@ public class DocumentController {
 
     @PostMapping("/api/v1/workspaces/{workspaceId}/documents")
     @ResponseStatus(HttpStatus.CREATED)
-    public DocumentResponse create(
+    public Document create(
             @PathVariable UUID workspaceId,
             @AuthenticationPrincipal CurrentUser currentUser,
             @Valid @RequestBody CreateDocumentRequest request
     ) {
-        return DocumentResponse.from(documentService.create(
+        return documentService.create(
                 workspaceId,
                 currentUser.userId(),
                 new CreateDocumentCommand(
@@ -52,7 +51,7 @@ public class DocumentController {
                         request.title(),
                         request.documentType()
                 )
-        ));
+        );
     }
 
     @GetMapping("/api/v1/workspaces/{workspaceId}/documents/tree")
@@ -69,17 +68,19 @@ public class DocumentController {
     }
 
     @GetMapping("/api/v1/documents/{documentId}")
-    public DocumentResponse get(
+    public Document get(
             @PathVariable UUID documentId,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
-        return DocumentResponse.from(
-                documentService.get(documentId, currentUser.userId())
-        );
+        return documentService.get(documentId, currentUser.userId());
     }
 
     @GetMapping("/api/v1/workspaces/{workspaceId}/documents/{documentId}/structure")
-    public DocumentStructureResponse getStructure(
+    @DelegatedRestAccess(tools = {
+            "devcollab.document.get_structure",
+            "devcollab.document.get_structure_batch"
+    })
+    public DocumentStructureDto getStructure(
             @PathVariable UUID workspaceId,
             @PathVariable UUID documentId,
             @AuthenticationPrincipal CurrentUser currentUser,
@@ -87,42 +88,40 @@ public class DocumentController {
             @org.springframework.web.bind.annotation.RequestParam(required = false) Integer maxBlocks,
             @org.springframework.web.bind.annotation.RequestParam(required = false) Integer maxContentCharacters
     ) {
-        return DocumentStructureResponse.from(
-                documentService.getDocumentStructure(
-                        workspaceId,
-                        documentId,
-                        currentUser.userId(),
-                        includeBlockContent,
-                        maxBlocks,
-                        maxContentCharacters
-                )
+        return documentService.getDocumentStructure(
+                workspaceId,
+                documentId,
+                currentUser.userId(),
+                includeBlockContent,
+                maxBlocks,
+                maxContentCharacters
         );
     }
 
     @PatchMapping("/api/v1/documents/{documentId}")
-    public DocumentResponse update(
+    public Document update(
             @PathVariable UUID documentId,
             @AuthenticationPrincipal CurrentUser currentUser,
             @Valid @RequestBody UpdateDocumentRequest request
     ) {
-        return DocumentResponse.from(documentService.update(
+        return documentService.update(
                 documentId,
                 currentUser.userId(),
-                new UpdateDocumentCommand(request.title())
-        ));
+                request
+        );
     }
 
     @PatchMapping("/api/v1/documents/{documentId}/parent")
-    public DocumentResponse move(
+    public Document move(
             @PathVariable UUID documentId,
             @AuthenticationPrincipal CurrentUser currentUser,
             @RequestBody MoveDocumentRequest request
     ) {
-        return DocumentResponse.from(documentService.move(
+        return documentService.move(
                 documentId,
                 currentUser.userId(),
-                new MoveDocumentCommand(request.parentDocumentId())
-        ));
+                request
+        );
     }
 
     @DeleteMapping("/api/v1/documents/{documentId}")
@@ -135,95 +134,73 @@ public class DocumentController {
     }
 
     @PostMapping("/api/v1/documents/{documentId}/submit-review")
-    public DocumentResponse submitReview(
+    public Document submitReview(
             @PathVariable UUID documentId,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
-        return DocumentResponse.from(
-                documentService.submitReview(documentId, currentUser.userId())
-        );
+        return documentService.submitReview(documentId, currentUser.userId());
     }
 
     @PostMapping("/api/v1/documents/{documentId}/approve-review")
-    public DocumentResponse approveReview(
+    public Document approveReview(
             @PathVariable UUID documentId,
             @AuthenticationPrincipal CurrentUser currentUser,
             @Valid @RequestBody(required = false) ReviewDocumentRequest request
     ) {
-        return DocumentResponse.from(
-                documentService.approveReview(
-                        documentId,
-                        currentUser.userId(),
-                        reviewCommand(request)
-                )
+        return documentService.approveReview(
+                documentId,
+                currentUser.userId(),
+                request
         );
     }
 
     @PostMapping("/api/v1/documents/{documentId}/reject-review")
-    public DocumentResponse rejectReview(
+    public Document rejectReview(
             @PathVariable UUID documentId,
             @AuthenticationPrincipal CurrentUser currentUser,
             @Valid @RequestBody(required = false) ReviewDocumentRequest request
     ) {
-        return DocumentResponse.from(
-                documentService.rejectReview(
-                        documentId,
-                        currentUser.userId(),
-                        reviewCommand(request)
-                )
+        return documentService.rejectReview(
+                documentId,
+                currentUser.userId(),
+                request
         );
     }
 
     @PostMapping("/api/v1/documents/{documentId}/deprecate")
-    public DocumentResponse deprecate(
+    public Document deprecate(
             @PathVariable UUID documentId,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
-        return DocumentResponse.from(
-                documentService.deprecate(documentId, currentUser.userId())
-        );
+        return documentService.deprecate(documentId, currentUser.userId());
     }
 
     @GetMapping("/api/v1/documents/{documentId}/versions")
-    public List<DocumentVersionResponse> versions(
+    public List<DocumentVersion> versions(
             @PathVariable UUID documentId,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
-        return documentService.listVersions(documentId, currentUser.userId())
-                .stream()
-                .map(DocumentVersionResponse::from)
-                .toList();
+        return documentService.listVersions(documentId, currentUser.userId());
     }
 
     @GetMapping("/api/v1/documents/{documentId}/versions/{versionId}")
-    public DocumentVersionResponse version(
+    public DocumentVersion version(
             @PathVariable UUID documentId,
             @PathVariable UUID versionId,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
-        return DocumentVersionResponse.from(documentService.getVersion(
+        return documentService.getVersion(
                 documentId,
                 versionId,
                 currentUser.userId()
-        ));
+        );
     }
 
     @GetMapping("/api/v1/documents/{documentId}/timeline")
-    public List<DocumentOperationLogResponse> timeline(
+    public List<DocumentOperationLog> timeline(
             @PathVariable UUID documentId,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
-        return documentService.listTimeline(documentId, currentUser.userId())
-                .stream()
-                .map(DocumentOperationLogResponse::from)
-                .toList();
-    }
-
-    private ReviewDocumentCommand reviewCommand(
-            ReviewDocumentRequest request
-    ) {
-        return new ReviewDocumentCommand(
-                request == null ? null : request.comment()
-        );
+        return documentService.listTimeline(documentId, currentUser.userId());
     }
 }

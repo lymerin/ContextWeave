@@ -19,6 +19,8 @@ import java.util.List;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
+    public static final String TOKEN_CLAIMS_ATTRIBUTE =
+            JwtAuthenticationFilter.class.getName() + ".TOKEN_CLAIMS";
 
     private final JwtTokenService jwtTokenService;
 
@@ -45,14 +47,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             JwtTokenService.TokenClaims claims =
                     jwtTokenService.verify(token);
+            request.setAttribute(TOKEN_CLAIMS_ATTRIBUTE, claims);
             if (JwtTokenService.TOKEN_TYPE_ACCESS.equals(claims.tokenType())) {
-                // 普通用户访问令牌
+                // User access token.
             } else if (JwtTokenService.TOKEN_TYPE_AGENT_DELEGATION.equals(
                     claims.tokenType()
             )) {
-                // Agent 委托令牌：MCP 服务端透传给知识核心的数据链路依赖此类型；
-                // 与 gRPC 侧一致，要求委托令牌携带 allowed_tools（作用域已由
-                // mcp-server 的 AuditedToolExecutor 校验）。
+                // REST endpoint scope is checked by DelegatedRestAccessInterceptor.
                 if (claims.allowedTools().isEmpty()) {
                     throw new IllegalArgumentException(
                             "Agent delegation token must include allowed_tools"

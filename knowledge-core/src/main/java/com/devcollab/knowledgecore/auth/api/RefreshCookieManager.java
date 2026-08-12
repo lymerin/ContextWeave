@@ -126,7 +126,10 @@ public class RefreshCookieManager {
         if (!properties.allowedOrigins().contains(origin)
                 || csrfCookie == null
                 || csrfHeader == null
-                || !secureEquals(csrfCookie, csrfHeader)) {
+                || !MessageDigest.isEqual(
+                        csrfCookie.getBytes(StandardCharsets.UTF_8),
+                        csrfHeader.getBytes(StandardCharsets.UTF_8)
+                )) {
             throw new InvalidCsrfTokenException();
         }
 
@@ -150,13 +153,6 @@ public class RefreshCookieManager {
                 .build();
 
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
-    }
-
-    private boolean secureEquals(String left, String right) {
-        return MessageDigest.isEqual(
-                left.getBytes(StandardCharsets.UTF_8),
-                right.getBytes(StandardCharsets.UTF_8)
-        );
     }
 
     public record RequestCredentials(

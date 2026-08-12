@@ -7,7 +7,6 @@ import com.devcollab.knowledgecore.document.core.domain.DocumentBlockType;
 import com.devcollab.knowledgecore.document.core.domain.DocumentRepository;
 import com.devcollab.knowledgecore.document.core.domain.DocumentReviewStatus;
 import com.devcollab.knowledgecore.document.core.domain.DocumentType;
-import com.devcollab.knowledgecore.document.candidate.api.DocumentCandidateResponse;
 import com.devcollab.knowledgecore.git.application.exception.GitRepositoryNotFoundException;
 import com.devcollab.knowledgecore.git.domain.*;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationService;
@@ -149,7 +148,7 @@ class DocumentCandidateApplicationServiceTests {
         );
 
         JsonNode json = new ObjectMapper().readTree(
-                new ObjectMapper().writeValueAsBytes(DocumentCandidateResponse.from(result))
+                new ObjectMapper().writeValueAsBytes(result)
         );
 
         assertThat(json.has("workspaceId")).isTrue();

@@ -17,8 +17,8 @@ import java.util.stream.Stream;
 
 @Repository
 @ConditionalOnProperty(
-        name = "devcollab.search.engine",
-        havingValue = "postgres",
+        name = "devcollab.search.elasticsearch.enabled",
+        havingValue = "false",
         matchIfMissing = true
 )
 public class JdbcSearchRepository implements SearchRepository {

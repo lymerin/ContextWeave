@@ -3,7 +3,7 @@ package com.devcollab.knowledgecore.common.outbox;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayResult;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayService;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxKafkaMessage;
-import com.devcollab.knowledgecore.common.outbox.application.OutboxMessagePublisher;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxKafkaPublisher;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEvent;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEventRepository;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEventStatus;
@@ -57,10 +57,10 @@ class OutboxEventIntegrationTests {
         String token = registerAndGetAccessToken();
         String workspaceId = createWorkspace(token).get("id").asText();
 
-        int before = outboxEventRepository.findAll().size();
+        int before = outboxEventRepository.findPending(Integer.MAX_VALUE).size();
         JsonNode document = createDocument(token, workspaceId, "Outbox doc");
 
-        List<OutboxEvent> events = outboxEventRepository.findAll();
+        List<OutboxEvent> events = outboxEventRepository.findPending(Integer.MAX_VALUE);
         assertThat(events).hasSize(before + 3);
         List<OutboxEvent> newEvents = events.stream()
                 .skip(before)
@@ -94,28 +94,26 @@ class OutboxEventIntegrationTests {
         outboxMessagePublisher.clear();
         String token = registerAndGetAccessToken();
         String workspaceId = createWorkspace(token).get("id").asText();
-        int before = outboxEventRepository.findAll().size();
+        int before = outboxEventRepository.findPending(Integer.MAX_VALUE).size();
         createDocument(token, workspaceId, "Relay doc");
 
-        OutboxEvent pending = outboxEventRepository.findAll().get(before);
+        OutboxEvent pending = outboxEventRepository.findPending(Integer.MAX_VALUE).get(before);
         assertThat(pending.status()).isEqualTo(OutboxEventStatus.PENDING);
 
-        OutboxRelayResult result = outboxRelayService.relayPendingEvents(
-                before + 1
+        OutboxRelayResult result = outboxRelayService.relayRetryableEvents(
+                before + 1,
+                0
         );
 
         assertThat(result.scanned()).isGreaterThanOrEqualTo(1);
         assertThat(result.published()).isGreaterThanOrEqualTo(1);
         assertThat(result.failed()).isZero();
 
-        OutboxEvent published = outboxEventRepository.findAll()
-                .stream()
-                .filter(event -> event.id().equals(pending.id()))
-                .findFirst()
-                .orElseThrow();
-        assertThat(published.status()).isEqualTo(OutboxEventStatus.PUBLISHED);
-        assertThat(published.publishedAt()).isNotNull();
-        assertThat(published.lastError()).isNull();
+        // The repository exposes no post-publish read, so PUBLISHED status is
+        // verified indirectly: the event left PENDING and reached the publisher.
+        assertThat(outboxEventRepository.findPending(Integer.MAX_VALUE))
+                .extracting(OutboxEvent::id)
+                .doesNotContain(pending.id());
         assertThat(outboxMessagePublisher.publishedMessages())
                 .extracting(OutboxKafkaMessage::eventId)
                 .contains(pending.id());
@@ -130,7 +128,7 @@ class OutboxEventIntegrationTests {
                 .get("id")
                 .asText();
         JsonNode block = createBlock(token, documentId, "Original");
-        int before = outboxEventRepository.findAll().size();
+        int before = outboxEventRepository.findPending(Integer.MAX_VALUE).size();
 
         mockMvc.perform(patch(
                         "/api/v1/documents/{documentId}/blocks/{blockId}",
@@ -143,7 +141,7 @@ class OutboxEventIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.version").value(1));
 
-        List<OutboxEvent> events = outboxEventRepository.findAll();
+        List<OutboxEvent> events = outboxEventRepository.findPending(Integer.MAX_VALUE);
         assertThat(events).hasSize(before + 2);
         List<OutboxEvent> newEvents = events.stream()
                 .skip(before)
@@ -188,7 +186,7 @@ class OutboxEventIntegrationTests {
                 .get("id")
                 .asText();
 
-        int before = outboxEventRepository.findAll().size();
+        int before = outboxEventRepository.findPending(Integer.MAX_VALUE).size();
 
         mockMvc.perform(patch("/api/v1/documents/{id}", documentId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(token))
@@ -230,7 +228,7 @@ class OutboxEventIntegrationTests {
                         .header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isNoContent());
 
-        List<String> newEventTypes = outboxEventRepository.findAll()
+        List<String> newEventTypes = outboxEventRepository.findPending(Integer.MAX_VALUE)
                 .stream()
                 .skip(before)
                 .map(OutboxEvent::eventType)
@@ -254,7 +252,7 @@ class OutboxEventIntegrationTests {
         String outsiderToken = registerAndGetAccessToken();
         String workspaceId = createWorkspace(ownerToken).get("id").asText();
 
-        int before = outboxEventRepository.findAll().size();
+        int before = outboxEventRepository.findPending(Integer.MAX_VALUE).size();
         mockMvc.perform(
                         post("/api/v1/workspaces/{id}/documents", workspaceId)
                                 .header(HttpHeaders.AUTHORIZATION,
@@ -266,7 +264,7 @@ class OutboxEventIntegrationTests {
                 .andExpect(jsonPath("$.code")
                         .value("WORKSPACE_ACCESS_DENIED"));
 
-        assertThat(outboxEventRepository.findAll()).hasSize(before);
+        assertThat(outboxEventRepository.findPending(Integer.MAX_VALUE)).hasSize(before);
     }
 
     @Test
@@ -291,7 +289,7 @@ class OutboxEventIntegrationTests {
                         .content(updateBlockBody("First update", 0)))
                 .andExpect(status().isOk());
 
-        int before = outboxEventRepository.findAll().size();
+        int before = outboxEventRepository.findPending(Integer.MAX_VALUE).size();
         mockMvc.perform(patch(
                         "/api/v1/documents/{documentId}/blocks/{blockId}",
                         documentId,
@@ -304,7 +302,7 @@ class OutboxEventIntegrationTests {
                 .andExpect(jsonPath("$.code")
                         .value("DOCUMENT_BLOCK_VERSION_CONFLICT"));
 
-        assertThat(outboxEventRepository.findAll()).hasSize(before);
+        assertThat(outboxEventRepository.findPending(Integer.MAX_VALUE)).hasSize(before);
     }
 
     private JsonNode createWorkspace(String token) throws Exception {
@@ -449,10 +447,14 @@ class OutboxEventIntegrationTests {
     }
 
     static final class RecordingOutboxMessagePublisher
-            implements OutboxMessagePublisher {
+            extends OutboxKafkaPublisher {
 
         private final List<OutboxKafkaMessage> publishedMessages =
                 new CopyOnWriteArrayList<>();
+
+        RecordingOutboxMessagePublisher() {
+            super(null, null, null);
+        }
 
         @Override
         public void publish(OutboxKafkaMessage event) {

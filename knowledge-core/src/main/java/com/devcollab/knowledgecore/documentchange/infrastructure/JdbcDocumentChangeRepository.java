@@ -282,15 +282,6 @@ public class JdbcDocumentChangeRepository implements DocumentChangeRepository {
     }
 
     @Override
-    public long countAll(UUID workspaceId) {
-        Long count = jdbcTemplate.queryForObject("""
-                SELECT COUNT(*) FROM document_change_requests
-                 WHERE workspace_id = ?
-                """, Long.class, workspaceId);
-        return count == null ? 0 : count;
-    }
-
-    @Override
     public List<ListItem> findPage(
             UUID workspaceId,
             Status status,

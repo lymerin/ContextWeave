@@ -1,9 +1,7 @@
 package com.devcollab.knowledgecore.document.core.application;
 
-import com.devcollab.knowledgecore.common.cache.ApprovedAdrCacheService;
-import com.devcollab.knowledgecore.common.cache.PublishedDocumentCacheService;
+import com.devcollab.knowledgecore.common.cache.DocumentVersionSnapshotCacheService;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
-import com.devcollab.knowledgecore.document.block.api.DocumentStructureResponse;
 import com.devcollab.knowledgecore.document.block.application.DocumentBlockContentCodec;
 import com.devcollab.knowledgecore.document.block.application.DocumentStructureDto;
 import com.devcollab.knowledgecore.document.collaboration.domain.DocumentOperationLogRepository;
@@ -50,8 +48,9 @@ class DocumentStructureApplicationServiceTests {
                 mock(DocumentOperationLogRepository.class),
                 mock(WorkspaceApplicationService.class), mock(WorkspacePermissionPolicy.class),
                 mock(OutboxEventPublisher.class), objectMapper, mock(DocumentBlockContentCodec.class),
-                mock(DocumentTreeCacheService.class), mock(PublishedDocumentCacheService.class),
-                mock(ApprovedAdrCacheService.class)
+                mock(DocumentTreeCacheService.class),
+                mock(DocumentVersionSnapshotCacheService.class),
+                mock(DocumentVersionSnapshotCacheService.class)
         );
         workspaceId = UUID.randomUUID();
         documentId = UUID.randomUUID();
@@ -136,7 +135,7 @@ class DocumentStructureApplicationServiceTests {
                 workspaceId, documentId, userId, true, null, 1
         );
 
-        JsonNode json = objectMapper.readTree(objectMapper.writeValueAsBytes(DocumentStructureResponse.from(dto)));
+        JsonNode json = objectMapper.readTree(objectMapper.writeValueAsBytes(dto));
 
         assertThat(json.has("truncated")).isTrue();
         assertThat(json.has("isTruncated")).isFalse();

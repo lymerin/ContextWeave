@@ -48,10 +48,6 @@ public class UserOperationRateLimitInterceptor implements HandlerInterceptor {
                 policy.window()
         );
         if (!decision.allowed()) {
-            response.setHeader(
-                    "Retry-After",
-                    Long.toString(Math.max(1, (decision.retryAfterMillis() + 999) / 1000))
-            );
             throw new RateLimitExceededException(
                     "操作过于频繁，请稍后重试",
                     decision.retryAfterMillis()

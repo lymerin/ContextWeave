@@ -14,6 +14,4 @@ public interface OutboxEventRepository {
     void markPublished(UUID eventId);
 
     void markFailed(UUID eventId, String errorMessage);
-
-    List<OutboxEvent> findAll();
 }

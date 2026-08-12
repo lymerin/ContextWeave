@@ -2,7 +2,6 @@ package com.devcollab.knowledgecore.common.outbox.application;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -19,7 +18,7 @@ import java.util.concurrent.ExecutionException;
  * with FAILED status and are retried by the Outbox Relay.
  */
 @Component
-public class OutboxKafkaPublisher implements OutboxMessagePublisher {
+public class OutboxKafkaPublisher {
 
     private static final Logger log =
             LoggerFactory.getLogger(OutboxKafkaPublisher.class);
@@ -30,12 +29,12 @@ public class OutboxKafkaPublisher implements OutboxMessagePublisher {
 
     public OutboxKafkaPublisher(
             KafkaTemplate<String, String> kafkaTemplate,
-            OutboxTopicRouter topicRouter
+            OutboxTopicRouter topicRouter,
+            ObjectMapper objectMapper
     ) {
         this.kafkaTemplate = kafkaTemplate;
         this.topicRouter = topicRouter;
-        this.objectMapper = new ObjectMapper()
-                .registerModule(new JavaTimeModule());
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -45,7 +44,6 @@ public class OutboxKafkaPublisher implements OutboxMessagePublisher {
      * @param event the outbox event to publish
      * @throws RuntimeException wrapping the original failure if Kafka send fails
      */
-    @Override
     public void publish(OutboxKafkaMessage event) {
         String key = event.kafkaKey();
         String value;

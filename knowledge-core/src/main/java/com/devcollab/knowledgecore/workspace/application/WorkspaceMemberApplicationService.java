@@ -1,7 +1,8 @@
 package com.devcollab.knowledgecore.workspace.application;
 
+import com.devcollab.knowledgecore.auth.application.AuthenticationApplicationService;
 import com.devcollab.knowledgecore.auth.domain.UserAccount;
-import com.devcollab.knowledgecore.auth.domain.UserRepository;
+import com.devcollab.knowledgecore.auth.infrastructure.JdbcUserRepository;
 import com.devcollab.knowledgecore.common.cache.CacheKey;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventTypes;
@@ -11,8 +12,8 @@ import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemb
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceMemberNotFoundException;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceUserNotFoundException;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
-import com.devcollab.knowledgecore.workspace.domain.WorkspaceMemberRepository;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceRole;
+import com.devcollab.knowledgecore.workspace.infrastructure.JdbcWorkspaceMemberRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,16 +28,16 @@ import java.util.UUID;
 public class WorkspaceMemberApplicationService {
 
     private final WorkspaceApplicationService workspaceService;
-    private final WorkspaceMemberRepository memberRepository;
-    private final UserRepository userRepository;
+    private final JdbcWorkspaceMemberRepository memberRepository;
+    private final JdbcUserRepository userRepository;
     private final WorkspacePermissionPolicy permissionPolicy;
     private final WorkspaceMemberCacheService memberCache;
     private final OutboxEventPublisher outboxEventPublisher;
 
     public WorkspaceMemberApplicationService(
             WorkspaceApplicationService workspaceService,
-            WorkspaceMemberRepository memberRepository,
-            UserRepository userRepository,
+            JdbcWorkspaceMemberRepository memberRepository,
+            JdbcUserRepository userRepository,
             WorkspacePermissionPolicy permissionPolicy,
             WorkspaceMemberCacheService memberCache,
             OutboxEventPublisher outboxEventPublisher
@@ -71,12 +72,15 @@ public class WorkspaceMemberApplicationService {
     public WorkspaceMemberView invite(
             UUID workspaceId,
             UUID currentUserId,
-            InviteWorkspaceMemberCommand command
+            String username,
+            WorkspaceRole role
     ) {
         requireMemberManager(workspaceId, currentUserId);
-        WorkspaceRole role = requireSupportedAssignableRole(command.role());
+        requireSupportedAssignableRole(role);
         UserAccount targetUser = userRepository
-                .findByNormalizedUsername(normalizeUsername(command.username()))
+                .findByNormalizedUsername(
+                        AuthenticationApplicationService.normalizeUsername(username)
+                )
                 .orElseThrow(WorkspaceUserNotFoundException::new);
 
         if (memberRepository.existsByWorkspaceIdAndUserId(
@@ -108,10 +112,10 @@ public class WorkspaceMemberApplicationService {
             UUID workspaceId,
             UUID targetUserId,
             UUID currentUserId,
-            UpdateWorkspaceMemberRoleCommand command
+            WorkspaceRole role
     ) {
         requireMemberManager(workspaceId, currentUserId);
-        WorkspaceRole role = requireSupportedAssignableRole(command.role());
+        requireSupportedAssignableRole(role);
         WorkspaceMember target = requireMember(workspaceId, targetUserId);
 
         if (permissionPolicy.isAdmin(target) && role != WorkspaceRole.ADMIN) {
@@ -195,13 +199,6 @@ public class WorkspaceMemberApplicationService {
             throw new IllegalArgumentException("成员角色不能为空");
         }
         return role;
-    }
-
-    private String normalizeUsername(String username) {
-        if (username == null || username.isBlank()) {
-            throw new IllegalArgumentException("用户名不能为空");
-        }
-        return username.trim().toLowerCase();
     }
 
     private void publishMemberCacheInvalidated(

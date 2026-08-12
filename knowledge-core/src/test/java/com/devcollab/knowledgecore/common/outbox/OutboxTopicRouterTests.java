@@ -43,23 +43,12 @@ class OutboxTopicRouterTests {
                         "devcollab.review.events",
                         "devcollab.notification.events"
                 );
-        assertThat(route(OutboxEventTypes.REVIEW_ISSUE_CREATED))
-                .containsExactly(
-                        "devcollab.review.events",
-                        "devcollab.notification.events"
-                );
     }
 
     @Test
     void routesLegacyReviewEventsOnlyToReviewTopic() {
         assertThat(route("DOCUMENT_REVIEW_SUBMITTED"))
                 .containsExactly("devcollab.review.events");
-    }
-
-    @Test
-    void routesGenericNotificationRequestsToNotificationTopic() {
-        assertThat(route(OutboxEventTypes.NOTIFICATION_REQUESTED))
-                .containsExactly("devcollab.notification.events");
     }
 
     @Test

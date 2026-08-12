@@ -1,5 +1,6 @@
 package com.devcollab.knowledgecore.git.application;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.UUID;
 
@@ -9,7 +10,7 @@ public record CodeBindingQueryResult(
         String filePath,
         boolean fileHasBindings,
         List<CodeBindingQueryItem> bindings,
-        boolean isTruncated,
+        @JsonProperty("truncated") boolean isTruncated,
         int omittedBindingCount
 ) {
 }

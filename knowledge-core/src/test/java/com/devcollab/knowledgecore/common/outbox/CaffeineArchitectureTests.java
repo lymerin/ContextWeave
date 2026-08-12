@@ -2,11 +2,9 @@ package com.devcollab.knowledgecore.common.cache;
 
 import com.devcollab.knowledgecore.common.outbox.application.OutboxKafkaMessage;
 import com.devcollab.knowledgecore.document.tree.application.DocumentTreeCacheService.DocumentList;
-import com.devcollab.knowledgecore.document.core.domain.DocumentBlockType;
-import com.devcollab.knowledgecore.document.core.domain.DocumentType;
 import com.devcollab.knowledgecore.document.version.domain.DocumentVersion;
 import com.devcollab.knowledgecore.document.version.domain.DocumentVersionStatus;
-import com.devcollab.knowledgecore.workspace.application.WorkspaceMemberCacheService.CachedMembership;
+import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -16,27 +14,22 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 class CaffeineArchitectureTests {
 
     @Test
-    void configurationProvidesFiveBoundedNamedCachesWithStats() {
-        CaffeineCacheConfig config = new CaffeineCacheConfig(properties(
-                Duration.ofSeconds(1)
-        ));
+    void configurationProvidesFourBoundedNamedCachesWithStats() {
+        CaffeineCacheConfig config = new CaffeineCacheConfig(properties());
 
         assertThat(config.workspaceMemberLocalCache()).isNotNull();
         assertThat(config.documentTreeLocalCache()).isNotNull();
-        assertThat(config.documentSchemaLocalCache()).isNotNull();
         assertThat(config.publishedDocumentLocalCache()).isNotNull();
         assertThat(config.approvedAdrLocalCache()).isNotNull();
 
@@ -50,76 +43,57 @@ class CaffeineArchitectureTests {
     }
 
     @Test
-    void boundedLoaderUsesCaffeineSingleFlightForSameKey() throws Exception {
-        CacheProperties properties = properties(Duration.ofSeconds(1));
-        BoundedCacheLoader loader = new BoundedCacheLoader(properties);
+    void caffeineSingleFlightLoadsSameKeyOnce() throws Exception {
         Cache<String, String> cache = Caffeine.newBuilder().build();
         AtomicInteger loads = new AtomicInteger();
         CountDownLatch firstLoadStarted = new CountDownLatch(1);
-        try {
-            var first = java.util.concurrent.CompletableFuture.supplyAsync(() ->
-                    loader.get("test", cache, "same", () -> {
-                        loads.incrementAndGet();
-                        firstLoadStarted.countDown();
-                        sleep(100);
-                        return "value";
-                    })
-            );
-            assertThat(firstLoadStarted.await(1, TimeUnit.SECONDS)).isTrue();
-            var second = java.util.concurrent.CompletableFuture.supplyAsync(() ->
-                    loader.get("test", cache, "same", () -> {
-                        loads.incrementAndGet();
-                        return "other";
-                    })
-            );
-
-            assertThat(first.get()).isEqualTo("value");
-            assertThat(second.get()).isEqualTo("value");
-            assertThat(loads).hasValue(1);
-        } finally {
-            loader.shutdown();
-        }
-    }
-
-    @Test
-    void boundedLoaderFailsFastWhenSourceExceedsTimeout() {
-        BoundedCacheLoader loader = new BoundedCacheLoader(
-                properties(Duration.ofMillis(20))
+        var first = java.util.concurrent.CompletableFuture.supplyAsync(() ->
+                cache.get("same", k -> {
+                    loads.incrementAndGet();
+                    firstLoadStarted.countDown();
+                    sleep(100);
+                    return "value";
+                })
         );
-        try {
-            assertThatThrownBy(() -> loader.get(
-                    "published-document",
-                    Caffeine.newBuilder().build(),
-                    "slow",
-                    () -> {
-                        sleep(200);
-                        return "late";
-                    }
-            )).isInstanceOf(CacheLoadTimeoutException.class);
-        } finally {
-            loader.shutdown();
-        }
+        assertThat(firstLoadStarted.await(1, TimeUnit.SECONDS)).isTrue();
+        var second = java.util.concurrent.CompletableFuture.supplyAsync(() ->
+                cache.get("same", k -> {
+                    loads.incrementAndGet();
+                    return "other";
+                })
+        );
+
+        assertThat(first.get()).isEqualTo("value");
+        assertThat(second.get()).isEqualTo("value");
+        assertThat(loads).hasValue(1);
     }
 
     @Test
     void kafkaInvalidationEvictsLocalCacheEntryAndPrefix() throws Exception {
-        CacheProperties properties = properties(Duration.ofSeconds(1));
-        BoundedCacheLoader loader = new BoundedCacheLoader(properties);
-        Cache<String, CachedMembership> memberCache = Caffeine.newBuilder().build();
+        CacheProperties properties = properties();
+        Cache<String, WorkspaceMember> memberCache = Caffeine.newBuilder().build();
         Cache<String, DocumentList> treeCache = Caffeine.newBuilder().build();
-        Cache<String, DocumentSchemaDescriptor> schemaCache = Caffeine.newBuilder().build();
         Cache<String, DocumentVersion> publishedCache = Caffeine.newBuilder().build();
         Cache<String, DocumentVersion> adrCache = Caffeine.newBuilder().build();
-        PublishedDocumentCacheService published =
-                new PublishedDocumentCacheService(publishedCache, loader, redisCache(properties), properties);
-        ApprovedAdrCacheService approvedAdr =
-                new ApprovedAdrCacheService(adrCache, loader, redisCache(properties), properties);
+        DocumentVersionSnapshotCacheService published =
+                new DocumentVersionSnapshotCacheService(
+                        "published-document",
+                        publishedCache,
+                        redisCache(properties),
+                        properties.local().publishedDocumentTtl()
+                );
+        DocumentVersionSnapshotCacheService approvedAdr =
+                new DocumentVersionSnapshotCacheService(
+                        "approved-adr",
+                        adrCache,
+                        redisCache(properties),
+                        properties.local().approvedAdrTtl()
+                );
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
         CacheInvalidationKafkaConsumer consumer = new CacheInvalidationKafkaConsumer(
                 mapper,
                 memberCache,
                 treeCache,
-                schemaCache,
                 published,
                 approvedAdr
         );
@@ -142,38 +116,36 @@ class CaffeineArchitectureTests {
                 payload,
                 Instant.now()
         ));
-        try {
-            consumer.consume(message);
-            assertThat(publishedCache.asMap().keySet())
-                    .noneMatch(key -> key.startsWith(prefix));
-            assertThat(publishedCache.estimatedSize()).isEqualTo(1);
-        } finally {
-            loader.shutdown();
-        }
+
+        consumer.consume(message);
+
+        assertThat(publishedCache.asMap().keySet())
+                .noneMatch(key -> key.startsWith(prefix));
+        assertThat(publishedCache.estimatedSize()).isEqualTo(1);
     }
 
     @Test
     void malformedInvalidationDoesNotBlockConsumerBecauseTtlIsFallback() {
-        CacheProperties properties = properties(Duration.ofSeconds(1));
-        BoundedCacheLoader loader = new BoundedCacheLoader(properties);
-        try {
-            CacheInvalidationKafkaConsumer consumer = new CacheInvalidationKafkaConsumer(
-                    new ObjectMapper().registerModule(new JavaTimeModule()),
-                    Caffeine.newBuilder().build(),
-                    Caffeine.newBuilder().build(),
-                    Caffeine.newBuilder().build(),
-                    new PublishedDocumentCacheService(
-                            Caffeine.newBuilder().build(), loader, redisCache(properties), properties
-                    ),
-                    new ApprovedAdrCacheService(
-                            Caffeine.newBuilder().build(), loader, redisCache(properties), properties
-                    )
-            );
+        CacheProperties properties = properties();
+        CacheInvalidationKafkaConsumer consumer = new CacheInvalidationKafkaConsumer(
+                new ObjectMapper().registerModule(new JavaTimeModule()),
+                Caffeine.newBuilder().build(),
+                Caffeine.newBuilder().build(),
+                new DocumentVersionSnapshotCacheService(
+                        "published-document",
+                        Caffeine.newBuilder().build(),
+                        redisCache(properties),
+                        properties.local().publishedDocumentTtl()
+                ),
+                new DocumentVersionSnapshotCacheService(
+                        "approved-adr",
+                        Caffeine.newBuilder().build(),
+                        redisCache(properties),
+                        properties.local().approvedAdrTtl()
+                )
+        );
 
-            consumer.consume("not-json");
-        } finally {
-            loader.shutdown();
-        }
+        consumer.consume("not-json");
     }
 
     private RedisCacheService redisCache(CacheProperties properties) {
@@ -184,7 +156,7 @@ class CaffeineArchitectureTests {
         );
     }
 
-    private CacheProperties properties(Duration loadTimeout) {
+    private CacheProperties properties() {
         return new CacheProperties(
                 true,
                 Duration.ofMinutes(10),
@@ -197,15 +169,10 @@ class CaffeineArchitectureTests {
                         Duration.ofMinutes(1),
                         100,
                         100,
-                        Duration.ofHours(1),
                         Duration.ofMinutes(10),
                         Duration.ofMinutes(30),
                         1_000,
-                        300,
-                        300,
-                        2,
-                        10,
-                        loadTimeout
+                        300
                 )
         );
     }

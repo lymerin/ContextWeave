@@ -1,7 +1,6 @@
 package com.devcollab.knowledgecore.workspace.infrastructure;
 
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
-import com.devcollab.knowledgecore.workspace.domain.WorkspaceMemberRepository;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceRole;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -13,8 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public class JdbcWorkspaceMemberRepository
-        implements WorkspaceMemberRepository {
+public class JdbcWorkspaceMemberRepository {
 
     private static final RowMapper<WorkspaceMember> MEMBER_ROW_MAPPER =
             (rs, rowNum) -> new WorkspaceMember(
@@ -30,7 +28,6 @@ public class JdbcWorkspaceMemberRepository
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    @Override
     public WorkspaceMember save(WorkspaceMember member) {
         int updated = jdbcTemplate.update("""
                         UPDATE workspace_members SET role = ?, joined_at = ?
@@ -51,7 +48,6 @@ public class JdbcWorkspaceMemberRepository
         return member;
     }
 
-    @Override
     public Optional<WorkspaceMember> findByWorkspaceIdAndUserId(
             UUID workspaceId,
             UUID userId
@@ -66,7 +62,6 @@ public class JdbcWorkspaceMemberRepository
         ).stream().findFirst();
     }
 
-    @Override
     public List<WorkspaceMember> findAllByWorkspaceId(UUID workspaceId) {
         return jdbcTemplate.query("""
                         SELECT * FROM workspace_members
@@ -78,7 +73,6 @@ public class JdbcWorkspaceMemberRepository
         );
     }
 
-    @Override
     public boolean existsByWorkspaceIdAndUserId(
             UUID workspaceId,
             UUID userId
@@ -94,7 +88,6 @@ public class JdbcWorkspaceMemberRepository
         return count != null && count > 0;
     }
 
-    @Override
     public long countByWorkspaceIdAndRole(
             UUID workspaceId,
             WorkspaceRole role
@@ -110,7 +103,6 @@ public class JdbcWorkspaceMemberRepository
         return count == null ? 0 : count;
     }
 
-    @Override
     public void deleteByWorkspaceIdAndUserId(UUID workspaceId, UUID userId) {
         jdbcTemplate.update("""
                         DELETE FROM workspace_members

@@ -12,6 +12,7 @@ import com.devcollab.knowledgecore.document.block.application.DocumentBlockConte
 import com.devcollab.knowledgecore.git.domain.CodeAnchorKind;
 import com.devcollab.knowledgecore.git.domain.BindingRole;
 import com.devcollab.knowledgecore.security.CurrentUser;
+import com.devcollab.knowledgecore.security.DelegatedRestAccess;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -54,6 +55,7 @@ public class DocumentChangeController {
     }
 
     @PostMapping
+    @DelegatedRestAccess(tools = "devcollab.review.submit_document_change")
     public ResponseEntity<CreateDocumentChangeResponse> create(
             @PathVariable UUID workspaceId,
             @AuthenticationPrincipal CurrentUser currentUser,
@@ -95,6 +97,7 @@ public class DocumentChangeController {
     }
 
     @GetMapping("/{requestId}")
+    @DelegatedRestAccess(tools = "devcollab.review.submit_document_change")
     public DetailView detail(
             @PathVariable UUID workspaceId,
             @PathVariable UUID requestId,

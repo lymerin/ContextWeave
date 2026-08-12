@@ -33,10 +33,6 @@ import org.mockito.ArgumentCaptor;
  * 未漂移的绑定也要生成保留项（引用现有 bindingId），否则应用阶段
  * "先 wipe 再插回"会静默删除同目标上未漂移的合法绑定。
  *
- * 缺陷背景：DriftDetectionService 只对漂移的绑定生成 proposal（NONE 直接
- * continue），而 apply 对 proposal 触碰的 target 先 removeBindingsForTarget
- * 整删再插回 → 同 block 上未漂移的绑定被永久删除，且无日志。
- *
  * 修复后契约（本测试断言）：
  *   1. 漂移绑定 → UPSERT_BINDING（新位置）或 REMOVE_BINDING（符号/文件消失）
  *   2. 未漂移绑定 → 保留项，且 bindingId == 现有绑定 id（wipe 重建不丢身份）

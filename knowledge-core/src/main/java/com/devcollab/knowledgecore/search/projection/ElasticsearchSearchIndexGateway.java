@@ -5,7 +5,7 @@ import com.devcollab.knowledgecore.search.domain.SearchHitType;
 import com.devcollab.knowledgecore.search.domain.SearchSnippetHighlighter;
 import com.devcollab.knowledgecore.search.domain.SearchScope;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.http.HttpStatusCode;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -17,6 +17,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
+@EnableConfigurationProperties(ElasticsearchSearchProperties.class)
 @ConditionalOnProperty(
         name = "devcollab.search.elasticsearch.enabled",
         havingValue = "true"
@@ -57,71 +58,6 @@ public class ElasticsearchSearchIndexGateway implements SearchIndexGateway {
                 throw exception;
             }
         }
-    }
-
-    @Override
-    public void upsert(SearchIndexEntry entry) {
-        restClient.put()
-                .uri("/{indexName}/_doc/{id}", properties.indexName(), entry.id())
-                .body(Map.of(
-                        "workspaceId", entry.workspaceId().toString(),
-                        "documentId", entry.documentId().toString(),
-                        "documentTitle", entry.documentTitle(),
-                        "hitType", entry.hitType().name(),
-                        "blockId", entry.blockId() == null
-                                ? ""
-                                : entry.blockId().toString(),
-                        "text", entry.text(),
-                        "sortOrder", entry.sortOrder(),
-                        "updatedAt", entry.updatedAt().toString()
-                ))
-                .retrieve()
-                .toBodilessEntity();
-    }
-
-    @Override
-    public void deleteByIndexId(String indexId) {
-        restClient.delete()
-                .uri("/{indexName}/_doc/{id}", properties.indexName(), indexId)
-                .retrieve()
-                .onStatus(HttpStatusCode::is4xxClientError,
-                        (request, response) -> {
-                            // Deleting an already-removed projection is idempotent.
-                        })
-                .toBodilessEntity();
-    }
-
-    @Override
-    public void deleteByDocumentId(UUID documentId) {
-        deleteByTerm("documentId", documentId.toString());
-    }
-
-    @Override
-    public void updateDocumentTitle(
-            UUID documentId,
-            String documentTitle,
-            Instant updatedAt
-    ) {
-        restClient.post()
-                .uri("/{indexName}/_update_by_query", properties.indexName())
-                .body(Map.of(
-                        "script", Map.of(
-                                "source", """
-                                        ctx._source.documentTitle = params.title;
-                                        ctx._source.updatedAt = params.updatedAt;
-                                        """,
-                                "lang", "painless",
-                                "params", Map.of(
-                                        "title", documentTitle,
-                                        "updatedAt", updatedAt.toString()
-                                )
-                        ),
-                        "query", Map.of(
-                                "term", Map.of("documentId", documentId.toString())
-                        )
-                ))
-                .retrieve()
-                .toBodilessEntity();
     }
 
     @Override
@@ -172,18 +108,6 @@ public class ElasticsearchSearchIndexGateway implements SearchIndexGateway {
                     );
                 })
                 .toList();
-    }
-
-    private void deleteByTerm(String field, String value) {
-        restClient.post()
-                .uri("/{indexName}/_delete_by_query", properties.indexName())
-                .body(Map.of(
-                        "query", Map.of(
-                                "term", Map.of(field, value)
-                        )
-                ))
-                .retrieve()
-                .toBodilessEntity();
     }
 
     private static Map<String, Object> indexDefinition() {

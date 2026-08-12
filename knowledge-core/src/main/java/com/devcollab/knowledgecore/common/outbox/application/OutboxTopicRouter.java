@@ -48,16 +48,10 @@ public class OutboxTopicRouter {
             case OutboxEventTypes.CACHE_INVALIDATED -> topics.add(cacheTopic);
             case OutboxEventTypes.REVIEW_REQUESTED,
                  OutboxEventTypes.REVIEW_COMPLETED,
-                 OutboxEventTypes.REVIEW_FAILED,
-                 OutboxEventTypes.REVIEW_ISSUE_CREATED,
-                 OutboxEventTypes.REVIEW_ISSUE_RESOLVED,
-                 OutboxEventTypes.REVIEW_ISSUE_ACCEPTED,
-                 OutboxEventTypes.REVIEW_ISSUE_REJECTED -> {
+                 OutboxEventTypes.REVIEW_FAILED -> {
                 topics.add(reviewTopic);
                 topics.add(notificationTopic);
             }
-            case OutboxEventTypes.NOTIFICATION_REQUESTED ->
-                    topics.add(notificationTopic);
             case OutboxEventTypes.GIT_CHANGE_SYNCED,
                  OutboxEventTypes.GIT_REPOSITORY_SYNC_REQUESTED,
                  OutboxEventTypes.GIT_REPOSITORY_DELETE_REQUESTED ->

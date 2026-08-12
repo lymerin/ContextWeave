@@ -1,15 +1,11 @@
 package com.devcollab.knowledgecore;
 
-import com.devcollab.knowledgecore.auth.domain.RefreshSessionRepository;
-import com.devcollab.knowledgecore.auth.domain.UserRepository;
 import com.devcollab.knowledgecore.auth.infrastructure.JdbcRefreshSessionRepository;
 import com.devcollab.knowledgecore.auth.infrastructure.JdbcUserRepository;
 import com.devcollab.knowledgecore.document.core.domain.DocumentBlockRepository;
 import com.devcollab.knowledgecore.document.core.domain.DocumentRepository;
 import com.devcollab.knowledgecore.document.core.infrastructure.JdbcDocumentBlockRepository;
 import com.devcollab.knowledgecore.document.core.infrastructure.JdbcDocumentRepository;
-import com.devcollab.knowledgecore.workspace.domain.WorkspaceMemberRepository;
-import com.devcollab.knowledgecore.workspace.domain.WorkspaceRepository;
 import com.devcollab.knowledgecore.workspace.infrastructure.JdbcWorkspaceMemberRepository;
 import com.devcollab.knowledgecore.workspace.infrastructure.JdbcWorkspaceRepository;
 import org.junit.jupiter.api.Test;
@@ -22,16 +18,16 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 class DevCollabApplicationTests {
 
     @Autowired
-    private UserRepository userRepository;
+    private JdbcUserRepository userRepository;
 
     @Autowired
-    private RefreshSessionRepository refreshSessionRepository;
+    private JdbcRefreshSessionRepository refreshSessionRepository;
 
     @Autowired
-    private WorkspaceRepository workspaceRepository;
+    private JdbcWorkspaceRepository workspaceRepository;
 
     @Autowired
-    private WorkspaceMemberRepository workspaceMemberRepository;
+    private JdbcWorkspaceMemberRepository workspaceMemberRepository;
 
     @Autowired
     private DocumentRepository documentRepository;
@@ -41,16 +37,6 @@ class DevCollabApplicationTests {
 
     @Test
     void contextLoads() {
-        assertInstanceOf(JdbcUserRepository.class, userRepository);
-        assertInstanceOf(
-                JdbcRefreshSessionRepository.class,
-                refreshSessionRepository
-        );
-        assertInstanceOf(JdbcWorkspaceRepository.class, workspaceRepository);
-        assertInstanceOf(
-                JdbcWorkspaceMemberRepository.class,
-                workspaceMemberRepository
-        );
         assertInstanceOf(JdbcDocumentRepository.class, documentRepository);
         assertInstanceOf(
                 JdbcDocumentBlockRepository.class,

@@ -2,8 +2,6 @@ package com.devcollab.knowledgecore.auth.api;
 
 import com.devcollab.knowledgecore.auth.application.AuthenticatedUser;
 import com.devcollab.knowledgecore.auth.application.AuthenticationApplicationService;
-import com.devcollab.knowledgecore.auth.application.LoginCommand;
-import com.devcollab.knowledgecore.auth.application.RegisterCommand;
 import com.devcollab.knowledgecore.auth.api.RefreshCookieManager.RequestCredentials;
 import com.devcollab.knowledgecore.security.CurrentUser;
 import jakarta.servlet.http.HttpServletRequest;
@@ -42,11 +40,9 @@ public class AuthController {
             HttpServletResponse response
     ) {
         AuthenticatedUser authenticatedUser = authenticationService.register(
-                new RegisterCommand(
-                        request.username(),
-                        request.displayName(),
-                        request.password()
-                )
+                request.username(),
+                request.displayName(),
+                request.password()
         );
 
         writeRefreshCookies(response, authenticatedUser);
@@ -59,7 +55,8 @@ public class AuthController {
             HttpServletResponse response
     ) {
         AuthenticatedUser authenticatedUser = authenticationService.login(
-                new LoginCommand(request.username(), request.password())
+                request.username(),
+                request.password()
         );
 
         writeRefreshCookies(response, authenticatedUser);

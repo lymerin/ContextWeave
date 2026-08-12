@@ -2,7 +2,7 @@ package com.devcollab.knowledgecore.common.cache;
 
 import com.devcollab.knowledgecore.common.outbox.application.OutboxKafkaMessage;
 import com.devcollab.knowledgecore.document.tree.application.DocumentTreeCacheService.DocumentList;
-import com.devcollab.knowledgecore.workspace.application.WorkspaceMemberCacheService.CachedMembership;
+import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -19,27 +19,25 @@ public class CacheInvalidationKafkaConsumer {
             LoggerFactory.getLogger(CacheInvalidationKafkaConsumer.class);
 
     private final ObjectMapper objectMapper;
-    private final Cache<String, CachedMembership> workspaceMemberCache;
+    private final Cache<String, WorkspaceMember> workspaceMemberCache;
     private final Cache<String, DocumentList> documentTreeCache;
-    private final Cache<String, DocumentSchemaDescriptor> documentSchemaCache;
-    private final PublishedDocumentCacheService publishedDocumentCache;
-    private final ApprovedAdrCacheService approvedAdrCache;
+    private final DocumentVersionSnapshotCacheService publishedDocumentCache;
+    private final DocumentVersionSnapshotCacheService approvedAdrCache;
 
     public CacheInvalidationKafkaConsumer(
             ObjectMapper objectMapper,
             @Qualifier("workspaceMemberLocalCache")
-            Cache<String, CachedMembership> workspaceMemberCache,
+            Cache<String, WorkspaceMember> workspaceMemberCache,
             @Qualifier("documentTreeLocalCache")
             Cache<String, DocumentList> documentTreeCache,
-            @Qualifier("documentSchemaLocalCache")
-            Cache<String, DocumentSchemaDescriptor> documentSchemaCache,
-            PublishedDocumentCacheService publishedDocumentCache,
-            ApprovedAdrCacheService approvedAdrCache
+            @Qualifier("publishedDocumentCacheService")
+            DocumentVersionSnapshotCacheService publishedDocumentCache,
+            @Qualifier("approvedAdrCacheService")
+            DocumentVersionSnapshotCacheService approvedAdrCache
     ) {
         this.objectMapper = objectMapper;
         this.workspaceMemberCache = workspaceMemberCache;
         this.documentTreeCache = documentTreeCache;
-        this.documentSchemaCache = documentSchemaCache;
         this.publishedDocumentCache = publishedDocumentCache;
         this.approvedAdrCache = approvedAdrCache;
     }
@@ -78,7 +76,6 @@ public class CacheInvalidationKafkaConsumer {
         switch (cacheName) {
             case "workspace-member" -> workspaceMemberCache.invalidate(key);
             case "workspace-documents-tree" -> documentTreeCache.invalidate(key);
-            case "document-schema" -> documentSchemaCache.invalidate(key);
             case "published-document" -> publishedDocumentCache.invalidate(key);
             case "approved-adr" -> approvedAdrCache.invalidate(key);
             default -> log.warn("Ignoring unknown cache invalidation name={}", cacheName);

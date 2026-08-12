@@ -8,9 +8,9 @@ import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAcce
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceNotFoundException;
 import com.devcollab.knowledgecore.workspace.domain.Workspace;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
-import com.devcollab.knowledgecore.workspace.domain.WorkspaceMemberRepository;
-import com.devcollab.knowledgecore.workspace.domain.WorkspaceRepository;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceRole;
+import com.devcollab.knowledgecore.workspace.infrastructure.JdbcWorkspaceMemberRepository;
+import com.devcollab.knowledgecore.workspace.infrastructure.JdbcWorkspaceRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,15 +22,15 @@ import java.util.UUID;
 @Service
 public class WorkspaceApplicationService {
 
-    private final WorkspaceRepository workspaceRepository;
-    private final WorkspaceMemberRepository memberRepository;
+    private final JdbcWorkspaceRepository workspaceRepository;
+    private final JdbcWorkspaceMemberRepository memberRepository;
     private final WorkspaceMemberCacheService memberCache;
     private final GitKnowledgeRepository gitRepository;
     private final OutboxEventPublisher outboxPublisher;
 
     public WorkspaceApplicationService(
-            WorkspaceRepository workspaceRepository,
-            WorkspaceMemberRepository memberRepository,
+            JdbcWorkspaceRepository workspaceRepository,
+            JdbcWorkspaceMemberRepository memberRepository,
             WorkspaceMemberCacheService memberCache,
             GitKnowledgeRepository gitRepository,
             OutboxEventPublisher outboxPublisher
@@ -45,12 +45,12 @@ public class WorkspaceApplicationService {
     @Transactional
     public WorkspaceView create(
             UUID currentUserId,
-            CreateWorkspaceCommand command
+            String name
     ) {
         Instant now = Instant.now();
         Workspace workspace = new Workspace(
                 UUID.randomUUID(),
-                command.name().trim(),
+                name.trim(),
                 currentUserId,
                 now,
                 now
@@ -90,7 +90,7 @@ public class WorkspaceApplicationService {
     public WorkspaceView rename(
             UUID workspaceId,
             UUID currentUserId,
-            RenameWorkspaceCommand command
+            String name
     ) {
         Workspace workspace = requireWorkspace(workspaceId);
         WorkspaceMember currentMember = memberRepository
@@ -102,7 +102,7 @@ public class WorkspaceApplicationService {
 
         Workspace renamed = new Workspace(
                 workspace.id(),
-                command.name().trim(),
+                name.trim(),
                 workspace.createdBy(),
                 workspace.createdAt(),
                 Instant.now()

@@ -1,9 +1,8 @@
 package com.devcollab.knowledgecore.workspace.api;
 
 import com.devcollab.knowledgecore.security.CurrentUser;
-import com.devcollab.knowledgecore.workspace.application.InviteWorkspaceMemberCommand;
-import com.devcollab.knowledgecore.workspace.application.UpdateWorkspaceMemberRoleCommand;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceMemberApplicationService;
+import com.devcollab.knowledgecore.workspace.application.WorkspaceMemberView;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -31,49 +30,44 @@ public class WorkspaceMemberController {
     }
 
     @GetMapping("/api/v1/workspaces/{workspaceId}/members")
-    public List<WorkspaceMemberResponse> list(
+    public List<WorkspaceMemberView> list(
             @PathVariable UUID workspaceId,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
         return memberService.listMembers(
-                        workspaceId,
-                        currentUser.userId()
-                )
-                .stream()
-                .map(WorkspaceMemberResponse::from)
-                .toList();
+                workspaceId,
+                currentUser.userId()
+        );
     }
 
     @PostMapping("/api/v1/workspaces/{workspaceId}/members/invitations")
     @ResponseStatus(HttpStatus.CREATED)
-    public WorkspaceMemberResponse invite(
+    public WorkspaceMemberView invite(
             @PathVariable UUID workspaceId,
             @AuthenticationPrincipal CurrentUser currentUser,
             @Valid @RequestBody InviteWorkspaceMemberRequest request
     ) {
-        return WorkspaceMemberResponse.from(memberService.invite(
+        return memberService.invite(
                 workspaceId,
                 currentUser.userId(),
-                new InviteWorkspaceMemberCommand(
-                        request.username(),
-                        request.role()
-                )
-        ));
+                request.username(),
+                request.role()
+        );
     }
 
     @PatchMapping("/api/v1/workspaces/{workspaceId}/members/{memberUserId}/role")
-    public WorkspaceMemberResponse updateRole(
+    public WorkspaceMemberView updateRole(
             @PathVariable UUID workspaceId,
             @PathVariable UUID memberUserId,
             @AuthenticationPrincipal CurrentUser currentUser,
             @Valid @RequestBody UpdateWorkspaceMemberRoleRequest request
     ) {
-        return WorkspaceMemberResponse.from(memberService.updateRole(
+        return memberService.updateRole(
                 workspaceId,
                 memberUserId,
                 currentUser.userId(),
-                new UpdateWorkspaceMemberRoleCommand(request.role())
-        ));
+                request.role()
+        );
     }
 
     @DeleteMapping("/api/v1/workspaces/{workspaceId}/members/{memberUserId}")

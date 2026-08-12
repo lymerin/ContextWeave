@@ -18,11 +18,6 @@ public interface DocumentBlockRepository {
     // 按 ID 只读查询
     Optional<DocumentBlock> findById(UUID blockId);
 
-    // 按 ID 查询用于后续更新，默认走乐观锁，子类可覆写为 SELECT ... FOR UPDATE
-    default Optional<DocumentBlock> findByIdForUpdate(UUID blockId) {
-        return findById(blockId);
-    }
-
     // 查询某文档下全部 Block，按 sortOrder 升序排列
     List<DocumentBlock> findAllByDocumentId(UUID documentId);
 

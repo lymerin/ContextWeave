@@ -1,7 +1,7 @@
 package com.devcollab.knowledgecore.common.outbox;
 
 import com.devcollab.knowledgecore.common.outbox.application.OutboxKafkaMessage;
-import com.devcollab.knowledgecore.common.outbox.application.OutboxMessagePublisher;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxKafkaPublisher;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayResult;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayService;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEvent;
@@ -16,6 +16,9 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 
 class OutboxRelayServiceTests {
 
@@ -24,14 +27,13 @@ class OutboxRelayServiceTests {
         InMemoryOutboxEventRepository repository =
                 new InMemoryOutboxEventRepository();
         OutboxEvent event = repository.save(pendingEvent("DOCUMENT_CREATED"));
-        OutboxMessagePublisher noopPublisher = message -> {
-        };
+        OutboxKafkaPublisher noopPublisher = mock(OutboxKafkaPublisher.class);
         OutboxRelayService relayService = new OutboxRelayService(
                 repository,
                 noopPublisher
         );
 
-        OutboxRelayResult result = relayService.relayPendingEvents();
+        OutboxRelayResult result = relayService.relayRetryableEvents(50, 3);
 
         assertThat(result.scanned()).isEqualTo(1);
         assertThat(result.published()).isEqualTo(1);
@@ -48,15 +50,15 @@ class OutboxRelayServiceTests {
         InMemoryOutboxEventRepository repository =
                 new InMemoryOutboxEventRepository();
         OutboxEvent event = repository.save(pendingEvent("DOCUMENT_DELETED"));
-        OutboxMessagePublisher failingPublisher = message -> {
-            throw new IllegalStateException("simulated kafka failure");
-        };
+        OutboxKafkaPublisher failingPublisher = mock(OutboxKafkaPublisher.class);
+        doThrow(new IllegalStateException("simulated kafka failure"))
+                .when(failingPublisher).publish(any());
         OutboxRelayService relayService = new OutboxRelayService(
                 repository,
                 failingPublisher
         );
 
-        OutboxRelayResult result = relayService.relayPendingEvents();
+        OutboxRelayResult result = relayService.relayRetryableEvents(50, 3);
 
         assertThat(result.scanned()).isEqualTo(1);
         assertThat(result.published()).isZero();
@@ -147,11 +149,6 @@ class OutboxRelayServiceTests {
                     current.retryCount() + 1,
                     errorMessage
             ));
-        }
-
-        @Override
-        public List<OutboxEvent> findAll() {
-            return List.copyOf(events);
         }
 
         private OutboxEvent findById(UUID eventId) {

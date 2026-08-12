@@ -44,7 +44,7 @@ class UserOperationRateLimitInterceptorTests {
         when(limiter.acquire(
                 "rate-limit:" + userId, 2, Duration.ofMinutes(1)
         )).thenReturn(new RedisFixedWindowLimiter.LimitDecision(
-                true, 2, 20_000, true
+                true, 20_000
         ));
 
         assertThat(interceptor.preHandle(
@@ -53,20 +53,18 @@ class UserOperationRateLimitInterceptorTests {
     }
 
     @Test
-    void authenticatedMutationAboveLimitReturnsRetryAfter() {
+    void authenticatedMutationAboveLimitThrowsRateLimitExceeded() {
         UUID userId = authenticate();
         HttpServletRequest request = request("POST", "/api/v1/documents");
-        HttpServletResponse response = mock(HttpServletResponse.class);
         when(limiter.acquire(
                 "rate-limit:" + userId, 2, Duration.ofMinutes(1)
         )).thenReturn(new RedisFixedWindowLimiter.LimitDecision(
-                false, 3, 20_000, true
+                false, 20_000
         ));
 
         assertThatThrownBy(() -> interceptor.preHandle(
-                request, response, new Object()
+                request, mock(HttpServletResponse.class), new Object()
         )).isInstanceOf(RateLimitExceededException.class);
-        verify(response).setHeader("Retry-After", "20");
     }
 
     @Test

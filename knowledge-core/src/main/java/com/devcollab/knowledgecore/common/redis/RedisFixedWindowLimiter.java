@@ -44,7 +44,7 @@ public class RedisFixedWindowLimiter {
             }
             long count = ((Number) result.get(0)).longValue();
             long ttlMillis = Math.max(0, ((Number) result.get(1)).longValue());
-            return new LimitDecision(count <= limit, count, ttlMillis, true);
+            return new LimitDecision(count <= limit, ttlMillis);
         } catch (RuntimeException exception) {
             log.warn(
                     "Redis limiter unavailable for key={}, allowing request: {}",
@@ -67,12 +67,10 @@ public class RedisFixedWindowLimiter {
 
     public record LimitDecision(
             boolean allowed,
-            long currentCount,
-            long retryAfterMillis,
-            boolean redisApplied
+            long retryAfterMillis
     ) {
         static LimitDecision allowedWithoutRedis() {
-            return new LimitDecision(true, 0, 0, false);
+            return new LimitDecision(true, 0);
         }
     }
 }

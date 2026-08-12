@@ -4,9 +4,10 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.devcollab.knowledgecore.document.tree.application.DocumentTreeCacheService.DocumentList;
 import com.devcollab.knowledgecore.document.version.domain.DocumentVersion;
-import com.devcollab.knowledgecore.workspace.application.WorkspaceMemberCacheService.CachedMembership;
+import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -34,13 +35,13 @@ public class CaffeineCacheConfig {
     }
 
     @Bean
-    public Cache<String, CachedMembership> workspaceMemberLocalCache() {
+    public Cache<String, WorkspaceMember> workspaceMemberLocalCache() {
         CacheProperties.Local local = properties.local();
         return Caffeine.newBuilder()
                 .expireAfterWrite(local.workspaceMemberTtl())
                 .maximumSize(local.workspaceMemberMaximumSize())
                 .recordStats()
-                .removalListener((String key, CachedMembership value, com.github.benmanes.caffeine.cache.RemovalCause cause) ->
+                .removalListener((String key, WorkspaceMember value, com.github.benmanes.caffeine.cache.RemovalCause cause) ->
                         log.debug("Cache workspace-member removed key={} cause={}", key, cause))
                 .build();
     }
@@ -54,19 +55,6 @@ public class CaffeineCacheConfig {
                 .recordStats()
                 .removalListener((String key, DocumentList value, com.github.benmanes.caffeine.cache.RemovalCause cause) ->
                         log.debug("Cache document-tree removed key={} cause={}", key, cause))
-                .build();
-    }
-
-    @Bean("documentSchemaLocalCache")
-    public Cache<String, DocumentSchemaDescriptor> documentSchemaLocalCache() {
-        CacheProperties.Local local = properties.local();
-        return Caffeine.newBuilder()
-                .expireAfterAccess(local.documentSchemaTtl())
-                .maximumWeight(local.documentSchemaMaximumWeight())
-                .weigher((String key, DocumentSchemaDescriptor value) -> value.estimatedWeight())
-                .recordStats()
-                .removalListener((String key, DocumentSchemaDescriptor value, com.github.benmanes.caffeine.cache.RemovalCause cause) ->
-                        log.debug("Cache document-schema removed key={} cause={}", key, cause))
                 .build();
     }
 
@@ -85,6 +73,34 @@ public class CaffeineCacheConfig {
                 "approved-adr",
                 properties.local().approvedAdrTtl(),
                 properties.local().approvedAdrMaximumWeight()
+        );
+    }
+
+    @Bean
+    public DocumentVersionSnapshotCacheService publishedDocumentCacheService(
+            @Qualifier("publishedDocumentLocalCache")
+            Cache<String, DocumentVersion> publishedDocumentLocalCache,
+            RedisCacheService redisCache
+    ) {
+        return new DocumentVersionSnapshotCacheService(
+                "published-document",
+                publishedDocumentLocalCache,
+                redisCache,
+                properties.local().publishedDocumentTtl()
+        );
+    }
+
+    @Bean
+    public DocumentVersionSnapshotCacheService approvedAdrCacheService(
+            @Qualifier("approvedAdrLocalCache")
+            Cache<String, DocumentVersion> approvedAdrLocalCache,
+            RedisCacheService redisCache
+    ) {
+        return new DocumentVersionSnapshotCacheService(
+                "approved-adr",
+                approvedAdrLocalCache,
+                redisCache,
+                properties.local().approvedAdrTtl()
         );
     }
 

@@ -1,14 +1,13 @@
 package com.devcollab.knowledgecore.common.outbox;
 
-import com.devcollab.knowledgecore.common.outbox.application.OutboxKafkaMessage;
-import com.devcollab.knowledgecore.common.outbox.application.OutboxMessagePublisher;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxKafkaPublisher;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayResult;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayService;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEvent;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEventRepository;
 import com.devcollab.knowledgecore.common.outbox.domain.OutboxEventStatus;
 import com.devcollab.knowledgecore.common.outbox.worker.OutboxWorkerProperties;
-import com.devcollab.knowledgecore.common.outbox.worker.OutboxWorkerService;
+import com.devcollab.knowledgecore.common.outbox.worker.OutboxWorkerScheduler;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -18,8 +17,9 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
-class OutboxWorkerServiceTests {
+class OutboxWorkerSchedulerTests {
 
     @Test
     void shouldRelayPendingEventsWithConfiguredBatchSize() {
@@ -33,18 +33,16 @@ class OutboxWorkerServiceTests {
                 "DOCUMENT_UPDATED",
                 Instant.parse("2026-07-14T00:00:01Z")
         ));
-        OutboxMessagePublisher noopPublisher = message -> {
-        };
         OutboxRelayService relayService = new OutboxRelayService(
                 repository,
-                noopPublisher
+                mock(OutboxKafkaPublisher.class)
         );
-        OutboxWorkerService workerService = new OutboxWorkerService(
+        OutboxWorkerScheduler scheduler = new OutboxWorkerScheduler(
                 relayService,
                 new OutboxWorkerProperties(true, 1, 3)
         );
 
-        OutboxRelayResult result = workerService.runOnce();
+        OutboxRelayResult result = scheduler.runOnce();
 
         assertThat(result.scanned()).isEqualTo(1);
         assertThat(result.published()).isEqualTo(1);
@@ -64,18 +62,16 @@ class OutboxWorkerServiceTests {
                 Instant.parse("2026-07-14T00:00:00Z"),
                 1
         ));
-        OutboxMessagePublisher noopPublisher2 = message -> {
-        };
         OutboxRelayService relayService = new OutboxRelayService(
                 repository,
-                noopPublisher2
+                mock(OutboxKafkaPublisher.class)
         );
-        OutboxWorkerService workerService = new OutboxWorkerService(
+        OutboxWorkerScheduler scheduler = new OutboxWorkerScheduler(
                 relayService,
                 new OutboxWorkerProperties(true, 10, 3)
         );
 
-        OutboxRelayResult result = workerService.runOnce();
+        OutboxRelayResult result = scheduler.runOnce();
 
         assertThat(result.scanned()).isEqualTo(1);
         assertThat(result.published()).isEqualTo(1);
@@ -93,18 +89,16 @@ class OutboxWorkerServiceTests {
                 Instant.parse("2026-07-14T00:00:00Z"),
                 3
         ));
-        OutboxMessagePublisher noopPublisher3 = message -> {
-        };
         OutboxRelayService relayService = new OutboxRelayService(
                 repository,
-                noopPublisher3
+                mock(OutboxKafkaPublisher.class)
         );
-        OutboxWorkerService workerService = new OutboxWorkerService(
+        OutboxWorkerScheduler scheduler = new OutboxWorkerScheduler(
                 relayService,
                 new OutboxWorkerProperties(true, 10, 3)
         );
 
-        OutboxRelayResult result = workerService.runOnce();
+        OutboxRelayResult result = scheduler.runOnce();
 
         assertThat(result.scanned()).isZero();
         assertThat(result.published()).isZero();
@@ -211,11 +205,6 @@ class OutboxWorkerServiceTests {
                     current.retryCount() + 1,
                     errorMessage
             ));
-        }
-
-        @Override
-        public List<OutboxEvent> findAll() {
-            return List.copyOf(events);
         }
 
         private OutboxEvent findById(UUID eventId) {

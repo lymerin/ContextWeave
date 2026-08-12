@@ -10,15 +10,6 @@ public record RedisCoordinationProperties(
         RateLimit rateLimit
 ) {
 
-    public RedisCoordinationProperties {
-        if (loginLimit == null) {
-            loginLimit = new LoginLimit(5, Duration.ofMinutes(15));
-        }
-        if (rateLimit == null) {
-            rateLimit = new RateLimit(120, Duration.ofMinutes(1));
-        }
-    }
-
     public record LoginLimit(int maxAttempts, Duration window) {
         public LoginLimit {
             if (maxAttempts <= 0) {

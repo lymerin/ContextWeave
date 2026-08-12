@@ -1,8 +1,7 @@
 package com.devcollab.knowledgecore.document.core.application;
 
 import com.devcollab.knowledgecore.common.cache.CacheKey;
-import com.devcollab.knowledgecore.common.cache.ApprovedAdrCacheService;
-import com.devcollab.knowledgecore.common.cache.PublishedDocumentCacheService;
+import com.devcollab.knowledgecore.common.cache.DocumentVersionSnapshotCacheService;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventPublisher;
 import com.devcollab.knowledgecore.common.outbox.application.OutboxEventTypes;
 import com.devcollab.knowledgecore.document.core.application.exception.DocumentNotFoundException;
@@ -27,6 +26,7 @@ import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAcce
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,7 +39,9 @@ import com.devcollab.knowledgecore.document.block.application.DocumentStructureD
 import com.devcollab.knowledgecore.document.block.application.DocumentBlockStructureDto;
 import com.devcollab.knowledgecore.document.block.application.DocumentBlockContentCodec;
 import com.devcollab.knowledgecore.document.tree.application.DocumentTreeCacheService;
-import com.devcollab.knowledgecore.document.review.application.ReviewDocumentCommand;
+import com.devcollab.knowledgecore.document.core.api.MoveDocumentRequest;
+import com.devcollab.knowledgecore.document.core.api.UpdateDocumentRequest;
+import com.devcollab.knowledgecore.document.review.api.ReviewDocumentRequest;
 
 @Service
 public class DocumentApplicationService {
@@ -54,8 +56,8 @@ public class DocumentApplicationService {
     private final ObjectMapper objectMapper;
     private final DocumentBlockContentCodec blockContentCodec;
     private final DocumentTreeCacheService treeCache;
-    private final PublishedDocumentCacheService publishedDocumentCache;
-    private final ApprovedAdrCacheService approvedAdrCache;
+    private final DocumentVersionSnapshotCacheService publishedDocumentCache;
+    private final DocumentVersionSnapshotCacheService approvedAdrCache;
 
     public DocumentApplicationService(
             DocumentRepository documentRepository,
@@ -68,8 +70,10 @@ public class DocumentApplicationService {
             ObjectMapper objectMapper,
             DocumentBlockContentCodec blockContentCodec,
             DocumentTreeCacheService treeCache,
-            PublishedDocumentCacheService publishedDocumentCache,
-            ApprovedAdrCacheService approvedAdrCache
+            @Qualifier("publishedDocumentCacheService")
+            DocumentVersionSnapshotCacheService publishedDocumentCache,
+            @Qualifier("approvedAdrCacheService")
+            DocumentVersionSnapshotCacheService approvedAdrCache
     ) {
         this.documentRepository = documentRepository;
         this.blockRepository = blockRepository;
@@ -277,7 +281,7 @@ public class DocumentApplicationService {
     public Document update(
             UUID documentId,
             UUID currentUserId,
-            UpdateDocumentCommand command
+            UpdateDocumentRequest request
     ) {
         Document document = requireDocument(documentId);
         workspaceService.requireMembership(
@@ -290,7 +294,7 @@ public class DocumentApplicationService {
                 document.id(),
                 document.workspaceId(),
                 document.parentDocumentId(),
-                command.title().trim(),
+                request.title().trim(),
                 document.documentType(),
                 document.reviewStatus(),
                 document.createdBy(),
@@ -327,7 +331,7 @@ public class DocumentApplicationService {
     public Document move(
             UUID documentId,
             UUID currentUserId,
-            MoveDocumentCommand command
+            MoveDocumentRequest request
     ) {
         Document document = requireDocument(documentId);
         workspaceService.requireMembership(
@@ -335,13 +339,13 @@ public class DocumentApplicationService {
                 currentUserId
         );
         ensureEditable(document);
-        validateParent(document.workspaceId(), command.parentDocumentId());
-        validateNoCycle(document, command.parentDocumentId());
+        validateParent(document.workspaceId(), request.parentDocumentId());
+        validateNoCycle(document, request.parentDocumentId());
 
         Document moved = new Document(
                 document.id(),
                 document.workspaceId(),
-                command.parentDocumentId(),
+                request.parentDocumentId(),
                 document.title(),
                 document.documentType(),
                 document.reviewStatus(),
@@ -457,7 +461,7 @@ public class DocumentApplicationService {
     public Document approveReview(
             UUID documentId,
             UUID currentUserId,
-            ReviewDocumentCommand command
+            ReviewDocumentRequest request
     ) {
         Document document = requireDocument(documentId);
         requireWorkspaceAdmin(document.workspaceId(), currentUserId);
@@ -508,7 +512,7 @@ public class DocumentApplicationService {
     public Document rejectReview(
             UUID documentId,
             UUID currentUserId,
-            ReviewDocumentCommand command
+            ReviewDocumentRequest request
     ) {
         Document document = requireDocument(documentId);
         requireWorkspaceAdmin(document.workspaceId(), currentUserId);
@@ -761,13 +765,6 @@ public class DocumentApplicationService {
                 createdAt
         );
         return operationLogRepository.save(operationLog);
-    }
-
-    private String normalizeComment(String comment) {
-        if (comment == null || comment.isBlank()) {
-            return null;
-        }
-        return comment.trim();
     }
 
     private String snapshotPayload(Document document, Instant publishedAt) {

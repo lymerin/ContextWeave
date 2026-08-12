@@ -3,7 +3,6 @@ package com.devcollab.knowledgecore.auth.infrastructure;
 import com.devcollab.knowledgecore.auth.application.exception.InvalidCsrfTokenException;
 import com.devcollab.knowledgecore.auth.application.exception.InvalidRefreshTokenException;
 import com.devcollab.knowledgecore.auth.domain.RefreshSession;
-import com.devcollab.knowledgecore.auth.domain.RefreshSessionRepository;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -19,12 +18,12 @@ public class RefreshTokenService {
 
     private static final int TOKEN_BYTES = 32;
 
-    private final RefreshSessionRepository sessionRepository;
+    private final JdbcRefreshSessionRepository sessionRepository;
     private final RefreshTokenProperties properties;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public RefreshTokenService(
-            RefreshSessionRepository sessionRepository,
+            JdbcRefreshSessionRepository sessionRepository,
             RefreshTokenProperties properties
     ) {
         this.sessionRepository = sessionRepository;
@@ -64,7 +63,10 @@ public class RefreshTokenService {
                 .findActiveByTokenHash(refreshTokenHash, Instant.now())
                 .orElseThrow(InvalidRefreshTokenException::new);
 
-        if (!secureEquals(session.csrfTokenHash(), hash(csrfToken))) {
+        if (!MessageDigest.isEqual(
+                session.csrfTokenHash().getBytes(StandardCharsets.UTF_8),
+                hash(csrfToken).getBytes(StandardCharsets.UTF_8)
+        )) {
             throw new InvalidCsrfTokenException();
         }
 
@@ -92,9 +94,9 @@ public class RefreshTokenService {
         sessionRepository
                 .findActiveByTokenHash(refreshTokenHash, Instant.now())
                 .ifPresent(session -> {
-                    if (!secureEquals(
-                            session.csrfTokenHash(),
-                            hash(csrfToken)
+                    if (!MessageDigest.isEqual(
+                            session.csrfTokenHash().getBytes(StandardCharsets.UTF_8),
+                            hash(csrfToken).getBytes(StandardCharsets.UTF_8)
                     )) {
                         throw new InvalidCsrfTokenException();
                     }
@@ -122,13 +124,6 @@ public class RefreshTokenService {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("当前 Java 环境不支持 SHA-256", exception);
         }
-    }
-
-    private boolean secureEquals(String left, String right) {
-        return MessageDigest.isEqual(
-                left.getBytes(StandardCharsets.UTF_8),
-                right.getBytes(StandardCharsets.UTF_8)
-        );
     }
 
     public record RefreshCredentials(

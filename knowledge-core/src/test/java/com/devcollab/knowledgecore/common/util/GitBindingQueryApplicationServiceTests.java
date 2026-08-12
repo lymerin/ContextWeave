@@ -6,7 +6,6 @@ import com.devcollab.knowledgecore.document.core.domain.DocumentBlockRepository;
 import com.devcollab.knowledgecore.document.core.domain.DocumentRepository;
 import com.devcollab.knowledgecore.document.core.domain.DocumentReviewStatus;
 import com.devcollab.knowledgecore.document.core.domain.DocumentType;
-import com.devcollab.knowledgecore.git.api.CodeBindingQueryResponse;
 import com.devcollab.knowledgecore.git.domain.*;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationService;
 import com.devcollab.knowledgecore.workspace.application.WorkspacePermissionPolicy;
@@ -39,8 +38,7 @@ class GitBindingQueryApplicationServiceTests {
                 gitRepository, mock(WorkspaceApplicationService.class),
                 mock(WorkspacePermissionPolicy.class), documentRepository,
                 mock(DocumentBlockRepository.class), mock(OutboxEventPublisher.class),
-                new CodeMetadataInspector(), null,
-                new CodeMetadataCacheProperties(false, 1024)
+                new CodeMetadataInspector(), null
         );
         workspaceId = UUID.randomUUID();
         repositoryId = UUID.randomUUID();
@@ -133,7 +131,7 @@ class GitBindingQueryApplicationServiceTests {
                 workspaceId, repositoryId, userId, "src/App.java", 10
         );
         ObjectMapper mapper = new ObjectMapper();
-        JsonNode json = mapper.readTree(mapper.writeValueAsBytes(CodeBindingQueryResponse.from(result)));
+        JsonNode json = mapper.readTree(mapper.writeValueAsBytes(result));
 
         assertThat(json.has("truncated")).isTrue();
         assertThat(json.has("isTruncated")).isFalse();

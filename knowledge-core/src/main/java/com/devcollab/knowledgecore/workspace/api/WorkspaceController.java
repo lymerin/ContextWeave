@@ -1,9 +1,9 @@
 package com.devcollab.knowledgecore.workspace.api;
 
 import com.devcollab.knowledgecore.security.CurrentUser;
-import com.devcollab.knowledgecore.workspace.application.CreateWorkspaceCommand;
-import com.devcollab.knowledgecore.workspace.application.RenameWorkspaceCommand;
+import com.devcollab.knowledgecore.security.DelegatedRestAccess;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationService;
+import com.devcollab.knowledgecore.workspace.application.WorkspaceView;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -34,46 +34,43 @@ public class WorkspaceController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public WorkspaceResponse create(
+    public WorkspaceView create(
             @AuthenticationPrincipal CurrentUser currentUser,
             @Valid @RequestBody CreateWorkspaceRequest request
     ) {
-        return WorkspaceResponse.from(workspaceService.create(
+        return workspaceService.create(
                 currentUser.userId(),
-                new CreateWorkspaceCommand(request.name())
-        ));
-    }
-
-    @GetMapping
-    public List<WorkspaceResponse> list(
-            @AuthenticationPrincipal CurrentUser currentUser
-    ) {
-        return workspaceService.listForUser(currentUser.userId()).stream()
-                .map(WorkspaceResponse::from)
-                .toList();
-    }
-
-    @GetMapping("/{workspaceId}")
-    public WorkspaceResponse get(
-            @PathVariable UUID workspaceId,
-            @AuthenticationPrincipal CurrentUser currentUser
-    ) {
-        return WorkspaceResponse.from(
-                workspaceService.get(workspaceId, currentUser.userId())
+                request.name()
         );
     }
 
+    @GetMapping
+    public List<WorkspaceView> list(
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return workspaceService.listForUser(currentUser.userId());
+    }
+
+    @GetMapping("/{workspaceId}")
+    @DelegatedRestAccess(tools = "devcollab.workspace.get_context")
+    public WorkspaceView get(
+            @PathVariable UUID workspaceId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return workspaceService.get(workspaceId, currentUser.userId());
+    }
+
     @PatchMapping("/{workspaceId}")
-    public WorkspaceResponse rename(
+    public WorkspaceView rename(
             @PathVariable UUID workspaceId,
             @AuthenticationPrincipal CurrentUser currentUser,
             @Valid @RequestBody RenameWorkspaceRequest request
     ) {
-        return WorkspaceResponse.from(workspaceService.rename(
+        return workspaceService.rename(
                 workspaceId,
                 currentUser.userId(),
-                new RenameWorkspaceCommand(request.name())
-        ));
+                request.name()
+        );
     }
 
     @DeleteMapping("/{workspaceId}")

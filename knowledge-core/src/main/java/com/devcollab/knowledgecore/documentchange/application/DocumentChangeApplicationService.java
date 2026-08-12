@@ -1,7 +1,7 @@
 package com.devcollab.knowledgecore.documentchange.application;
 
 import com.devcollab.knowledgecore.auth.domain.UserAccount;
-import com.devcollab.knowledgecore.auth.domain.UserRepository;
+import com.devcollab.knowledgecore.auth.infrastructure.JdbcUserRepository;
 import com.devcollab.knowledgecore.document.core.domain.Document;
 import com.devcollab.knowledgecore.document.core.domain.DocumentBlock;
 import com.devcollab.knowledgecore.document.core.domain.DocumentBlockType;
@@ -69,7 +69,7 @@ public class DocumentChangeApplicationService {
     private final DocumentBlockRepository blockRepository;
     private final GitKnowledgeRepository gitRepository;
     private final GitKnowledgeApplicationService gitKnowledgeService;
-    private final UserRepository userRepository;
+    private final JdbcUserRepository userRepository;
     private final ObjectMapper objectMapper;
     private final DocumentBlockContentCodec contentCodec;
     private final DocumentApplicationService documentService;
@@ -84,7 +84,7 @@ public class DocumentChangeApplicationService {
             DocumentBlockRepository blockRepository,
             GitKnowledgeRepository gitRepository,
             GitKnowledgeApplicationService gitKnowledgeService,
-            UserRepository userRepository,
+            JdbcUserRepository userRepository,
             ObjectMapper objectMapper,
             DocumentBlockContentCodec contentCodec,
             DocumentApplicationService documentService,

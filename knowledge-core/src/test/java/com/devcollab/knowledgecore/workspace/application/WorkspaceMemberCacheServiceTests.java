@@ -3,10 +3,9 @@ package com.devcollab.knowledgecore.workspace.application;
 import com.devcollab.knowledgecore.common.cache.CacheKey;
 import com.devcollab.knowledgecore.common.cache.CacheProperties;
 import com.devcollab.knowledgecore.common.cache.RedisCacheService;
-import com.devcollab.knowledgecore.workspace.application.WorkspaceMemberCacheService.CachedMembership;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceMember;
-import com.devcollab.knowledgecore.workspace.domain.WorkspaceMemberRepository;
 import com.devcollab.knowledgecore.workspace.domain.WorkspaceRole;
+import com.devcollab.knowledgecore.workspace.infrastructure.JdbcWorkspaceMemberRepository;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,9 +35,9 @@ class WorkspaceMemberCacheServiceTests {
     private RedisCacheService redisCache;
 
     @Mock
-    private WorkspaceMemberRepository memberRepository;
+    private JdbcWorkspaceMemberRepository memberRepository;
 
-    private Cache<String, CachedMembership> localCache;
+    private Cache<String, WorkspaceMember> localCache;
     private WorkspaceMemberCacheService service;
     private CacheProperties properties;
 
@@ -62,7 +61,11 @@ class WorkspaceMemberCacheServiceTests {
                         Duration.ofMinutes(2),
                         Duration.ofMinutes(1),
                         100,
-                        100
+                        100,
+                        Duration.ofMinutes(10),
+                        Duration.ofMinutes(30),
+                        50_000_000,
+                        20_000_000
                 )
         );
         service = new WorkspaceMemberCacheService(
@@ -74,7 +77,7 @@ class WorkspaceMemberCacheServiceTests {
     @DisplayName("Caffeine hit returns without Redis or Repository call")
     void caffeineHit() {
         String key = CacheKey.workspaceMember(workspaceId, userId);
-        localCache.put(key, CachedMembership.from(member));
+        localCache.put(key, member);
 
         Optional<WorkspaceMember> result = service.findCached(workspaceId, userId);
 
@@ -88,8 +91,8 @@ class WorkspaceMemberCacheServiceTests {
     @DisplayName("Caffeine miss + Redis hit → populates Caffeine, skips Repository")
     void caffeineMissRedisHit() {
         String key = CacheKey.workspaceMember(workspaceId, userId);
-        when(redisCache.get(eq(key), eq(CachedMembership.class)))
-                .thenReturn(Optional.of(CachedMembership.from(member)));
+        when(redisCache.get(eq(key), eq(WorkspaceMember.class)))
+                .thenReturn(Optional.of(member));
 
         Optional<WorkspaceMember> result = service.findCached(workspaceId, userId);
 
@@ -103,7 +106,7 @@ class WorkspaceMemberCacheServiceTests {
     @DisplayName("All miss → queries Repository, populates both caches")
     void allMissQueriesRepo() {
         String key = CacheKey.workspaceMember(workspaceId, userId);
-        when(redisCache.get(eq(key), eq(CachedMembership.class)))
+        when(redisCache.get(eq(key), eq(WorkspaceMember.class)))
                 .thenReturn(Optional.empty());
         when(memberRepository.findByWorkspaceIdAndUserId(workspaceId, userId))
                 .thenReturn(Optional.of(member));
@@ -111,7 +114,7 @@ class WorkspaceMemberCacheServiceTests {
         Optional<WorkspaceMember> result = service.findCached(workspaceId, userId);
 
         assertThat(result).isPresent();
-        verify(redisCache).set(eq(key), any(CachedMembership.class), eq(properties.workspaceMemberTtl()));
+        verify(redisCache).set(eq(key), any(WorkspaceMember.class), eq(properties.workspaceMemberTtl()));
         assertThat(localCache.getIfPresent(key)).isNotNull();
     }
 
@@ -119,7 +122,7 @@ class WorkspaceMemberCacheServiceTests {
     @DisplayName("evict invalidates both Caffeine and Redis")
     void evictBothCaches() {
         String key = CacheKey.workspaceMember(workspaceId, userId);
-        localCache.put(key, CachedMembership.from(member));
+        localCache.put(key, member);
 
         service.evict(workspaceId, userId);
 
@@ -145,7 +148,7 @@ class WorkspaceMemberCacheServiceTests {
     @DisplayName("Global cache disabled bypasses Caffeine and Redis")
     void cacheDisabledBypassesBothCaches() {
         String key = CacheKey.workspaceMember(workspaceId, userId);
-        localCache.put(key, CachedMembership.from(member));
+        localCache.put(key, member);
         properties = new CacheProperties(
                 false,
                 Duration.ofMinutes(10),
@@ -157,7 +160,11 @@ class WorkspaceMemberCacheServiceTests {
                         Duration.ofMinutes(2),
                         Duration.ofMinutes(1),
                         100,
-                        100
+                        100,
+                        Duration.ofMinutes(10),
+                        Duration.ofMinutes(30),
+                        50_000_000,
+                        20_000_000
                 )
         );
         service = new WorkspaceMemberCacheService(

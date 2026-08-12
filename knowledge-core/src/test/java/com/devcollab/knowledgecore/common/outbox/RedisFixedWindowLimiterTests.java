@@ -30,9 +30,7 @@ class RedisFixedWindowLimiterTests {
         );
 
         assertThat(decision.allowed()).isTrue();
-        assertThat(decision.currentCount()).isEqualTo(3);
         assertThat(decision.retryAfterMillis()).isEqualTo(30_000);
-        assertThat(decision.redisApplied()).isTrue();
     }
 
     @Test
@@ -49,7 +47,7 @@ class RedisFixedWindowLimiterTests {
     }
 
     @Test
-    void redisFailureFailsOpenWithoutPretendingRedisApplied() {
+    void redisFailureFailsOpen() {
         when(redis.execute(any(), anyList(), anyString()))
                 .thenThrow(new RedisConnectionFailureException("down"));
 
@@ -58,6 +56,5 @@ class RedisFixedWindowLimiterTests {
         );
 
         assertThat(decision.allowed()).isTrue();
-        assertThat(decision.redisApplied()).isFalse();
     }
 }

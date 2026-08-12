@@ -3,9 +3,9 @@ package com.devcollab.knowledgecore.auth.infrastructure;
 import com.devcollab.knowledgecore.auth.application.exception.InvalidCsrfTokenException;
 import com.devcollab.knowledgecore.auth.application.exception.InvalidRefreshTokenException;
 import com.devcollab.knowledgecore.auth.domain.RefreshSession;
-import com.devcollab.knowledgecore.auth.domain.RefreshSessionRepository;
 import com.devcollab.knowledgecore.auth.infrastructure.RefreshTokenService.RefreshCredentials;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -18,6 +18,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
 
 class RefreshTokenServiceTests {
 
@@ -81,14 +82,18 @@ class RefreshTokenServiceTests {
     }
 
     /**
-     * Test double for {@link RefreshSessionRepository}; previously lived in
+     * Test double for {@link JdbcRefreshSessionRepository}; previously lived in
      * main sources under the unused {@code in-memory} profile.
      */
     private static final class InMemoryRefreshSessionRepository
-            implements RefreshSessionRepository {
+            extends JdbcRefreshSessionRepository {
 
         private final Map<String, RefreshSession> sessionsByTokenHash =
                 new HashMap<>();
+
+        private InMemoryRefreshSessionRepository() {
+            super(mock(JdbcTemplate.class));
+        }
 
         @Override
         public synchronized RefreshSession save(RefreshSession session) {
@@ -103,10 +108,6 @@ class RefreshTokenServiceTests {
         ) {
             RefreshSession session = sessionsByTokenHash.get(refreshTokenHash);
             if (session == null) {
-                return Optional.empty();
-            }
-            if (session.isExpired(now)) {
-                sessionsByTokenHash.remove(refreshTokenHash);
                 return Optional.empty();
             }
             return Optional.of(session);

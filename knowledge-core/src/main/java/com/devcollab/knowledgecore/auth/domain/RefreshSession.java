@@ -11,8 +11,4 @@ public record RefreshSession(
         Instant createdAt,
         Instant expiresAt
 ) {
-
-    public boolean isExpired(Instant now) {
-        return !expiresAt.isAfter(now);
-    }
 }

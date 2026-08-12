@@ -10,30 +10,15 @@ import java.util.List;
 @Service
 public class OutboxRelayService {
 
-    private static final int DEFAULT_BATCH_SIZE = 50;
-
     private final OutboxEventRepository eventRepository;
-    private final OutboxMessagePublisher messagePublisher;
+    private final OutboxKafkaPublisher messagePublisher;
 
     public OutboxRelayService(
             OutboxEventRepository eventRepository,
-            OutboxMessagePublisher messagePublisher
+            OutboxKafkaPublisher messagePublisher
     ) {
         this.eventRepository = eventRepository;
         this.messagePublisher = messagePublisher;
-    }
-
-    @Transactional
-    public OutboxRelayResult relayPendingEvents() {
-        return relayPendingEvents(DEFAULT_BATCH_SIZE);
-    }
-
-    @Transactional
-    public OutboxRelayResult relayPendingEvents(int batchSize) {
-        List<OutboxEvent> pendingEvents = eventRepository.findPending(
-                batchSize
-        );
-        return relayEvents(pendingEvents);
     }
 
     @Transactional

@@ -25,8 +25,7 @@ public record RepositoryFilePageResponse(
                         extension(file.path()),
                         file.sizeBytes(),
                         file.language(),
-                        file.contentText() != null,
-                        false
+                        file.contentText() != null
                 )).toList(),
                 result.nextCursor(), result.hasMore()
         );
@@ -46,8 +45,7 @@ public record RepositoryFilePageResponse(
             String extension,
             long sizeBytes,
             String language,
-            boolean readable,
-            boolean isDirectory
+            boolean readable
     ) {
     }
 }

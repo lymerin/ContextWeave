@@ -10,7 +10,6 @@ import org.springframework.web.client.RestClient;
         "spring.datasource.url=${devcollab.benchmark.db.url:jdbc:postgresql://localhost:5432/devcollab}",
         "spring.datasource.username=${devcollab.benchmark.db.username:devcollab}",
         "spring.datasource.password=${devcollab.benchmark.db.password:devcollab}",
-        "devcollab.search.engine=elasticsearch",
         "devcollab.search.elasticsearch.enabled=true",
         "devcollab.search.elasticsearch.url=${devcollab.benchmark.elasticsearch.url:http://localhost:9200}",
         "devcollab.search.elasticsearch.index-name=${devcollab.benchmark.elasticsearch.index:devcollab-search-benchmark}"
@@ -36,7 +35,12 @@ class ElasticsearchSearchBenchmarkIT extends AbstractSearchBenchmarkIT {
 
     @Override
     protected OutboxRelayResult relayOutboxIfNeeded() {
-        return outboxRelayService.relayPendingEvents(Integer.MAX_VALUE);
+        // maxRetryCount=0 keeps the old pending-only relay semantics
+        // (FAILED events require retry_count < 0, which never holds).
+        return outboxRelayService.relayRetryableEvents(
+                Integer.MAX_VALUE,
+                0
+        );
     }
 
     @Override

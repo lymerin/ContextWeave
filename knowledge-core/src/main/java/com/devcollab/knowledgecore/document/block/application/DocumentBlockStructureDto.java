@@ -1,5 +1,6 @@
 package com.devcollab.knowledgecore.document.block.application;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.UUID;
 
 public record DocumentBlockStructureDto(
@@ -9,6 +10,6 @@ public record DocumentBlockStructureDto(
         long version,
         String plainText,
         String content,
-        boolean isContentTruncated
+        @JsonProperty("contentTruncated") boolean isContentTruncated
 ) {
 }

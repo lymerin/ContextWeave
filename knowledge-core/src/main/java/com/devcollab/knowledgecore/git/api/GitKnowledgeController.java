@@ -2,15 +2,23 @@ package com.devcollab.knowledgecore.git.api;
 
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeApplicationService;
 import com.devcollab.knowledgecore.documentchange.application.DocumentChangeViews.DetailView;
+import com.devcollab.knowledgecore.git.application.AffectedCodeDocument;
 import com.devcollab.knowledgecore.git.application.BlockBindingFileContext;
+import com.devcollab.knowledgecore.git.application.CodeBindingBatchQueryResult;
+import com.devcollab.knowledgecore.git.application.CodeBindingContextItem;
+import com.devcollab.knowledgecore.git.application.CodeBindingQueryResult;
+import com.devcollab.knowledgecore.git.application.CodeMetadataBatchResult;
 import com.devcollab.knowledgecore.git.application.CreateCodeBindingCommand;
 import com.devcollab.knowledgecore.git.application.GitKnowledgeApplicationService;
-import com.devcollab.knowledgecore.git.application.exception.InvalidCodeBindingException;
+import com.devcollab.knowledgecore.git.application.GitMarkdownImportResult;
 import com.devcollab.knowledgecore.git.application.GitMarkdownImportService;
 import com.devcollab.knowledgecore.git.application.IngestGitChangeCommand;
 import com.devcollab.knowledgecore.git.application.RegisterGitRepositoryCommand;
+import com.devcollab.knowledgecore.git.application.exception.InvalidCodeBindingException;
+import com.devcollab.knowledgecore.git.domain.CodeDocumentBinding;
 import com.devcollab.knowledgecore.git.domain.GitRepository;
 import com.devcollab.knowledgecore.security.CurrentUser;
+import com.devcollab.knowledgecore.security.DelegatedRestAccess;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -47,15 +55,13 @@ public class GitKnowledgeController {
     @PostMapping(
             "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/documents/import"
     )
-    public GitMarkdownImportResponse importMarkdownDocuments(
+    public GitMarkdownImportResult importMarkdownDocuments(
             @PathVariable UUID workspaceId,
             @PathVariable UUID repositoryId,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
-        return GitMarkdownImportResponse.from(
-                markdownImportService.importReadyMarkdown(
-                        workspaceId, repositoryId, currentUser.userId()
-                )
+        return markdownImportService.importReadyMarkdown(
+                workspaceId, repositoryId, currentUser.userId()
         );
     }
 
@@ -76,6 +82,7 @@ public class GitKnowledgeController {
     }
 
     @GetMapping("/api/v1/workspaces/{workspaceId}/git/repositories")
+    @DelegatedRestAccess(tools = "devcollab.workspace.get_context")
     public List<GitRepositoryResponse> listRepositories(
             @PathVariable UUID workspaceId,
             @AuthenticationPrincipal CurrentUser currentUser
@@ -125,6 +132,10 @@ public class GitKnowledgeController {
     @GetMapping(
             "/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/repository-files"
     )
+    @DelegatedRestAccess(
+            tools = "devcollab.repository.list_files",
+            repository = "repositoryId"
+    )
     public RepositoryFilePageResponse listRepositoryFilePage(
             @PathVariable UUID workspaceId,
             @PathVariable UUID repositoryId,
@@ -143,6 +154,10 @@ public class GitKnowledgeController {
     @GetMapping(
             "/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/repository-changes"
     )
+    @DelegatedRestAccess(
+            tools = "devcollab.repository.list_changes",
+            repository = "repositoryId"
+    )
     public RepositoryChangePageResponse listRepositoryChangePage(
             @PathVariable UUID workspaceId,
             @PathVariable UUID repositoryId,
@@ -158,13 +173,17 @@ public class GitKnowledgeController {
     @PostMapping(
             "/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/code-bindings/batch"
     )
-    public CodeBindingBatchQueryResponse queryBindingsBatch(
+    @DelegatedRestAccess(
+            tools = "devcollab.binding.list_batch",
+            repository = "repositoryId"
+    )
+    public CodeBindingBatchQueryResult queryBindingsBatch(
             @PathVariable UUID workspaceId,
             @PathVariable UUID repositoryId,
             @Valid @RequestBody CodeBindingBatchQueryRequest request,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
-        return CodeBindingBatchQueryResponse.from(service.queryBindingsBatch(
+        return service.queryBindingsBatch(
                 workspaceId,
                 repositoryId,
                 currentUser.userId(),
@@ -172,26 +191,37 @@ public class GitKnowledgeController {
                 request.revision(),
                 request.includeLegacyOrDefault(),
                 request.maxBindings()
-        ));
+        );
     }
 
     @PostMapping(
             "/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/code-metadata/batch"
     )
-    public CodeMetadataBatchResponse inspectCodeMetadata(
+    @DelegatedRestAccess(
+            tools = "devcollab.repository.inspect_code_metadata",
+            repository = "repositoryId"
+    )
+    public CodeMetadataBatchResult inspectCodeMetadata(
             @PathVariable UUID workspaceId,
             @PathVariable UUID repositoryId,
             @Valid @RequestBody CodeMetadataBatchRequest request,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
-        return CodeMetadataBatchResponse.from(service.inspectCodeMetadata(
+        return service.inspectCodeMetadata(
                 workspaceId, repositoryId, currentUser.userId(),
                 request.revision(), request.filePaths()
-        ));
+        );
     }
 
     @GetMapping(
             "/api/v1/workspaces/{workspaceId}/git/repositories/{repositoryId}/source"
+    )
+    @DelegatedRestAccess(
+            tools = {
+                    "devcollab.code.read",
+                    "devcollab.code.read_batch"
+            },
+            repository = "repositoryId"
     )
     public GitRepositorySourceResponse getRepositorySource(
             @PathVariable UUID workspaceId,
@@ -252,24 +282,24 @@ public class GitKnowledgeController {
     @GetMapping(
             "/api/v1/workspaces/{workspaceId}/git/changes/{changeId}/affected-documents"
     )
-    public List<AffectedCodeDocumentResponse> affectedDocuments(
+    public List<AffectedCodeDocument> affectedDocuments(
             @PathVariable UUID workspaceId,
             @PathVariable UUID changeId,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
         return service.findAffectedDocuments(
-                        workspaceId, changeId, currentUser.userId()
-                ).stream().map(AffectedCodeDocumentResponse::from).toList();
+                workspaceId, changeId, currentUser.userId()
+        );
     }
 
     @PostMapping("/api/v1/documents/{documentId}/code-bindings")
     @ResponseStatus(HttpStatus.CREATED)
-    public CodeDocumentBindingResponse createBinding(
+    public CodeDocumentBinding createBinding(
             @PathVariable UUID documentId,
             @AuthenticationPrincipal CurrentUser currentUser,
             @Valid @RequestBody CreateCodeBindingRequest request
     ) {
-        return CodeDocumentBindingResponse.from(service.createBinding(
+        return service.createBinding(
                 documentId, currentUser.userId(),
                 new CreateCodeBindingCommand(
                         request.repositoryId(),
@@ -286,11 +316,11 @@ public class GitKnowledgeController {
                         request.bindingOrdinal() == null ? 1 : request.bindingOrdinal(),
                         request.boundSignature()
                 )
-        ));
+        );
     }
 
     @GetMapping("/api/v1/documents/{documentId}/code-bindings")
-    public List<CodeDocumentBindingResponse> listBindings(
+    public List<CodeDocumentBinding> listBindings(
             @PathVariable UUID documentId,
             @RequestParam(required = false) String revision,
             @RequestParam(defaultValue = "true") boolean includeLegacy,
@@ -298,17 +328,16 @@ public class GitKnowledgeController {
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
         return service.listBindings(
-                        documentId,
-                        currentUser.userId(),
-                        revision,
-                        includeLegacy,
-                        blockId
-                )
-                .stream().map(CodeDocumentBindingResponse::from).toList();
+                documentId,
+                currentUser.userId(),
+                revision,
+                includeLegacy,
+                blockId
+        );
     }
 
     @GetMapping("/api/v1/documents/{documentId}/code-bindings/context")
-    public List<CodeBindingContextItemResponse> listBindingsContext(
+    public List<CodeBindingContextItem> listBindingsContext(
             @PathVariable UUID documentId,
             @RequestParam(required = false) String revision,
             @RequestParam(defaultValue = "true") boolean includeLegacy,
@@ -316,17 +345,16 @@ public class GitKnowledgeController {
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
         return service.listDocumentBindingsContext(
-                        documentId,
-                        currentUser.userId(),
-                        revision,
-                        includeLegacy,
-                        blockId
-                )
-                .stream().map(CodeBindingContextItemResponse::from).toList();
+                documentId,
+                currentUser.userId(),
+                revision,
+                includeLegacy,
+                blockId
+        );
     }
 
     @GetMapping("/api/v1/documents/{documentId}/code-bindings/block-file-context")
-    public BlockBindingFileContextResponse resolveBlockFileContext(
+    public BlockBindingFileContext resolveBlockFileContext(
             @PathVariable UUID documentId,
             @RequestParam UUID blockId,
             @RequestParam(required = false) String revision,
@@ -344,11 +372,15 @@ public class GitKnowledgeController {
             throw new InvalidCodeBindingException(
                     "该 Block 暂无正式代码 Binding");
         }
-        return BlockBindingFileContextResponse.from(ctx);
+        return ctx;
     }
 
     @GetMapping("/api/v1/workspaces/{workspaceId}/repositories/{repositoryId}/code-bindings")
-    public CodeBindingQueryResponse queryBindings(
+    @DelegatedRestAccess(
+            tools = "devcollab.binding.list",
+            repository = "repositoryId"
+    )
+    public CodeBindingQueryResult queryBindings(
             @PathVariable UUID workspaceId,
             @PathVariable UUID repositoryId,
             @RequestParam String filePath,
@@ -357,7 +389,7 @@ public class GitKnowledgeController {
             @RequestParam(required = false) Integer maxBindings,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
-        return CodeBindingQueryResponse.from(service.queryBindings(
+        return service.queryBindings(
                 workspaceId,
                 repositoryId,
                 currentUser.userId(),
@@ -365,7 +397,7 @@ public class GitKnowledgeController {
                 revision,
                 includeLegacy,
                 maxBindings
-        ));
+        );
     }
 
     @DeleteMapping("/api/v1/code-bindings/{bindingId}")

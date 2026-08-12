@@ -1,7 +1,6 @@
 package com.devcollab.knowledgecore.workspace.infrastructure;
 
 import com.devcollab.knowledgecore.workspace.domain.Workspace;
-import com.devcollab.knowledgecore.workspace.domain.WorkspaceRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -12,7 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public class JdbcWorkspaceRepository implements WorkspaceRepository {
+public class JdbcWorkspaceRepository {
 
     private static final RowMapper<Workspace> WORKSPACE_ROW_MAPPER =
             (rs, rowNum) -> new Workspace(
@@ -29,7 +28,6 @@ public class JdbcWorkspaceRepository implements WorkspaceRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    @Override
     public Workspace save(Workspace workspace) {
         int updated = jdbcTemplate.update("""
                         UPDATE workspaces SET name = ?, updated_at = ? WHERE id = ?
@@ -50,7 +48,6 @@ public class JdbcWorkspaceRepository implements WorkspaceRepository {
         return workspace;
     }
 
-    @Override
     public Optional<Workspace> findById(UUID workspaceId) {
         return jdbcTemplate.query(
                 "SELECT * FROM workspaces WHERE id = ?",
@@ -59,7 +56,6 @@ public class JdbcWorkspaceRepository implements WorkspaceRepository {
         ).stream().findFirst();
     }
 
-    @Override
     public List<Workspace> findAllByUserId(UUID userId) {
         return jdbcTemplate.query("""
                         SELECT w.*
@@ -73,7 +69,6 @@ public class JdbcWorkspaceRepository implements WorkspaceRepository {
         );
     }
 
-    @Override
     public void deleteById(UUID workspaceId) {
         jdbcTemplate.update(
                 "DELETE FROM workspaces WHERE id = ?",

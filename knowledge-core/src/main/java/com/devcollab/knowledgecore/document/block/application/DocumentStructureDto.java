@@ -1,5 +1,6 @@
 package com.devcollab.knowledgecore.document.block.application;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -12,7 +13,7 @@ public record DocumentStructureDto(
         String reviewStatus,
         Instant updatedAt,
         List<DocumentBlockStructureDto> blocks,
-        boolean isTruncated,
+        @JsonProperty("truncated") boolean isTruncated,
         int omittedBlockCount,
         int omittedCharacterCount
 ) {

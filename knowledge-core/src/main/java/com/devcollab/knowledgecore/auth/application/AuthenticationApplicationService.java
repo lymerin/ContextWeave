@@ -4,45 +4,60 @@ import com.devcollab.knowledgecore.auth.application.exception.InvalidCredentials
 import com.devcollab.knowledgecore.auth.application.exception.InvalidRefreshTokenException;
 import com.devcollab.knowledgecore.auth.application.exception.UsernameAlreadyExistsException;
 import com.devcollab.knowledgecore.auth.domain.UserAccount;
-import com.devcollab.knowledgecore.auth.domain.UserRepository;
 import com.devcollab.knowledgecore.auth.domain.UserStatus;
+import com.devcollab.knowledgecore.auth.infrastructure.JdbcUserRepository;
 import com.devcollab.knowledgecore.auth.infrastructure.JwtTokenService;
 import com.devcollab.knowledgecore.auth.infrastructure.RefreshTokenService;
 import com.devcollab.knowledgecore.auth.infrastructure.RefreshTokenService.RefreshCredentials;
+import com.devcollab.knowledgecore.common.redis.RateLimitExceededException;
+import com.devcollab.knowledgecore.common.redis.RedisCoordinationProperties;
+import com.devcollab.knowledgecore.common.redis.RedisFixedWindowLimiter;
+import com.devcollab.knowledgecore.common.redis.RedisFixedWindowLimiter.LimitDecision;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.Locale;
 import java.util.UUID;
 
 @Service
 public class AuthenticationApplicationService {
 
-    private final UserRepository userRepository;
+    private final JdbcUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
     private final RefreshTokenService refreshTokenService;
-    private final LoginAttemptLimiter loginAttemptLimiter;
+    private final RedisFixedWindowLimiter loginLimiter;
+    private final RedisCoordinationProperties properties;
 
     public AuthenticationApplicationService(
-            UserRepository userRepository,
+            JdbcUserRepository userRepository,
             PasswordEncoder passwordEncoder,
             JwtTokenService jwtTokenService,
             RefreshTokenService refreshTokenService,
-            LoginAttemptLimiter loginAttemptLimiter
+            RedisFixedWindowLimiter loginLimiter,
+            RedisCoordinationProperties properties
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
         this.refreshTokenService = refreshTokenService;
-        this.loginAttemptLimiter = loginAttemptLimiter;
+        this.loginLimiter = loginLimiter;
+        this.properties = properties;
     }
 
     @Transactional
-    public AuthenticatedUser register(RegisterCommand command) {
-        String normalizedUsername = normalizeUsername(command.username());
+    public AuthenticatedUser register(
+            String username,
+            String displayName,
+            String password
+    ) {
+        String normalizedUsername = normalizeUsername(username);
 
         if (userRepository.existsByNormalizedUsername(normalizedUsername)) {
             throw new UsernameAlreadyExistsException();
@@ -52,10 +67,10 @@ public class AuthenticationApplicationService {
 
         UserAccount userAccount = new UserAccount(
                 UUID.randomUUID(),
-                command.username().trim(),
+                username.trim(),
                 normalizedUsername,
-                command.displayName().trim(),
-                passwordEncoder.encode(command.password()),
+                displayName.trim(),
+                passwordEncoder.encode(password),
                 UserStatus.ACTIVE,
                 now,
                 now
@@ -64,12 +79,12 @@ public class AuthenticationApplicationService {
         return createAuthenticatedUser(userRepository.save(userAccount));
     }
 
-    public AuthenticatedUser login(LoginCommand command) {
-        String normalizedUsername = normalizeUsername(command.username());
+    public AuthenticatedUser login(String username, String password) {
+        String normalizedUsername = normalizeUsername(username);
 
-        var limitDecision = loginAttemptLimiter.acquire(normalizedUsername);
+        var limitDecision = acquire(normalizedUsername);
         if (!limitDecision.allowed()) {
-            throw new com.devcollab.knowledgecore.common.redis.RateLimitExceededException(
+            throw new RateLimitExceededException(
                     "登录尝试过于频繁，请稍后重试",
                     limitDecision.retryAfterMillis()
             );
@@ -81,13 +96,13 @@ public class AuthenticationApplicationService {
 
         if (!userAccount.canLogin()
                 || !passwordEncoder.matches(
-                        command.password(),
+                        password,
                         userAccount.passwordHash()
                 )) {
             throw invalidCredentials();
         }
 
-        loginAttemptLimiter.reset(normalizedUsername);
+        reset(normalizedUsername);
         return createAuthenticatedUser(userAccount);
     }
 
@@ -142,18 +157,47 @@ public class AuthenticationApplicationService {
                 accessToken,
                 "Bearer",
                 jwtTokenService.expiresInSeconds(),
-                credentials.sessionId(),
                 credentials.refreshToken(),
                 credentials.csrfToken()
         );
     }
 
-    private String normalizeUsername(String username) {
+    public static String normalizeUsername(String username) {
         if (username == null || username.isBlank()) {
             throw new IllegalArgumentException("用户名不能为空");
         }
 
         return username.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private LimitDecision acquire(String identity) {
+        RedisCoordinationProperties.LoginLimit policy = properties.loginLimit();
+        return loginLimiter.acquire(
+                key(identity),
+                policy.maxAttempts(),
+                policy.window()
+        );
+    }
+
+    private void reset(String identity) {
+        loginLimiter.reset(key(identity));
+    }
+
+    private String key(String identity) {
+        String normalized = identity == null
+                ? ""
+                : identity.trim().toLowerCase(Locale.ROOT);
+        return "login-limit:" + sha256(normalized);
+    }
+
+    private String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 
     private InvalidCredentialsException invalidCredentials() {

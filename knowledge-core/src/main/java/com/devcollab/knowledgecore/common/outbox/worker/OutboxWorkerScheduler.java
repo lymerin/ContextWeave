@@ -1,5 +1,7 @@
 package com.devcollab.knowledgecore.common.outbox.worker;
 
+import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayResult;
+import com.devcollab.knowledgecore.common.outbox.application.OutboxRelayService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -11,10 +13,22 @@ import org.springframework.stereotype.Component;
 )
 public class OutboxWorkerScheduler {
 
-    private final OutboxWorkerService workerService;
+    private final OutboxRelayService relayService;
+    private final OutboxWorkerProperties properties;
 
-    public OutboxWorkerScheduler(OutboxWorkerService workerService) {
-        this.workerService = workerService;
+    public OutboxWorkerScheduler(
+            OutboxRelayService relayService,
+            OutboxWorkerProperties properties
+    ) {
+        this.relayService = relayService;
+        this.properties = properties;
+    }
+
+    public OutboxRelayResult runOnce() {
+        return relayService.relayRetryableEvents(
+                properties.batchSize(),
+                properties.maxRetryCount()
+        );
     }
 
     @Scheduled(
@@ -22,6 +36,6 @@ public class OutboxWorkerScheduler {
             initialDelayString = "${devcollab.worker.outbox.initial-delay-ms:5000}"
     )
     public void relayOutboxEvents() {
-        workerService.runOnce();
+        runOnce();
     }
 }

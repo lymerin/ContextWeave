@@ -1,7 +1,9 @@
 package com.devcollab.knowledgecore.document.candidate.api;
 
 import com.devcollab.knowledgecore.document.candidate.application.DocumentCandidateApplicationService;
+import com.devcollab.knowledgecore.document.candidate.application.DocumentCandidateResult;
 import com.devcollab.knowledgecore.security.CurrentUser;
+import com.devcollab.knowledgecore.security.DelegatedRestAccess;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,7 +22,11 @@ public class DocumentCandidateController {
     }
 
     @GetMapping("/api/v1/workspaces/{workspaceId}/document-candidates")
-    public DocumentCandidateResponse findCandidates(
+    @DelegatedRestAccess(tools = {
+            "devcollab.document.find_candidates",
+            "devcollab.document.find_candidates_batch"
+    }, repository = "repositoryId")
+    public DocumentCandidateResult findCandidates(
             @PathVariable UUID workspaceId,
             @RequestParam(required = false) UUID repositoryId,
             @RequestParam(required = false) String filePath,
@@ -28,8 +34,8 @@ public class DocumentCandidateController {
             @RequestParam(required = false) Integer limit,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
-        return DocumentCandidateResponse.from(service.findCandidates(
+        return service.findCandidates(
                 workspaceId, repositoryId, filePath, query, limit, currentUser.userId()
-        ));
+        );
     }
 }

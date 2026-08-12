@@ -2,42 +2,41 @@ package com.devcollab.knowledgecore.common.cache;
 
 import com.devcollab.knowledgecore.document.version.domain.DocumentVersion;
 import com.github.benmanes.caffeine.cache.Cache;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
 /**
- * Published document version snapshot cache: Caffeine L1 → Redis L2 → DB.
+ * DocumentVersion snapshot cache: Caffeine L1 → Redis L2 → DB.
  *
- * <p>Read path follows the pattern already validated by
- * {@code WorkspaceMemberCacheService}: L1 hit returns immediately; L1 miss
- * checks Redis and backfills L1; both miss loads from DB and writes Redis.
- * Redis errors are already swallowed by {@link RedisCacheService}, so this
- * class does not re-guard every call — on any Redis failure the read
- * degrades to DB and TTL remains the fallback for stale entries.
+ * <p>Shared by the published-document and approved-adr caches; the
+ * constructor key prefix keeps their Redis namespaces apart (both store the
+ * same {@code DocumentVersion} type). Read path: L1 hit returns immediately;
+ * L1 miss checks Redis and backfills L1; both miss loads from DB and writes
+ * Redis. Caffeine serializes per-key loads, so concurrent misses load once.
+ * Redis errors are swallowed by {@link RedisCacheService}, so on any Redis
+ * failure the read degrades to DB and TTL remains the fallback for stale
+ * entries.
  */
-@Component
-public class PublishedDocumentCacheService {
+public class DocumentVersionSnapshotCacheService {
 
+    private final String keyPrefix;
     private final Cache<String, DocumentVersion> cache;
-    private final BoundedCacheLoader loader;
     private final RedisCacheService redisCache;
-    private final CacheProperties properties;
+    private final Duration ttl;
 
-    public PublishedDocumentCacheService(
-            @Qualifier("publishedDocumentLocalCache")
+    public DocumentVersionSnapshotCacheService(
+            String keyPrefix,
             Cache<String, DocumentVersion> cache,
-            BoundedCacheLoader loader,
             RedisCacheService redisCache,
-            CacheProperties properties
+            Duration ttl
     ) {
+        this.keyPrefix = keyPrefix;
         this.cache = cache;
-        this.loader = loader;
         this.redisCache = redisCache;
-        this.properties = properties;
+        this.ttl = ttl;
     }
 
     public DocumentVersion get(
@@ -46,15 +45,16 @@ public class PublishedDocumentCacheService {
             UUID versionId,
             Supplier<DocumentVersion> source
     ) {
-        String key = CacheKey.publishedDocument(workspaceId, documentId, versionId);
-        return loader.get("published-document", cache, key, () -> {
+        String key = keyPrefix + ":" + workspaceId + ":" + documentId
+                + ":" + versionId;
+        return cache.get(key, k -> {
             Optional<DocumentVersion> redisHit =
                     redisCache.get(key, DocumentVersion.class);
             if (redisHit.isPresent()) {
                 return redisHit.get();
             }
             DocumentVersion fromDb = source.get();
-            redisCache.set(key, fromDb, properties.publishedDocumentTtl());
+            redisCache.set(key, fromDb, ttl);
             return fromDb;
         });
     }

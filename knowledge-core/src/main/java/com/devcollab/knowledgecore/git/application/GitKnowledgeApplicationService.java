@@ -52,7 +52,6 @@ public class GitKnowledgeApplicationService {
     private static final Logger LOG = LoggerFactory.getLogger(
             GitKnowledgeApplicationService.class);
     private static final int DEFAULT_MAX_BINDINGS_PER_FILE = 1000;
-    private static final String CODE_METADATA_EXTRACTOR_VERSION = "regex-v1";
 
     private final GitKnowledgeRepository gitRepository;
     private final WorkspaceApplicationService workspaceService;
@@ -62,8 +61,6 @@ public class GitKnowledgeApplicationService {
     private final OutboxEventPublisher outboxPublisher;
     private final CodeMetadataInspector metadataInspector;
     private final DriftDetectionService driftDetectionService;
-    private final CodeMetadataCacheProperties codeMetadataCacheProperties;
-    private final ContentAddressableCache<CodeMetadataBatchResult.FileMetadata> codeMetadataCache;
 
     public GitKnowledgeApplicationService(
             GitKnowledgeRepository gitRepository,
@@ -73,8 +70,7 @@ public class GitKnowledgeApplicationService {
             DocumentBlockRepository blockRepository,
             OutboxEventPublisher outboxPublisher,
             CodeMetadataInspector metadataInspector,
-            DriftDetectionService driftDetectionService,
-            CodeMetadataCacheProperties codeMetadataCacheProperties
+            DriftDetectionService driftDetectionService
     ) {
         this.gitRepository = gitRepository;
         this.workspaceService = workspaceService;
@@ -84,10 +80,6 @@ public class GitKnowledgeApplicationService {
         this.outboxPublisher = outboxPublisher;
         this.metadataInspector = metadataInspector;
         this.driftDetectionService = driftDetectionService;
-        this.codeMetadataCacheProperties = codeMetadataCacheProperties;
-        this.codeMetadataCache = new ContentAddressableCache<>(
-                codeMetadataCacheProperties.capacity()
-        );
     }
 
     @Transactional
@@ -349,24 +341,11 @@ public class GitKnowledgeApplicationService {
                                 "FAILED", "FILE_NOT_FOUND"
                         );
                     }
-                    return inspectMetadata(file);
+                    return metadataInspector.inspect(file);
                 })
                 .toList();
         return new CodeMetadataBatchResult(
                 workspaceId, repositoryId, repository.lastSyncedCommit(), files
-        );
-    }
-
-    private CodeMetadataBatchResult.FileMetadata inspectMetadata(GitRepositoryFile file) {
-        if (!codeMetadataCacheProperties.enabled()
-                || file.blobSha() == null
-                || file.blobSha().isBlank()) {
-            return metadataInspector.inspect(file);
-        }
-        return codeMetadataCache.getOrCompute(
-                file.blobSha(),
-                CODE_METADATA_EXTRACTOR_VERSION,
-                () -> metadataInspector.inspect(file)
         );
     }
 
@@ -580,13 +559,6 @@ public class GitKnowledgeApplicationService {
             // that pass the optimistic duplicate check at the same time.
             throw new DuplicateCodeBindingException();
         }
-    }
-
-    public List<CodeDocumentBinding> listBindings(
-            UUID documentId,
-            UUID currentUserId
-    ) {
-        return listBindings(documentId, currentUserId, null, true, null);
     }
 
     public List<CodeDocumentBinding> listBindings(
@@ -960,29 +932,6 @@ public class GitKnowledgeApplicationService {
         workspaceService.requireMembership(binding.workspaceId(), currentUserId);
         if (!gitRepository.deleteBinding(bindingId)) {
             throw new CodeBindingNotFoundException();
-        }
-    }
-
-    /**
-     * Atomically remove every existing binding for {@code targetKey} within
-     * the given document so that a subsequent {@code createBinding} call
-     * produces the sole binding for that target.
-     *
-     * <p>This is the "overwrite" step that guarantees the formal binding table
-     * always reflects the latest agent review—no stale bindings from earlier
-     * revisions survive alongside the new ones.
-     */
-    @Transactional
-    public void removeBindingsForTarget(UUID documentId, UUID blockId, UUID currentUserId) {
-        Document document = requireDocument(documentId);
-        workspaceService.requireMembership(document.workspaceId(), currentUserId);
-        String targetKey = blockId == null ? "DOCUMENT" : blockId.toString();
-        List<CodeDocumentBinding> existing = gitRepository.findBindingsByDocumentId(documentId)
-                .stream()
-                .filter(binding -> targetKey.equals(binding.targetKey()))
-                .toList();
-        for (CodeDocumentBinding binding : existing) {
-            gitRepository.deleteBinding(binding.id());
         }
     }
 

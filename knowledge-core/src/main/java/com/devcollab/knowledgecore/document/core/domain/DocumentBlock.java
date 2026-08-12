@@ -19,23 +19,6 @@ public record DocumentBlock(
         Instant createdAt,              // 创建时间
         Instant updatedAt               // 最后更新时间
 ) {
-    // 仅更新纯文本内容，用于简单段落编辑，不改变富文本 JSON
-    public DocumentBlock updateText(String newText, Instant now) {
-        return new DocumentBlock(
-                id,
-                documentId,
-                type,
-                newText,
-                contentSchemaVersion,
-                contentJson,
-                sortOrder,
-                version + 1,
-                createdBy,
-                createdAt,
-                now
-        );
-    }
-
     // 同时更新纯文本与富文本 JSON，用于粘贴代码、插入表格等结构化内容编辑
     public DocumentBlock updateContent(
             String newText,

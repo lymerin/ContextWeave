@@ -28,7 +28,17 @@ public record CacheProperties(
             approvedAdrTtl = Duration.ofHours(1);
         }
         if (local == null) {
-            local = new Local(true, Duration.ofMinutes(2), Duration.ofMinutes(1), 10_000, 1_000);
+            local = new Local(
+                    true,
+                    Duration.ofMinutes(2),
+                    Duration.ofMinutes(1),
+                    10_000,
+                    1_000,
+                    Duration.ofMinutes(10),
+                    Duration.ofMinutes(30),
+                    50_000_000,
+                    20_000_000
+            );
         }
     }
 
@@ -44,41 +54,11 @@ public record CacheProperties(
             Duration documentTreeTtl,
             int workspaceMemberMaximumSize,
             int documentTreeMaximumSize,
-            Duration documentSchemaTtl,
             Duration publishedDocumentTtl,
             Duration approvedAdrTtl,
-            long documentSchemaMaximumWeight,
             long publishedDocumentMaximumWeight,
-            long approvedAdrMaximumWeight,
-            int loadingThreads,
-            int loadingQueueCapacity,
-            Duration loadTimeout
+            long approvedAdrMaximumWeight
     ) {
-
-        public Local(
-                boolean enabled,
-                Duration workspaceMemberTtl,
-                Duration documentTreeTtl,
-                int workspaceMemberMaximumSize,
-                int documentTreeMaximumSize
-        ) {
-            this(
-                    enabled,
-                    workspaceMemberTtl,
-                    documentTreeTtl,
-                    workspaceMemberMaximumSize,
-                    documentTreeMaximumSize,
-                    Duration.ofHours(6),
-                    Duration.ofMinutes(10),
-                    Duration.ofMinutes(30),
-                    10_000,
-                    50_000_000,
-                    20_000_000,
-                    4,
-                    200,
-                    Duration.ofSeconds(2)
-            );
-        }
 
         public Local {
             if (workspaceMemberTtl == null) {
@@ -93,32 +73,17 @@ public record CacheProperties(
             if (documentTreeMaximumSize <= 0) {
                 documentTreeMaximumSize = 1_000;
             }
-            if (documentSchemaTtl == null) {
-                documentSchemaTtl = Duration.ofHours(6);
-            }
             if (publishedDocumentTtl == null) {
                 publishedDocumentTtl = Duration.ofMinutes(10);
             }
             if (approvedAdrTtl == null) {
                 approvedAdrTtl = Duration.ofMinutes(30);
             }
-            if (documentSchemaMaximumWeight <= 0) {
-                documentSchemaMaximumWeight = 10_000;
-            }
             if (publishedDocumentMaximumWeight <= 0) {
                 publishedDocumentMaximumWeight = 50_000_000;
             }
             if (approvedAdrMaximumWeight <= 0) {
                 approvedAdrMaximumWeight = 20_000_000;
-            }
-            if (loadingThreads <= 0) {
-                loadingThreads = 4;
-            }
-            if (loadingQueueCapacity <= 0) {
-                loadingQueueCapacity = 200;
-            }
-            if (loadTimeout == null || loadTimeout.isZero() || loadTimeout.isNegative()) {
-                loadTimeout = Duration.ofSeconds(2);
             }
         }
     }

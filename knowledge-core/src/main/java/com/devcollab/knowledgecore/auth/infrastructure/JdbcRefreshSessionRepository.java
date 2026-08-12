@@ -1,7 +1,6 @@
 package com.devcollab.knowledgecore.auth.infrastructure;
 
 import com.devcollab.knowledgecore.auth.domain.RefreshSession;
-import com.devcollab.knowledgecore.auth.domain.RefreshSessionRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -12,7 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public class JdbcRefreshSessionRepository implements RefreshSessionRepository {
+public class JdbcRefreshSessionRepository {
 
     private static final RowMapper<RefreshSession> SESSION_ROW_MAPPER =
             (rs, rowNum) -> new RefreshSession(
@@ -30,7 +29,6 @@ public class JdbcRefreshSessionRepository implements RefreshSessionRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    @Override
     public RefreshSession save(RefreshSession session) {
         jdbcTemplate.update("""
                         INSERT INTO refresh_sessions
@@ -44,7 +42,6 @@ public class JdbcRefreshSessionRepository implements RefreshSessionRepository {
         return session;
     }
 
-    @Override
     public Optional<RefreshSession> findActiveByTokenHash(
             String refreshTokenHash,
             Instant now
@@ -59,7 +56,6 @@ public class JdbcRefreshSessionRepository implements RefreshSessionRepository {
         ).stream().findFirst();
     }
 
-    @Override
     public boolean consume(String refreshTokenHash, UUID sessionId) {
         return jdbcTemplate.update("""
                         DELETE FROM refresh_sessions
@@ -70,7 +66,6 @@ public class JdbcRefreshSessionRepository implements RefreshSessionRepository {
         ) == 1;
     }
 
-    @Override
     public void revoke(String refreshTokenHash) {
         jdbcTemplate.update(
                 "DELETE FROM refresh_sessions WHERE refresh_token_hash = ?",

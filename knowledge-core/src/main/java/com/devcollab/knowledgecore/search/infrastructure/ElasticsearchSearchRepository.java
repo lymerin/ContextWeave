@@ -12,8 +12,8 @@ import java.util.UUID;
 
 @Repository
 @ConditionalOnProperty(
-        name = "devcollab.search.engine",
-        havingValue = "elasticsearch"
+        name = "devcollab.search.elasticsearch.enabled",
+        havingValue = "true"
 )
 public class ElasticsearchSearchRepository implements SearchRepository {
 

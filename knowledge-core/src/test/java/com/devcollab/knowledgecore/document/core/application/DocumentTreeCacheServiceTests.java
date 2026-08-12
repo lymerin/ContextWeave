@@ -68,7 +68,11 @@ class DocumentTreeCacheServiceTests {
                         Duration.ofMinutes(2),
                         Duration.ofMinutes(1),
                         100,
-                        100
+                        100,
+                        Duration.ofMinutes(10),
+                        Duration.ofMinutes(30),
+                        50_000_000,
+                        20_000_000
                 )
         );
         service = new DocumentTreeCacheService(
@@ -161,7 +165,11 @@ class DocumentTreeCacheServiceTests {
                         Duration.ofMinutes(2),
                         Duration.ofMinutes(1),
                         100,
-                        100
+                        100,
+                        Duration.ofMinutes(10),
+                        Duration.ofMinutes(30),
+                        50_000_000,
+                        20_000_000
                 )
         );
         service = new DocumentTreeCacheService(

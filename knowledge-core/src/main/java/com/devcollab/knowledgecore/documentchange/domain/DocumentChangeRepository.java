@@ -43,8 +43,6 @@ public interface DocumentChangeRepository {
 
     long count(UUID workspaceId, Status status);
 
-    long countAll(UUID workspaceId);
-
     List<ListItem> findPage(
             UUID workspaceId,
             Status status,

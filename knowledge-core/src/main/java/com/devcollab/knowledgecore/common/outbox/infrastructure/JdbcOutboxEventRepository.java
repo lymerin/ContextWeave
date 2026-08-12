@@ -120,16 +120,6 @@ public class JdbcOutboxEventRepository implements OutboxEventRepository {
         );
     }
 
-    @Override
-    public List<OutboxEvent> findAll() {
-        return jdbcTemplate.query("""
-                        SELECT * FROM outbox_events
-                         ORDER BY occurred_at, id
-                        """,
-                OUTBOX_EVENT_ROW_MAPPER
-        );
-    }
-
     private static Instant toInstant(Timestamp timestamp) {
         return timestamp == null ? null : timestamp.toInstant();
     }
