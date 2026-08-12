@@ -24,15 +24,6 @@ spring:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
 
 devcollab:
-  code-metadata-cache:
-    enabled: ${DEVCOLLAB_CODE_METADATA_CACHE_ENABLED:false}
-    capacity: ${DEVCOLLAB_CODE_METADATA_CACHE_CAPACITY:1024}
-  memory-profile:
-    enabled: ${DEVCOLLAB_MEMORY_PROFILE_ENABLED:false}
-    run-id: ${DEVCOLLAB_MEMORY_PROFILE_RUN_ID:}
-    output-dir: ${DEVCOLLAB_MEMORY_PROFILE_OUTPUT_DIR:.data/memory-profile}
-    interval-ms: ${DEVCOLLAB_MEMORY_PROFILE_INTERVAL_MS:1000}
-    queue-capacity: ${DEVCOLLAB_MEMORY_PROFILE_QUEUE_CAPACITY:1024}
   agent-delegation:
     service-token: ${DEVCOLLAB_AGENT_INTERNAL_TOKEN:devcollab-local-agent-service-token-change-me}
     delegation-ttl: ${DEVCOLLAB_AGENT_DELEGATION_TTL:PT24H}
@@ -63,20 +54,14 @@ devcollab:
       document-tree-ttl: ${DEVCOLLAB_LOCAL_CACHE_DOCUMENT_TREE_TTL:PT1M}
       workspace-member-maximum-size: ${DEVCOLLAB_LOCAL_CACHE_WORKSPACE_MEMBER_MAX_SIZE:10000}
       document-tree-maximum-size: ${DEVCOLLAB_LOCAL_CACHE_DOCUMENT_TREE_MAX_SIZE:1000}
-      document-schema-ttl: ${DEVCOLLAB_LOCAL_CACHE_DOCUMENT_SCHEMA_TTL:PT6H}
       published-document-ttl: ${DEVCOLLAB_LOCAL_CACHE_PUBLISHED_DOCUMENT_TTL:PT10M}
       approved-adr-ttl: ${DEVCOLLAB_LOCAL_CACHE_APPROVED_ADR_TTL:PT30M}
-      document-schema-maximum-weight: ${DEVCOLLAB_LOCAL_CACHE_DOCUMENT_SCHEMA_MAX_WEIGHT:10000}
       published-document-maximum-weight: ${DEVCOLLAB_LOCAL_CACHE_PUBLISHED_DOCUMENT_MAX_WEIGHT:50000000}
       approved-adr-maximum-weight: ${DEVCOLLAB_LOCAL_CACHE_APPROVED_ADR_MAX_WEIGHT:20000000}
-      loading-threads: ${DEVCOLLAB_LOCAL_CACHE_LOADING_THREADS:4}
-      loading-queue-capacity: ${DEVCOLLAB_LOCAL_CACHE_LOADING_QUEUE_CAPACITY:200}
-      load-timeout: ${DEVCOLLAB_LOCAL_CACHE_LOAD_TIMEOUT:PT2S}
     invalidation:
       enabled: ${DEVCOLLAB_CACHE_INVALIDATION_ENABLED:true}
       group-id: ${DEVCOLLAB_CACHE_INVALIDATION_GROUP_ID:${spring.application.name}-${random.uuid}}
   search:
-    engine: ${DEVCOLLAB_SEARCH_ENGINE:postgres}
     elasticsearch:
       enabled: ${DEVCOLLAB_ELASTICSEARCH_ENABLED:false}
       url: ${DEVCOLLAB_ELASTICSEARCH_URL:http://localhost:9200}
@@ -110,7 +95,7 @@ devcollab:
       refresh-cookie-name: ${DEVCOLLAB_REFRESH_COOKIE_NAME:dc_refresh}
       csrf-cookie-name: ${DEVCOLLAB_CSRF_COOKIE_NAME:dc_csrf}
       csrf-header-name: ${DEVCOLLAB_CSRF_HEADER_NAME:X-CSRF-Token}
-      allowed-origins: ${DEVCOLLAB_WEB_ORIGINS:${DEVCOLLAB_WEB_ORIGIN:http://localhost:5173,http://127.0.0.1:5173,http://localhost:8088,http://127.0.0.1:8088}}
+      allowed-origins: ${DEVCOLLAB_WEB_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:8088,http://127.0.0.1:8088}
       secure: ${DEVCOLLAB_COOKIE_SECURE:false}
 
 management:
