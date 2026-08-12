@@ -408,6 +408,39 @@ def test_default_worker_identity_is_unique_per_process_incarnation(
     assert first._worker_id != second._worker_id
 
 
+def test_high_concurrency_rollout_defaults_off(settings: Settings) -> None:
+    worker = _worker(MemoryAgentJobRepository(), settings)
+    job_id = UUID("aaaaaaaa-0000-0000-0000-000000000001")
+
+    assert not worker._high_concurrency_enabled(job_id)
+    assert not worker._model_aimd_enabled(job_id)
+    assert worker._claim_concurrency_limit() == settings.agent_project_unit_concurrency
+    assert worker._plan_batch_concurrency(job_id) == settings.agent_plan_batch_concurrency
+
+
+def test_high_concurrency_rollout_enables_shared_aimd(settings: Settings) -> None:
+    settings = settings.model_copy(update={
+        "agent_high_concurrency_rollout_percent": 100,
+        "agent_high_concurrency_project_unit_concurrency": 6,
+        "agent_high_concurrency_plan_batch_concurrency": 4,
+    })
+    worker = _worker(MemoryAgentJobRepository(), settings)
+    job_id = UUID("aaaaaaaa-0000-0000-0000-000000000001")
+
+    assert worker._high_concurrency_enabled(job_id)
+    assert worker._model_aimd_enabled(job_id)
+    assert worker._claim_concurrency_limit() == 6
+    assert worker._plan_batch_concurrency(job_id) == 4
+
+
+def test_high_concurrency_rollout_bucket_is_stable(settings: Settings) -> None:
+    settings = settings.model_copy(update={"agent_high_concurrency_rollout_percent": 25})
+    worker = _worker(MemoryAgentJobRepository(), settings)
+    job_id = UUID("aaaaaaaa-0000-0000-0000-000000000001")
+
+    assert worker._high_concurrency_enabled(job_id) == worker._high_concurrency_enabled(job_id)
+
+
 def test_temporary_database_connection_error_is_retryable() -> None:
     code, message = AgentWorker._safe_error(
         asyncpg.ConnectionDoesNotExistError("connection was closed")

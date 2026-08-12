@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import signal
@@ -39,6 +40,7 @@ from app.runtime.delegation_token_cache import DelegationTokenCache
 from app.runtime.mcp_session_pool import McpSessionPool
 from app.runtime.project_discovery import ProjectDiscoveryService
 from app.runtime.semantic_planner import materialize_deepseek_units, overlapping_file_count
+from app.runtime.staged_concurrency import AimdConcurrencyController
 from app.schemas.document_planner.skeleton import SkeletonSlot
 from app.source_selection.file_filter import SourceFileFilter
 
@@ -170,6 +172,10 @@ class AgentWorker:
         self._stopping = asyncio.Event()
         self._memory_profiler = memory_profiler
         self._registry = SnapshotStoreRegistry()
+        self._model_controller = AimdConcurrencyController(
+            initial_limit=min(2, settings.agent_high_concurrency_plan_batch_concurrency),
+            max_limit=settings.agent_high_concurrency_plan_batch_concurrency,
+        )
 
     def stop(self) -> None:
         self._stopping.set()
@@ -188,7 +194,7 @@ class AgentWorker:
                             "Agent worker task failed",
                             exc_info=task.exception(),
                         )
-                if len(tasks) >= self._settings.agent_project_unit_concurrency:
+                if len(tasks) >= self._claim_concurrency_limit():
                     await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                     continue
                 unit = await self._repository.claim_next_unit(
@@ -220,6 +226,34 @@ class AgentWorker:
             )
         except TimeoutError:
             pass
+
+    def _claim_concurrency_limit(self) -> int:
+        if self._settings.agent_high_concurrency_rollout_percent <= 0:
+            return self._settings.agent_project_unit_concurrency
+        return max(
+            self._settings.agent_project_unit_concurrency,
+            self._settings.agent_high_concurrency_project_unit_concurrency,
+        )
+
+    def _high_concurrency_enabled(self, job_id: UUID) -> bool:
+        percent = self._settings.agent_high_concurrency_rollout_percent
+        if percent <= 0:
+            return False
+        if percent >= 100:
+            return True
+        digest = hashlib.sha256(str(job_id).encode("ascii")).digest()
+        return int.from_bytes(digest[:2], "big") % 100 < percent
+
+    def _model_aimd_enabled(self, job_id: UUID) -> bool:
+        return (
+            self._settings.agent_staged_pipeline_enabled
+            or self._high_concurrency_enabled(job_id)
+        )
+
+    def _plan_batch_concurrency(self, job_id: UUID) -> int:
+        if self._high_concurrency_enabled(job_id):
+            return self._settings.agent_high_concurrency_plan_batch_concurrency
+        return self._settings.agent_plan_batch_concurrency
 
     async def _execute(self, unit: dict[str, Any]) -> None:
         """Execute a single agent unit of work.
@@ -364,7 +398,8 @@ class AgentWorker:
                 provider=self._provider,
                 budget_chars=self._settings.agent_max_code_chars,
                 incremental_read_enabled=self._settings.agent_incremental_read_enabled,
-                staged_pipeline_enabled=self._settings.agent_staged_pipeline_enabled,
+                staged_pipeline_enabled=self._model_aimd_enabled(job_id),
+                model_controller=self._model_controller,
             )
             with self._profile_stage("UNIT_EXECUTION", job, job_id, unit_id):
                 return await executor.execute(
@@ -402,7 +437,8 @@ class AgentWorker:
                 provider=self._provider,
                 budget_chars=self._settings.agent_max_code_chars,
                 incremental_read_enabled=self._settings.agent_incremental_read_enabled,
-                staged_pipeline_enabled=self._settings.agent_staged_pipeline_enabled,
+                staged_pipeline_enabled=self._model_aimd_enabled(job_id),
+                model_controller=self._model_controller,
             )
             with self._profile_stage("UNIT_EXECUTION", job, job_id, unit_id):
                 result = await executor.execute_skeleton_flow(
@@ -464,7 +500,7 @@ class AgentWorker:
                 max_files_per_unit=self._settings.agent_max_total_files_per_unit,
                 max_units=planner_limit,
                 on_phase=on_phase,
-                batch_concurrency=self._settings.agent_plan_batch_concurrency,
+                batch_concurrency=self._plan_batch_concurrency(job_id),
             )
             with self._profile_stage("PLANNER", job, job_id, unit_id) as planner_stage:
                 unit_plan = (

@@ -40,12 +40,7 @@ class Settings(BaseSettings):
     @field_validator("deepseek_model", mode="before")
     @classmethod
     def validate_deepseek_model(cls, value: object) -> str:
-        """Normalize and validate the DeepSeek model name.
-
-        Accepts canonical names (``deepseek-v4-flash``, ``deepseek-v4-pro``)
-        and common misspellings.  An empty string is allowed so the service
-        can start unconfigured and fail fast at request time.
-        """
+        """Normalize and validate the DeepSeek model name."""
         raw = str(value).strip().lower()
         if not raw:
             return ""
@@ -95,10 +90,10 @@ class Settings(BaseSettings):
     agent_max_units: int = Field(500, ge=1, le=5_000)
     agent_max_analysis_units: int = Field(500, ge=1, le=5_000)
     agent_project_unit_concurrency: int = Field(2, ge=1, le=16)
-    # PLANNING 阶段候选 batch 的并发度。串行规划 120KB 级输入每批要
-    # 2-4 分钟，大仓库切成多批后是主要耗时项；并发后按此值并行请求。
-    # 注意 DeepSeek 429 限流时直接失败（无自动重试），取值不宜过高。
     agent_plan_batch_concurrency: int = Field(2, ge=1, le=8)
+    agent_high_concurrency_rollout_percent: int = Field(0, ge=0, le=100)
+    agent_high_concurrency_project_unit_concurrency: int = Field(6, ge=1, le=16)
+    agent_high_concurrency_plan_batch_concurrency: int = Field(4, ge=1, le=8)
     agent_project_execution_limit: int = Field(0, ge=0, le=500)
     agent_project_max_tool_calls: int = Field(24, ge=5, le=100)
     agent_mcp_session_pool_enabled: bool = False
