@@ -5,6 +5,7 @@ import com.devcollab.knowledgecore.search.domain.SearchHitType;
 import com.devcollab.knowledgecore.search.domain.SearchSnippetHighlighter;
 import com.devcollab.knowledgecore.search.domain.SearchRepository;
 import com.devcollab.knowledgecore.search.domain.SearchScope;
+import com.devcollab.knowledgecore.document.core.application.DocumentBlockVisibility;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -105,9 +106,13 @@ public class JdbcSearchRepository implements SearchRepository {
                          ORDER BY b.sort_order, b.id
                         """,
                 (rs, rowNum) -> {
+                    String blockText = rs.getString("block_text");
+                    if (DocumentBlockVisibility.isAgentPlaceholderText(blockText)) {
+                        return null;
+                    }
                     SearchSnippetHighlighter.Result snippet =
                             SearchSnippetHighlighter.create(
-                                    rs.getString("block_text"),
+                                    blockText,
                                     keyword
                             );
                     return new SearchHit(
@@ -122,7 +127,7 @@ public class JdbcSearchRepository implements SearchRepository {
                 },
                 workspaceId,
                 pattern
-        );
+        ).stream().filter(java.util.Objects::nonNull).toList();
     }
 
     private static int typeRank(SearchHit hit) {

@@ -8,7 +8,13 @@ from app.document_planner.skeleton_planner import (
     build_slot_instruction,
     plan_skeleton,
 )
-from app.execution.job_executor import _build_inline_sources
+from app.document_planner.plan_validator import PlanValidationError
+from app.document_planner.target_resolver import SectionTarget
+from app.execution.job_executor import (
+    _build_inline_sources,
+    _ensure_slot_targets_are_updates,
+)
+from app.worker import _skeleton_from_payload, _skeleton_payload
 from app.model_context_mcp.context_freeze_snapshot import freeze_context
 from app.schemas.document_planner.skeleton import SlotType
 from app.schemas.semantic.analysis_result import (
@@ -252,7 +258,7 @@ def test_compose_slot_sections_maps_to_slot_ids() -> None:
 
 def test_skeleton_plan_creates_placeholder_blocks_with_bindings() -> None:
     catalog, snap, scope = pipeline()
-    skeleton = plan_skeleton(scope, catalog)
+    skeleton = plan_skeleton(scope, catalog, document_title="Order module")
     plan = build_skeleton_plan(
         skeleton, snap, catalog,
         candidates=[], structures=[], existing_bindings=[],
@@ -261,7 +267,11 @@ def test_skeleton_plan_creates_placeholder_blocks_with_bindings() -> None:
     creates = [o for o in plan.document_operations if o.operation_type == "CREATE_DOCUMENT"]
     adds = [o for o in plan.document_operations if o.operation_type == "ADD_BLOCK"]
     assert len(creates) == 1
+    assert creates[0].proposed_document_title == "Order module"
+    assert plan.summary == "Order module"
     assert len(adds) == len(skeleton.slots)
+    assert len(plan.section_binding_sets) == len(skeleton.slots)
+    assert "系统自动生成" in adds[0].proposed_plain_text
     # 每个槽位一条绑定（占位块带绑定 → 后续批次按绑定重叠匹配 UPDATE_BLOCK）
     assert len(plan.section_binding_sets) == len(skeleton.slots)
     for bs in plan.section_binding_sets:
@@ -273,6 +283,68 @@ def test_skeleton_plan_creates_placeholder_blocks_with_bindings() -> None:
 
 
 # ── 批次指令模板（batch_type）────────────────────────────────────────────
+
+
+def test_skeleton_plan_rejects_slots_beyond_placeholder_capacity() -> None:
+    catalog, snap, scope = pipeline()
+    skeleton = plan_skeleton(scope, catalog)
+
+    try:
+        build_skeleton_plan(
+            skeleton, snap, catalog,
+            candidates=[], structures=[], existing_bindings=[],
+            max_placeholder_slots=1,
+        )
+    except ValueError as exc:
+        assert "SKELETON_SLOT_LIMIT_EXCEEDED" in str(exc)
+    else:
+        raise AssertionError("oversized skeleton must not be silently truncated")
+
+
+def test_skeleton_payload_round_trips_relay_state() -> None:
+    catalog, _, scope = pipeline()
+    skeleton = plan_skeleton(scope, catalog, document_title="Order module")
+
+    restored = _skeleton_from_payload(_skeleton_payload(skeleton))
+
+    assert restored.document_title == skeleton.document_title
+    assert [slot.slot_id for slot in restored.slots] == [
+        slot.slot_id for slot in skeleton.slots
+    ]
+    assert [batch.slot_ids for batch in restored.batches] == [
+        batch.slot_ids for batch in skeleton.batches
+    ]
+
+
+def test_partial_skeleton_plan_appends_next_window_to_existing_document() -> None:
+    catalog, snap, scope = pipeline()
+    skeleton = plan_skeleton(scope, catalog, document_title="Order module")
+    document_id = UUID("22222222-2222-2222-2222-222222222222")
+
+    plan = build_skeleton_plan(
+        skeleton,
+        snap,
+        catalog,
+        candidates=[],
+        structures=[],
+        existing_bindings=[],
+        max_placeholder_slots=1,
+        slot_offset=1,
+        document_id=document_id,
+        allow_partial=True,
+    )
+
+    creates = [o for o in plan.document_operations if o.operation_type == "CREATE_DOCUMENT"]
+    adds = [o for o in plan.document_operations if o.operation_type == "ADD_BLOCK"]
+    assert creates == []
+    assert len(adds) == 1
+    assert adds[0].document_id == document_id
+    assert adds[0].client_operation_id == "add_block_1"
+    assert plan.section_binding_sets[0].bindings[0].document_id == document_id
+    assert (
+        plan.section_binding_sets[0].bindings[0].created_block_operation_id
+        == "add_block_1"
+    )
 
 
 def test_flow_instruction_template() -> None:
@@ -362,7 +434,41 @@ def test_batch_payloads_round_trip() -> None:
         for slot_dict in payload["slot_plan"]["slots"]:
             slot = SkeletonSlot(**slot_dict)
             assert slot.slot_id.startswith(("module:", "flow:", "symbol:"))
-    # 每批槽位数量与骨架一致
     assert sum(len(p["slot_plan"]["slots"]) for p in payloads) == len(skeleton.slots)
-    # 文件集往返
     assert payloads[0]["file_paths"] == sorted(scope.related_files)
+
+
+def test_slot_batch_requires_existing_placeholder_update() -> None:
+    catalog, _, scope = pipeline()
+    slot = plan_skeleton(scope, catalog).slots[0]
+    document_id = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    block_id = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+
+    _ensure_slot_targets_are_updates(
+        (slot,),
+        (
+            SectionTarget(
+                section_ref=slot.slot_id,
+                document_id=document_id,
+                block_id=block_id,
+                action="UPDATE_BLOCK",
+            ),
+        ),
+    )
+
+    try:
+        _ensure_slot_targets_are_updates(
+            (slot,),
+            (
+                SectionTarget(
+                    section_ref=slot.slot_id,
+                    document_id=document_id,
+                    created_block_op_id="add_block_0",
+                    action="ADD_BLOCK",
+                ),
+            ),
+        )
+    except PlanValidationError as exc:
+        assert "expected UPDATE_BLOCK" in str(exc)
+    else:
+        raise AssertionError("slot batch must not fall back to ADD_BLOCK")

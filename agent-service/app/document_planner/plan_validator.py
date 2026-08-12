@@ -34,6 +34,7 @@ def assemble_and_validate(
     context_id: str = "",
     revision: str = "",
     snapshot_hash: str = "",
+    document_title: str = "",
     section_targets: tuple | None = None,
 ) -> AgentPlan:
     """校验并组装 AgentPlan。"""
@@ -123,12 +124,13 @@ def assemble_and_validate(
                 section = next(
                     (s for s in sections if s.section_ref == target.section_ref), None
                 )
+                title = document_title or (section.title if section else "代码职责说明")
                 operations.append(PlanOperation(
                     client_operation_id=target.created_document_op_id,
                     sequence_number=seq,
                     operation_type="CREATE_DOCUMENT",
-                    proposed_document_title=section.title if section else "代码职责说明",
-                    proposed_plain_text=section.title if section else "代码职责说明",
+                    proposed_document_title=title,
+                    proposed_plain_text=title,
                 ))
                 seq += 1
 
@@ -169,7 +171,7 @@ def assemble_and_validate(
         context_id=context_id,
         revision=revision or evidence.revision,
         snapshot_hash=snapshot_hash,
-        summary=sections[0].title if sections else "",
+        summary=document_title or (sections[0].title if sections else ""),
         rationale="语义分析驱动的文档生成与绑定",
         document_operations=tuple(operations),
         planned_sections=sections,

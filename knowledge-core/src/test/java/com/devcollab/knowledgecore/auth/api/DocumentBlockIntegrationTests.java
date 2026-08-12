@@ -64,6 +64,56 @@ class DocumentBlockIntegrationTests {
     }
 
     @Test
+    void shouldHideAgentPlaceholderBlocksFromUserFacingReads()
+            throws Exception {
+        String token = registerAndGetAccessToken();
+        String workspaceId = createWorkspace(token).get("id").asText();
+        String documentId = createDocument(token, workspaceId)
+                .get("id")
+                .asText();
+
+        JsonNode visible = createBlock(token, documentId, "Ready content");
+        createBlock(
+                token,
+                documentId,
+                "Module overview\n⏳ 本条目由系统自动生成中（批次填充后自动替换）：模块总览"
+        );
+
+        mockMvc.perform(get("/api/v1/documents/{id}/blocks", documentId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(visible.get("id").asText()))
+                .andExpect(jsonPath("$[0].content.text")
+                        .value("Ready content"));
+
+        mockMvc.perform(get(
+                        "/api/v1/workspaces/{workspaceId}/documents/{documentId}/structure",
+                        workspaceId,
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .param("includeBlockContent", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.blocks.length()").value(1))
+                .andExpect(jsonPath("$.blocks[0].plainText")
+                        .value("Ready content"));
+
+        mockMvc.perform(get(
+                        "/api/v1/workspaces/{workspaceId}/documents/{documentId}/structure",
+                        workspaceId,
+                        documentId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .param("includeBlockContent", "true")
+                        .param("includeInternalBlocks", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.blocks.length()").value(2))
+                .andExpect(jsonPath("$.blocks[1].plainText")
+                        .value(org.hamcrest.Matchers.containsString("⏳")));
+    }
+
+    @Test
     void shouldPersistStructuredTiptapJsonAndDeriveSearchText() throws Exception {
         String token = registerAndGetAccessToken();
         String workspaceId = createWorkspace(token).get("id").asText();

@@ -70,7 +70,7 @@ class DocumentStructureApplicationServiceTests {
         ));
 
         DocumentStructureDto result = service.getDocumentStructure(
-                workspaceId, documentId, userId, false, 1, 1
+                workspaceId, documentId, userId, false, false, 1, 1
         );
 
         assertThat(result.blocks()).hasSize(1);
@@ -90,7 +90,7 @@ class DocumentStructureApplicationServiceTests {
         when(blockRepository.findAllByDocumentId(documentId)).thenReturn(List.of(omitted, second, first));
 
         DocumentStructureDto result = service.getDocumentStructure(
-                workspaceId, documentId, userId, true, 2, 3
+                workspaceId, documentId, userId, true, false, 2, 3
         );
 
         assertThat(result.blocks()).hasSize(2);
@@ -115,10 +115,10 @@ class DocumentStructureApplicationServiceTests {
         when(blockRepository.findAllByDocumentId(documentId)).thenReturn(List.of(block(0, "x", contentJson)));
 
         DocumentStructureDto tooSmall = service.getDocumentStructure(
-                workspaceId, documentId, userId, true, null, codePoints(contentJson)
+                workspaceId, documentId, userId, true, false, null, codePoints(contentJson)
         );
         DocumentStructureDto enough = service.getDocumentStructure(
-                workspaceId, documentId, userId, true, null, codePoints(contentJson) + 1
+                workspaceId, documentId, userId, true, false, null, codePoints(contentJson) + 1
         );
 
         assertThat(tooSmall.blocks().getFirst().content()).isNull();
@@ -132,7 +132,7 @@ class DocumentStructureApplicationServiceTests {
         when(blockRepository.findAllByDocumentId(documentId))
                 .thenReturn(List.of(block(0, "text", "{\"type\":\"paragraph\"}")));
         DocumentStructureDto dto = service.getDocumentStructure(
-                workspaceId, documentId, userId, true, null, 1
+                workspaceId, documentId, userId, true, false, null, 1
         );
 
         JsonNode json = objectMapper.readTree(objectMapper.writeValueAsBytes(dto));

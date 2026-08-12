@@ -85,6 +85,7 @@ public class DocumentController {
             @PathVariable UUID documentId,
             @AuthenticationPrincipal CurrentUser currentUser,
             @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "false") boolean includeBlockContent,
+            @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "false") boolean includeInternalBlocks,
             @org.springframework.web.bind.annotation.RequestParam(required = false) Integer maxBlocks,
             @org.springframework.web.bind.annotation.RequestParam(required = false) Integer maxContentCharacters
     ) {
@@ -93,6 +94,7 @@ public class DocumentController {
                 documentId,
                 currentUser.userId(),
                 includeBlockContent,
+                includeInternalBlocks,
                 maxBlocks,
                 maxContentCharacters
         );

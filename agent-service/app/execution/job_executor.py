@@ -296,6 +296,7 @@ class JobExecutor:
                     sections, candidates, structures, bindings_list,
                     atom_symbol_keys=atom_symbol_keys,
                 )
+                _ensure_slot_targets_are_updates(slot_scope, targets)
                 binding_sets = resolve_bindings(
                     sections, evidence, targets,
                     existing_bindings=bindings_list,
@@ -386,6 +387,10 @@ class JobExecutor:
         selected_paths: list[str],
         run_id: str,
         document_title: str = "",
+        slot_offset: int = 0,
+        max_placeholder_slots: int = 45,
+        skeleton_document_id: UUID | None = None,
+        allow_partial_skeleton: bool = False,
     ) -> dict:
         """骨架施工全流程：模块快照 → plan_skeleton → 骨架 Review 提交。
 
@@ -424,6 +429,10 @@ class JobExecutor:
 
         plan = build_skeleton_plan(
             skeleton, snap, catalog, candidates, structures, bindings_list,
+            max_placeholder_slots=max_placeholder_slots,
+            slot_offset=slot_offset,
+            document_id=skeleton_document_id,
+            allow_partial=allow_partial_skeleton,
         )
         submit_result = await self._write.submit(
             plan,
@@ -724,6 +733,32 @@ def _bind_result_atoms(
 
 
 # ── 批次内联源码 ─────────────────────────────────────────────────────────
+
+
+def _ensure_slot_targets_are_updates(
+    slot_scope: tuple[SkeletonSlot, ...],
+    targets: tuple[Any, ...],
+) -> None:
+    if not slot_scope:
+        return
+    target_by_ref = {target.section_ref: target for target in targets}
+    issues: list[str] = []
+    for slot in slot_scope:
+        target = target_by_ref.get(slot.slot_id)
+        if target is None:
+            issues.append(f"slot {slot.slot_id}: missing document target")
+            continue
+        if (
+            target.action != "UPDATE_BLOCK"
+            or target.document_id is None
+            or target.block_id is None
+        ):
+            issues.append(
+                f"slot {slot.slot_id}: expected UPDATE_BLOCK for existing "
+                f"placeholder, got {target.action}"
+            )
+    if issues:
+        raise PlanValidationError(issues)
 
 
 def _build_inline_sources(

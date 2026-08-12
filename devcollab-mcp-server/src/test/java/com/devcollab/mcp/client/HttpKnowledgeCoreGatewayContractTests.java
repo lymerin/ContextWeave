@@ -56,7 +56,8 @@ class HttpKnowledgeCoreGatewayContractTests {
                 }
                 """.formatted(documentId, workspaceId, blockId);
         server.expect(requestTo(org.hamcrest.Matchers.containsString(
-                        "/api/v1/workspaces/" + workspaceId + "/documents/" + documentId + "/structure")))
+                        "/api/v1/workspaces/" + workspaceId + "/documents/" + documentId
+                                + "/structure?includeBlockContent=true&includeInternalBlocks=true")))
                 .andExpect(header("Authorization", "Bearer access-token"))
                 .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
 

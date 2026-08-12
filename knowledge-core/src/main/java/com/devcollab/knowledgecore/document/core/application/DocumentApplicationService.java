@@ -168,6 +168,7 @@ public class DocumentApplicationService {
             UUID documentId,
             UUID currentUserId,
             boolean includeBlockContent,
+            boolean includeInternalBlocks,
             Integer maxBlocks,
             Integer maxContentCharacters
     ) {
@@ -181,6 +182,9 @@ public class DocumentApplicationService {
         allBlocks.sort(java.util.Comparator
                 .comparingInt(DocumentBlock::sortOrder)
                 .thenComparing(DocumentBlock::id));
+        if (!includeInternalBlocks) {
+            allBlocks.removeIf(block -> !DocumentBlockVisibility.isUserVisible(block));
+        }
 
         int totalBlocks = allBlocks.size();
         boolean isTruncated = false;

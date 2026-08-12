@@ -6,6 +6,7 @@ import logging
 import os
 import signal
 import socket
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -41,10 +42,11 @@ from app.runtime.mcp_session_pool import McpSessionPool
 from app.runtime.project_discovery import ProjectDiscoveryService
 from app.runtime.semantic_planner import materialize_deepseek_units, overlapping_file_count
 from app.runtime.staged_concurrency import AimdConcurrencyController
-from app.schemas.document_planner.skeleton import SkeletonSlot
+from app.schemas.document_planner.skeleton import BatchPlan, DocumentSkeleton, SkeletonSlot
 from app.source_selection.file_filter import SourceFileFilter
 
 LOGGER = logging.getLogger("devcollab.agent.worker")
+_SKELETON_PLACEHOLDER_BATCH_SIZE = 45
 
 
 class ReviewSubmissionError(RuntimeError):
@@ -116,6 +118,30 @@ def _batch_payloads(skeleton: object, review_id: str | None = None) -> list[dict
             }
         )
     return batches
+
+
+def _skeleton_payload(skeleton: DocumentSkeleton) -> dict[str, Any]:
+    return {
+        "document_title": skeleton.document_title,
+        "slots": [asdict(slot) for slot in skeleton.slots],
+        "batches": [asdict(batch) for batch in skeleton.batches],
+    }
+
+
+def _skeleton_from_payload(payload: dict[str, Any]) -> DocumentSkeleton:
+    return DocumentSkeleton(
+        document_title=str(payload.get("document_title") or ""),
+        slots=tuple(SkeletonSlot(**slot) for slot in payload.get("slots", [])),
+        batches=tuple(
+            BatchPlan(
+                batch_index=int(batch["batch_index"]),
+                scope_label=str(batch["scope_label"]),
+                slot_ids=tuple(batch.get("slot_ids") or []),
+                file_paths=tuple(batch.get("file_paths") or []),
+            )
+            for batch in payload.get("batches", [])
+        ),
+    )
 
 
 def _context_file_paths(context: dict[str, Any]) -> list[str]:
@@ -420,16 +446,26 @@ class AgentWorker:
                 str(item.get("file_path") or item.get("filePath"))
                 for item in context.get("files", [])
             ]
+            workspace_id = UUID(str(job["workspace_id"]))
+            repository_id = UUID(str(job["repository_id"]))
+            relay = dict(context.get("slot_plan") or {})
+            if relay.get("kind") != "SKELETON_RELAY":
+                relay = {
+                    "kind": "SKELETON_RELAY",
+                    "slotOffset": 0,
+                    "reviews": [],
+                }
+            document_reader = DocumentReader(
+                delegated,
+                batch_tools_enabled=self._settings.agent_batch_tools_enabled,
+            )
             executor = JobExecutor(
                 workspace_reader=WorkspaceReader(delegated),
                 source_reader=SourceReader(
                     delegated,
                     code_read_batch_enabled=self._settings.agent_code_read_batch_enabled,
                 ),
-                document_reader=DocumentReader(
-                    delegated,
-                    batch_tools_enabled=self._settings.agent_batch_tools_enabled,
-                ),
+                document_reader=document_reader,
                 binding_reader=BindingReader(delegated),
                 plan_writer=PlanWriter(delegated),
                 file_filter=SourceFileFilter(),
@@ -440,6 +476,72 @@ class AgentWorker:
                 staged_pipeline_enabled=self._model_aimd_enabled(job_id),
                 model_controller=self._model_controller,
             )
+            pending_review_id = relay.get("pendingReviewId")
+            if pending_review_id:
+                review_status = await self._review_status(
+                    workspace_id,
+                    UUID(str(pending_review_id)),
+                    delegation_id=UUID(str(job["delegation_id"])),
+                    job_id=job_id,
+                )
+                if review_status == "APPLIED":
+                    if not relay.get("documentId"):
+                        candidates = await document_reader.locate_documents(
+                            workspace_id, repository_id, selected_paths
+                        )
+                        binding_candidates = [
+                            c for c in candidates
+                            if c.existing_binding_count > 0
+                        ]
+                        if not binding_candidates:
+                            raise SkeletonReviewPendingError(
+                                "skeleton document bindings are not visible yet"
+                            )
+                        document = max(
+                            binding_candidates,
+                            key=lambda c: (
+                                c.existing_binding_count,
+                                str(c.title or ""),
+                            ),
+                        )
+                        relay["documentId"] = str(document.document_id)
+                    relay["slotOffset"] = int(
+                        relay.get("pendingSlotEnd")
+                        or relay.get("slotOffset")
+                        or 0
+                    )
+                    relay.pop("pendingReviewId", None)
+                    relay.pop("pendingSlotEnd", None)
+                    await self._repository.save_unit_slot_plan(
+                        unit_id, self._worker_id, relay
+                    )
+                elif review_status in ("REJECTED", "STALE"):
+                    return {"status": "NO_CHANGE", "change_request_id": None}
+                else:
+                    raise SkeletonReviewPendingError(
+                        f"skeleton review {pending_review_id} is {review_status or 'MISSING'}"
+                    )
+
+            total_slots = int(relay.get("totalSlots") or 0)
+            if total_slots and int(relay.get("slotOffset") or 0) >= total_slots:
+                skeleton = _skeleton_from_payload(relay.get("skeleton") or {})
+                await self._repository.create_batch_units(
+                    job_id, _batch_payloads(skeleton)
+                )
+                review_ids = relay.get("reviews") or []
+                return {
+                    "status": "SUBMITTED",
+                    "change_request_id": (
+                        review_ids[-1] if review_ids else None
+                    ),
+                    "skeleton": skeleton,
+                }
+
+            slot_offset = int(relay.get("slotOffset") or 0)
+            skeleton_document_id = (
+                UUID(str(relay["documentId"]))
+                if relay.get("documentId") else None
+            )
             with self._profile_stage("UNIT_EXECUTION", job, job_id, unit_id):
                 result = await executor.execute_skeleton_flow(
                     workspace_id=UUID(str(job["workspace_id"])),
@@ -448,6 +550,10 @@ class AgentWorker:
                     selected_paths=selected_paths,
                     run_id=str(unit_id),
                     document_title=str(unit.get("display_name") or "代码模块"),
+                    slot_offset=slot_offset,
+                    max_placeholder_slots=_SKELETON_PLACEHOLDER_BATCH_SIZE,
+                    skeleton_document_id=skeleton_document_id,
+                    allow_partial_skeleton=True,
                 )
             if result.get("status") == "EMPTY_SCOPE":
                 # 模块无可解析符号（如纯模板/非代码模块）→ 无文档可建，优雅完成
@@ -456,9 +562,28 @@ class AgentWorker:
             if skeleton is None:
                 raise RuntimeError("SKELETON_PLAN did not produce a skeleton")
             review_id = result.get("change_request_id")
-            await self._repository.create_batch_units(
-                job_id, _batch_payloads(skeleton, review_id=review_id)
-            )
+            if review_id:
+                skeleton = cast(DocumentSkeleton, skeleton)
+                reviews = list(relay.get("reviews") or [])
+                reviews.append(str(review_id))
+                relay.update(
+                    {
+                        "skeleton": _skeleton_payload(skeleton),
+                        "totalSlots": len(skeleton.slots),
+                        "pendingReviewId": str(review_id),
+                        "pendingSlotEnd": min(
+                            slot_offset + _SKELETON_PLACEHOLDER_BATCH_SIZE,
+                            len(skeleton.slots),
+                        ),
+                        "reviews": reviews,
+                    }
+                )
+                await self._repository.save_unit_slot_plan(
+                    unit_id, self._worker_id, relay
+                )
+                raise SkeletonReviewPendingError(
+                    f"skeleton review {review_id} is PENDING"
+                )
             return result
 
         async def run_project_discovery() -> None:
@@ -717,6 +842,8 @@ class AgentWorker:
             return exc.code, str(exc)[:300]
         if isinstance(exc, SkeletonReviewPendingError):
             return exc.code, str(exc)[:300]
+        if str(exc).startswith("SKELETON_SLOT_LIMIT_EXCEEDED"):
+            return "SKELETON_SLOT_LIMIT_EXCEEDED", str(exc)[:300]
         if isinstance(exc, UnitPlanValidationError):
             return (
                 "UNIT_PLAN_VALIDATION_FAILED",

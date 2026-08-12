@@ -31,6 +31,10 @@ class AgentJobRepository(Protocol):
 
     async def get_unit_context(self, unit_id: UUID) -> dict[str, Any]: ...
 
+    async def save_unit_slot_plan(
+        self, unit_id: UUID, worker_id: str, slot_plan: dict[str, Any]
+    ) -> None: ...
+
     async def complete_project_discovery(
         self,
         unit_id: UUID,
@@ -342,6 +346,28 @@ class PostgresAgentJobRepository:
             "files": [dict(row) for row in files],
             "documents": [dict(row) for row in documents],
         }
+
+    async def save_unit_slot_plan(
+        self,
+        unit_id: UUID,
+        worker_id: str,
+        slot_plan: dict[str, Any],
+    ) -> None:
+        pool = await self._database()
+        row = await pool.fetchrow(
+            """
+            UPDATE agent_service.agent_units
+               SET slot_plan = $3::jsonb, updated_at = now()
+             WHERE id = $1 AND worker_id = $2
+               AND status IN ('CLAIMED', 'RUNNING')
+             RETURNING id
+            """,
+            unit_id,
+            worker_id,
+            json.dumps(slot_plan),
+        )
+        if row is None:
+            raise RuntimeError("Agent unit lease was lost")
 
     @staticmethod
     def _decode_job(row: asyncpg.Record) -> dict[str, Any]:

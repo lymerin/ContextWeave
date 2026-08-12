@@ -2,6 +2,7 @@ package com.devcollab.knowledgecore.document.core.api;
 
 import com.devcollab.knowledgecore.document.core.application.CreateDocumentBlockCommand;
 import com.devcollab.knowledgecore.document.core.application.DocumentBlockApplicationService;
+import com.devcollab.knowledgecore.document.core.application.DocumentBlockVisibility;
 import com.devcollab.knowledgecore.document.core.application.MoveDocumentBlockCommand;
 import com.devcollab.knowledgecore.document.core.application.UpdateDocumentBlockCommand;
 import com.devcollab.knowledgecore.document.block.application.DocumentBlockContentCodec;
@@ -61,6 +62,7 @@ public class DocumentBlockController {
     ) {
         return blockService.list(documentId, currentUser.userId())
                 .stream()
+                .filter(DocumentBlockVisibility::isUserVisible)
                 .map(block -> DocumentBlockResponse.from(block, contentCodec))
                 .toList();
     }
@@ -111,6 +113,7 @@ public class DocumentBlockController {
                         new MoveDocumentBlockCommand(request.targetIndex())
                 )
                 .stream()
+                .filter(DocumentBlockVisibility::isUserVisible)
                 .map(block -> DocumentBlockResponse.from(block, contentCodec))
                 .toList();
     }

@@ -32,6 +32,9 @@ public class DocProjectionService {
 
     private static final Logger log =
             LoggerFactory.getLogger(DocProjectionService.class);
+    private static final String AGENT_PLACEHOLDER_MARKER =
+            "\u23f3 \u672c\u6761\u76ee\u7531\u7cfb\u7edf\u81ea\u52a8\u751f\u6210\u4e2d"
+                    + "\uff08\u6279\u6b21\u586b\u5145\u540e\u81ea\u52a8\u66ff\u6362\uff09";
 
     private final ElasticsearchSearchIndexGateway searchIndexGateway;
     private final JdbcTemplate jdbcTemplate;
@@ -109,6 +112,10 @@ public class DocProjectionService {
         String text = (String) blockRow.get("text");
         int sortOrder = ((Number) blockRow.get("sort_order")).intValue();
         Instant updatedAt = ((java.sql.Timestamp) blockRow.get("updated_at")).toInstant();
+        if (isAgentPlaceholderText(text)) {
+            deleteBlock(payload);
+            return;
+        }
 
         searchIndexGateway.upsert(SearchIndexEntry.blockContent(
                 workspaceId,
@@ -173,6 +180,10 @@ public class DocProjectionService {
 
     private static String text(JsonNode payload, String field) {
         return requiredText(payload, field);
+    }
+
+    private static boolean isAgentPlaceholderText(String text) {
+        return text != null && text.contains(AGENT_PLACEHOLDER_MARKER);
     }
 
     private static Instant instant(JsonNode payload, String field) {

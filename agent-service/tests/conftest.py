@@ -193,6 +193,17 @@ class MemoryAgentJobRepository:
     async def get_unit_context(self, unit_id: UUID) -> dict[str, Any]:
         return dict(self.units[unit_id])
 
+    async def save_unit_slot_plan(
+        self,
+        unit_id: UUID,
+        worker_id: str,
+        slot_plan: dict[str, Any],
+    ) -> None:
+        unit = self.units[unit_id]
+        if unit["worker_id"] != worker_id:
+            raise RuntimeError("lease lost")
+        unit["slot_plan"] = dict(slot_plan)
+
     async def heartbeat(self, unit_id: UUID, worker_id: str, lease_seconds: int) -> bool:
         unit = self.units[unit_id]
         if unit["worker_id"] != worker_id or unit["status"] not in {"CLAIMED", "RUNNING"}:

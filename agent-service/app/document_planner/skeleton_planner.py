@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from app.document_planner.binding_resolver import resolve_bindings
 from app.document_planner.evidence_catalog_builder import build as build_evidence
 from app.document_planner.plan_validator import assemble_and_validate
@@ -35,7 +37,10 @@ from app.schemas.scope import SemanticScope
 # 每批速查条目的数量上限（上下文预算保护）
 _MAX_SYMBOLS_PER_BATCH = 10
 # 占位文本——骨架 Review 创建占位块，填充成功后被真实内容替换
-_PLACEHOLDER_PREFIX = "⏳ 本条目由系统自动生成中（批次填充后自动替换）"
+_PLACEHOLDER_PREFIX = (
+    "\u23f3 \u672c\u6761\u76ee\u7531\u7cfb\u7edf\u81ea\u52a8\u751f\u6210\u4e2d"
+    "\uff08\u6279\u6b21\u586b\u5145\u540e\u81ea\u52a8\u66ff\u6362\uff09"
+)
 
 
 def plan_skeleton(
@@ -178,6 +183,9 @@ def build_skeleton_plan(
     existing_bindings: list,
     *,
     max_placeholder_slots: int = 45,
+    slot_offset: int = 0,
+    document_id: UUID | None = None,
+    allow_partial: bool = False,
 ) -> AgentPlan:
     """骨架 → AgentPlan（占位块 + 绑定），复用现有 reconcile/assemble 管线。
 
@@ -188,10 +196,21 @@ def build_skeleton_plan(
     占位块 N + 绑定 N），大模块只预建前 N 个占位块，其余槽位由对应批次会话
     走 ADD_BLOCK 创建（reconcile 未匹配即新增）。
     """
+    if not allow_partial and len(skeleton.slots) > max_placeholder_slots:
+        raise ValueError(
+            "SKELETON_SLOT_LIMIT_EXCEEDED: "
+            f"{len(skeleton.slots)} slots exceed {max_placeholder_slots} "
+            "placeholder blocks per skeleton review"
+        )
     # primary atom 从 catalog 解析（骨架覆盖模块全量符号，快照只含 scope 闭包）
     catalog_atom_ids = {s.symbol_key: s.atom_id for s in catalog.symbols}
     sections: list[PlannedSection] = []
-    for slot in skeleton.slots[:max_placeholder_slots]:
+    selected_slots = skeleton.slots[
+        slot_offset: slot_offset + max_placeholder_slots
+    ]
+    if not selected_slots:
+        raise ValueError("SKELETON_SLOT_WINDOW_EMPTY")
+    for slot in selected_slots:
         primary_atom = (
             catalog_atom_ids.get(slot.primary_symbol_key)
             if slot.primary_symbol_key else None
@@ -208,10 +227,23 @@ def build_skeleton_plan(
         ))
 
     atom_symbol_keys = {a.atom_id: a.symbol_key for a in snap.atoms}
-    targets = resolve_targets(
-        tuple(sections), candidates, structures, existing_bindings,
-        atom_symbol_keys=atom_symbol_keys,
-    )
+    if document_id is None:
+        targets = resolve_targets(
+            tuple(sections), candidates, structures, existing_bindings,
+            atom_symbol_keys=atom_symbol_keys,
+        )
+    else:
+        from app.document_planner.target_resolver import SectionTarget
+
+        targets = tuple(
+            SectionTarget(
+                section_ref=section.section_ref,
+                document_id=document_id,
+                created_block_op_id=f"add_block_{slot_offset + index}",
+                action="ADD_BLOCK",
+            )
+            for index, section in enumerate(sections)
+        )
     # evidence 补齐模块文件内快照未覆盖的符号（骨架绑定必须全量）
     module_files = frozenset(
         p for b in skeleton.batches for p in b.file_paths
@@ -232,6 +264,7 @@ def build_skeleton_plan(
         context_id=snap.context_id,
         revision=snap.revision,
         snapshot_hash=snap.snapshot_hash,
+        document_title=skeleton.document_title,
         section_targets=targets,
     )
 

@@ -100,6 +100,7 @@ public class HttpKnowledgeCoreGateway implements KnowledgeCoreGateway {
                     .uri(builder -> builder
                             .path("/api/v1/workspaces/{workspaceId}/documents/{documentId}/structure")
                             .queryParam("includeBlockContent", includeBlockContent)
+                            .queryParam("includeInternalBlocks", true)
                             .queryParam("maxBlocks", maxBlocks)
                             .queryParam("maxContentCharacters", maxContentChars)
                             .build(workspaceId, documentId))
