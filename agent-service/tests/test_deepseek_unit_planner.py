@@ -24,6 +24,16 @@ def _unit_plan() -> UnitPlan:
     )])
 
 
+def _plan_for_files(paths: list[str]) -> UnitPlan:
+    return UnitPlan(units=[UnitPlanItem(
+        name="mod-all",
+        kind="GENERIC_MODULE",
+        summary="module all",
+        primaryFiles=paths,
+        groupingEvidence=["e"],
+    )])
+
+
 def _batch(index: int) -> dict[str, Any]:
     return {
         "repositoryId": "repo-1",
@@ -91,7 +101,9 @@ class _ProbeProvider(ModelProvider):
                 return self._plan
             # consolidation 调用（无 batch 标记）
             self.consolidation_calls.append(project_index)
-            return self._plan
+            return _plan_for_files([
+                str(item["filePath"]) for item in project_index.get("files", [])
+            ])
         finally:
             async with self._lock:
                 self._active -= 1

@@ -8,6 +8,7 @@ from app.document_planner.skeleton_planner import (
     build_slot_instruction,
     plan_skeleton,
 )
+from app.execution.job_executor import _build_inline_sources
 from app.model_context_mcp.context_freeze_snapshot import freeze_context
 from app.schemas.document_planner.skeleton import SlotType
 from app.schemas.semantic.analysis_result import (
@@ -151,6 +152,32 @@ def test_slot_instruction_lists_scope_and_slots() -> None:
 
 
 # ── 覆盖校验器 ────────────────────────────────────────────────────────────
+
+
+def test_flow_inline_sources_include_scope_chunks_for_overview_context() -> None:
+    catalog, snap, scope = pipeline()
+    slots = tuple(
+        s for s in plan_skeleton(scope, catalog).slots
+        if s.slot_type in (SlotType.OVERVIEW, SlotType.FLOW)
+    )
+
+    sources = _build_inline_sources(snap, slots, include_scope=True)
+
+    assert "app/main.py" in {s["file_path"] for s in sources}
+    assert "app/service.py" in {s["file_path"] for s in sources}
+    assert "app/util.py" in {s["file_path"] for s in sources}
+
+
+def test_symbol_inline_sources_stay_on_requested_symbol() -> None:
+    catalog, snap, scope = pipeline()
+    slot = next(
+        s for s in plan_skeleton(scope, catalog).slots
+        if s.slot_type == SlotType.SYMBOL and s.file_path == "app/util.py"
+    )
+
+    sources = _build_inline_sources(snap, (slot,))
+
+    assert {s["file_path"] for s in sources} == {"app/util.py"}
 
 
 def test_coverage_accepts_complete_result() -> None:

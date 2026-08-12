@@ -451,15 +451,6 @@ async def test_worker_plans_project_units_and_enqueues_them_for_execution(
                         "relatedDocumentIds": [],
                         "groupingEvidence": ["SERVICE roleHint"],
                     },
-                    {
-                        "name": "示例接口能力",
-                        "kind": "BACKEND_REST_API",
-                        "summary": "说明示例接口的输入输出边界。",
-                        "primaryFiles": ["src/Example.java"],
-                        "supportingFiles": [],
-                        "relatedDocumentIds": [],
-                        "groupingEvidence": ["CONTROLLER roleHint"],
-                    },
                 ]
             }
         )
@@ -498,9 +489,9 @@ async def test_worker_plans_project_units_and_enqueues_them_for_execution(
         item for item in repository.units.values()
         if item["unit_kind"] == "SEMANTIC_ANALYSIS"
     ]
-    assert len(semantic) == 2
+    assert len(semantic) == 1
     assert [item["status"] for item in semantic].count("PENDING") == 1
-    assert [item["status"] for item in semantic].count("READY_FOR_ANALYSIS") == 1
+    assert [item["status"] for item in semantic].count("READY_FOR_ANALYSIS") == 0
     assert await repository.claim_next_unit("other-worker", 60) is not None
 
 

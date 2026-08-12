@@ -93,7 +93,13 @@ def section_for(atom_id: str, kind: str = "HTTP_ENDPOINT") -> SemanticAnalysisRe
 def existing_setup(
     symbol_key: str,
 ) -> tuple[list[DocumentCandidate], list[DocumentStructure], list[ExistingBinding]]:
-    candidates = [DocumentCandidate(document_id=DOC, title="订单模块")]
+    candidates = [
+        DocumentCandidate(
+            document_id=DOC,
+            title="订单模块",
+            existing_binding_count=1,
+        )
+    ]
     structures = [
         DocumentStructure(
             document_id=DOC,

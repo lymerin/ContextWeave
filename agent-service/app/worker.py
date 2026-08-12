@@ -86,6 +86,7 @@ def _batch_payloads(skeleton: object, review_id: str | None = None) -> list[dict
         slot_plan = {
             "batchLabel": label,
             "batchType": "FLOW" if batch.batch_index == 1 else "SYMBOL",
+            "filePaths": list(batch.file_paths),
             "slots": [
                 {
                     "slot_id": slot.slot_id,
@@ -113,6 +114,31 @@ def _batch_payloads(skeleton: object, review_id: str | None = None) -> list[dict
             }
         )
     return batches
+
+
+def _context_file_paths(context: dict[str, Any]) -> list[str]:
+    return [
+        str(item.get("file_path") or item.get("filePath"))
+        for item in context.get("files", [])
+        if item.get("file_path") or item.get("filePath")
+    ]
+
+
+def _selected_paths_for_semantic_batch(
+    context: dict[str, Any],
+    slot_scope: tuple[SkeletonSlot, ...],
+    slot_plan: dict[str, Any],
+) -> list[str]:
+    if str(slot_plan.get("batchType") or "").upper() == "FLOW":
+        paths = [str(path) for path in slot_plan.get("filePaths", []) if path]
+        if paths:
+            return paths
+        return _context_file_paths(context)
+
+    slot_files = sorted({s.file_path for s in slot_scope if s.file_path})
+    if slot_files:
+        return slot_files
+    return _context_file_paths(context)
 
 
 PHASES = {
@@ -292,18 +318,11 @@ class AgentWorker:
                 # 批次单元：槽位清单随单元持久化（slot_plan），注入会话作用域
                 slot_plan = context.get("slot_plan") or {}
                 slot_scope = tuple(SkeletonSlot(**slot) for slot in slot_plan.get("slots", []))
-                # 批次只需槽位目标的源码。单元文件列表在多骨架 job 下会
-                # 累积全部模块文件（batch:1 共享单元 ID），超过 SourceReader
-                # 字符预算后路径靠后的文件被截断为空 → 槽位目标不在快照 →
-                # 批次永远覆盖失败。按槽位 file_path 选取，快照只含目标符号。
-                slot_files = sorted({s.file_path for s in slot_scope if s.file_path})
-                if slot_files:
-                    selected_paths = slot_files
-                else:
-                    selected_paths = [
-                        str(item.get("file_path") or item.get("filePath"))
-                        for item in context.get("files", [])
-                    ]
+                # FLOW keeps the skeleton's module range for overview/dependency context.
+                # SYMBOL stays narrow so slot targets do not get pushed out by budget.
+                selected_paths = _selected_paths_for_semantic_batch(
+                    context, slot_scope, slot_plan,
+                )
                 batch_label = str(slot_plan.get("batchLabel") or "")
                 # 骨架 review 未 APPLIED 前批次不执行：否则 candidates 查不到
                 # 绑定会重复创建文档。PENDING → 自动重试等待；REJECTED → 优雅完成。

@@ -224,4 +224,4 @@ def test_postgres_fail_statement_refunds_pending_attempt() -> None:
         / "persistence"
         / "job_repository.py"
     ).read_text(encoding="utf-8")
-    assert "WHEN $5 = 'SKELETON_REVIEW_PENDING' THEN GREATEST(attempt - 1, 0)" in source
+    assert "WHEN $5::varchar = 'SKELETON_REVIEW_PENDING' THEN GREATEST(attempt - 1, 0)" in source

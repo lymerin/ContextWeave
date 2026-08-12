@@ -150,11 +150,10 @@ class JobExecutor:
             )
 
         # ── 2. AST 解析 + 直接范围构造 ───────────────────────────
+        source_by_path = {f.file_path: f.content for f in sources.files}
+
         def read_source(path: str) -> str | None:
-            for f in sources.files:
-                if f.file_path == path:
-                    return f.content
-            return None
+            return source_by_path.get(path)
 
         with perf_metrics.stage("parse"):
             catalog = parse_batch(sources, read_source)
@@ -208,7 +207,9 @@ class JobExecutor:
                             slot_scope, batch_label, batch_type=batch_type,
                         ),
                     })
-                    inline_sources = _build_inline_sources(snap, slot_scope)
+                    inline_sources = _build_inline_sources(
+                        snap, slot_scope, include_scope=batch_type == "FLOW",
+                    )
                     result = await self._run_batch_session(
                         orch, request, inline_sources,
                     )
@@ -728,6 +729,8 @@ def _bind_result_atoms(
 def _build_inline_sources(
     snap: ContextSnapshot,
     slots: tuple[SkeletonSlot, ...],
+    *,
+    include_scope: bool = False,
 ) -> list[dict[str, Any]]:
     """槽位目标符号的源码片段（来自快照 chunks）→ 内联进批次请求。
 
@@ -736,6 +739,23 @@ def _build_inline_sources(
     """
     sources: list[dict[str, Any]] = []
     seen: set[str] = set()
+    if include_scope:
+        for block in sorted(
+            snap.structure_blocks,
+            key=lambda b: (b.entry_distance, b.block_id),
+        ):
+            for cid in block.chunks:
+                chunk = snap.chunk_by_id.get(cid)
+                if chunk is None or chunk.chunk_id in seen:
+                    continue
+                seen.add(chunk.chunk_id)
+                sources.append({
+                    "symbol_key": ",".join(chunk.covers),
+                    "file_path": chunk.file_path,
+                    "start_line": chunk.start_line,
+                    "end_line": chunk.end_line,
+                    "source": chunk.source,
+                })
     for slot in slots:
         atom_id = snap.atom_by_symbol.get(slot.primary_symbol_key or "")
         atom = snap.atom_by_id.get(atom_id) if atom_id else None
@@ -830,8 +850,18 @@ def _merge_module_scopes(scopes: tuple[SemanticScope, ...]) -> SemanticScope:
     for s in scopes:
         for m in s.members:
             old = members.get(m.symbol_key)
-            if old is None or m.distance < old.distance:
+            if old is None:
                 members[m.symbol_key] = m
+                continue
+            entry_paths = tuple(sorted(set(old.entry_paths) | set(m.entry_paths)))
+            selected = m if m.distance < old.distance else old
+            members[m.symbol_key] = ScopeMember(
+                selected.symbol_key,
+                selected.role,
+                min(old.distance, m.distance),
+                entry_paths,
+                selected.is_shared or old.is_shared or len(entry_paths) > 1,
+            )
     scope_id = "scope_" + hashlib.sha256(
         "\0".join(sorted(e.symbol_key for e in entries)).encode()
     ).hexdigest()[:24]

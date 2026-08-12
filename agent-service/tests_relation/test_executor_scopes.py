@@ -124,5 +124,9 @@ def test_merge_keeps_minimum_distance() -> None:
     merged = _merge_module_scopes((scope_a, scope_b))
     member = next(m for m in merged.members if m.symbol_key == shared)
     assert member.distance == 1
-    assert member.entry_paths == ("PYTHON:b.py:e2:FUNCTION",)
+    assert member.entry_paths == (
+        "PYTHON:a.py:e1:FUNCTION",
+        "PYTHON:b.py:e2:FUNCTION",
+    )
+    assert member.is_shared is True
     assert len(merged.entries) == 2

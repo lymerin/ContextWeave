@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 from typing import Any
 from uuid import UUID
 
@@ -60,13 +59,14 @@ class UnitPlanValidator:
                 )
             )
 
-        identities: set[tuple[str, tuple[str, ...], tuple[str, ...]]] = set()
-        names: list[str] = []
+        identities: set[tuple[str, ...]] = set()
         single_file_units = 0
         generic_units = 0
+        covered_paths: set[str] = set()
         for index, unit in enumerate(plan.units):
             path = f"units[{index}]"
             all_files = unit.primaryFiles + unit.supportingFiles
+            covered_paths.update(all_files)
             if len(all_files) > self._max_files_per_unit:
                 issues.append(
                     UnitPlanValidationIssue(
@@ -93,11 +93,7 @@ class UnitPlanValidator:
                             "Unit references a document outside the current ProjectIndex",
                         )
                     )
-            identity = (
-                unit.kind,
-                tuple(sorted(unit.primaryFiles)),
-                tuple(sorted(unit.supportingFiles)),
-            )
+            identity = tuple(sorted(all_files))
             if identity in identities:
                 issues.append(
                     UnitPlanValidationIssue(
@@ -105,20 +101,6 @@ class UnitPlanValidator:
                     )
                 )
             identities.add(identity)
-            normalized_name = "".join(unit.name.lower().split())
-            if any(
-                normalized_name == previous
-                or SequenceMatcher(None, normalized_name, previous).ratio() >= 0.94
-                for previous in names
-            ):
-                issues.append(
-                    UnitPlanValidationIssue(
-                        f"{path}.name",
-                        "NEAR_DUPLICATE_UNIT",
-                        "Unit name is indistinguishable from another unit",
-                    )
-                )
-            names.append(normalized_name)
             single_file_units += len(all_files) == 1
             generic_units += unit.kind == "GENERIC_MODULE"
 
@@ -136,6 +118,16 @@ class UnitPlanValidator:
                     "units",
                     "GENERIC_DEGENERATION",
                     "The plan degenerates into generic modules",
+                )
+            )
+        missing_paths = available_paths - covered_paths
+        if missing_paths:
+            issues.append(
+                UnitPlanValidationIssue(
+                    "units",
+                    "MISSING_ELIGIBLE_FILES",
+                    "Unit plan omits eligible files: "
+                    + ", ".join(sorted(missing_paths)[:8]),
                 )
             )
         if issues:
