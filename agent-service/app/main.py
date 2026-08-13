@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.diagnostics import router as diagnostics_router
 from app.api.agent_jobs import router as jobs_router
 from app.api.agent_runs import router as runs_router
 from app.api.perf import router as perf_router
@@ -78,6 +79,7 @@ def create_app(
     app.include_router(runs_router)
     app.include_router(jobs_router)
     app.include_router(perf_router)
+    app.include_router(diagnostics_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

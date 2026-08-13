@@ -8,6 +8,18 @@ def test_health_does_not_require_model_key(client: TestClient) -> None:
     assert client.get("/health").json() == {"status": "UP", "mode": "context-only"}
 
 
+def test_readiness_exposes_dependency_status(client: TestClient) -> None:
+    response = client.get("/diagnostics/readiness")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] in {"UP", "DEGRADED"}
+    assert body["checks"]["database"]["status"] == "UP"
+    assert body["checks"]["redis"]["status"] == "UP"
+    assert set(body["checks"]) == {"database", "redis", "knowledgeCore", "mcp"}
+    assert "agent_internal_service_token" not in str(body)
+
+
 def test_perf_metrics_endpoint_is_machine_readable(client: TestClient) -> None:
     perf_metrics.reset()
     perf_metrics.increment("session_initialize_count")

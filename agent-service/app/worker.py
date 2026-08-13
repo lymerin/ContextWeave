@@ -789,7 +789,7 @@ class AgentWorker:
             ) as client:
                 response = await client.get(
                     f"{self._settings.knowledge_core_base_url}/api/v1/workspaces/"
-                    f"{workspace_id}/document-change-requests/{review_id}"
+                    f"{workspace_id}/document-change-requests/{review_id}/status"
                 )
         except httpx.HTTPError as exc:
             raise McpClientError("MCP_UNAVAILABLE", "Review status query failed") from exc
@@ -801,7 +801,7 @@ class AgentWorker:
                 f"Review status query rejected: {response.status_code}",
             )
         data = response.json() or {}
-        return str((data.get("request") or {}).get("status") or "")
+        return str(data.get("status") or (data.get("request") or {}).get("status") or "")
 
     def _profile_stage(
         self,

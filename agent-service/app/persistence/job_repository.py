@@ -164,36 +164,36 @@ class PostgresAgentJobRepository:
             LEFT JOIN LATERAL (
                 SELECT
                     count(*) FILTER (
-                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                        WHERE unit_kind <> 'PROJECT_DISCOVERY'
                     )::int AS planned_unit_count,
                     count(*) FILTER (
-                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                        WHERE unit_kind <> 'PROJECT_DISCOVERY'
                           AND status IN ('PENDING', 'RETRY_WAITING')
                     )::int AS pending_unit_count,
                     count(*) FILTER (
-                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                        WHERE unit_kind <> 'PROJECT_DISCOVERY'
                           AND status IN ('CLAIMED', 'RUNNING')
                     )::int AS running_unit_count,
                     count(*) FILTER (
-                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                        WHERE unit_kind <> 'PROJECT_DISCOVERY'
                           AND status = 'COMPLETED'
                     )::int AS completed_unit_count,
                     count(*) FILTER (
-                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                        WHERE unit_kind <> 'PROJECT_DISCOVERY'
                           AND status = 'FAILED'
                     )::int AS failed_unit_count,
                     count(*) FILTER (
-                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                        WHERE unit_kind <> 'PROJECT_DISCOVERY'
                           AND result = 'NO_CHANGE'
                     )::int AS no_change_unit_count,
                     count(*) FILTER (
-                        WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                        WHERE unit_kind <> 'PROJECT_DISCOVERY'
                           AND result = 'REVIEW_SUBMITTED'
                     )::int AS review_submitted_unit_count,
                     COALESCE(
                         jsonb_agg(display_name ORDER BY ordinal)
                             FILTER (
-                                WHERE unit_kind = 'SEMANTIC_ANALYSIS'
+                                WHERE unit_kind <> 'PROJECT_DISCOVERY'
                                   AND status IN ('CLAIMED', 'RUNNING')
                             ),
                         '[]'::jsonb

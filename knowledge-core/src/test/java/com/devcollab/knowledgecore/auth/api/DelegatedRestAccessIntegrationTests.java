@@ -169,6 +169,47 @@ class DelegatedRestAccessIntegrationTests {
     }
 
     @Test
+    void delegatedSubmitterCanReadOwnDocumentChangeStatus() throws Exception {
+        Fixture fixture = fixture();
+        MvcResult created = mockMvc.perform(post(
+                        "/api/v1/workspaces/{workspaceId}/document-change-requests",
+                        fixture.workspaceId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(fixture.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "clientRequestId":"request-%s",
+                                  "summary":"Create requirement",
+                                  "rationale":"Agent submitted review",
+                                  "operations":[{
+                                    "clientOperationId":"op-1",
+                                    "sequenceNumber":1,
+                                    "operationType":"CREATE_DOCUMENT",
+                                    "proposedDocumentTitle":"Generated requirement"
+                                  }],
+                                  "bindingProposals":[]
+                                }
+                                """.formatted(UUID.randomUUID())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String requestId = responseJson(created).get("changeRequestId").asText();
+
+        mockMvc.perform(get(
+                        "/api/v1/workspaces/{workspaceId}/document-change-requests/{requestId}/status",
+                        fixture.workspaceId(),
+                        requestId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(
+                                delegationToken(
+                                        fixture.userId(),
+                                        fixture.workspaceId(),
+                                        List.of("devcollab.review.submit_document_change")
+                                ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requestId").value(requestId))
+                .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
+    @Test
     void delegatedTokenCannotCallUnannotatedRestEndpoint() throws Exception {
         Fixture fixture = fixture();
 

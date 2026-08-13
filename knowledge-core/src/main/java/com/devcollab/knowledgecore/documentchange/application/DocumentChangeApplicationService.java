@@ -611,6 +611,25 @@ public class DocumentChangeApplicationService {
     }
 
     @Transactional(readOnly = true)
+    public Status statusForSubmitter(
+            UUID workspaceId,
+            UUID requestId,
+            UUID currentUserId
+    ) {
+        requireMember(workspaceId, currentUserId);
+        ChangeRequest request = repository.findRequest(workspaceId, requestId)
+                .orElseThrow(() -> notFound("文档变更请求不存在"));
+        if (!request.submittedBy().equals(currentUserId)) {
+            throw new DocumentChangeException(
+                    HttpStatus.FORBIDDEN,
+                    "DOCUMENT_CHANGE_REQUEST_FORBIDDEN",
+                    "Only the submitter can query delegated change request status"
+            );
+        }
+        return request.status();
+    }
+
+    @Transactional(readOnly = true)
     public DetailView detail(ChangeRequest request) {
         return detail(request, null);
     }

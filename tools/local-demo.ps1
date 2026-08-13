@@ -152,6 +152,48 @@ function Wait-ContainerHealthy {
     throw "$Name container did not become healthy within $StartupTimeoutSeconds seconds"
 }
 
+function Get-AgentReadiness {
+    if (-not (Test-ContainerRunning -ContainerName "devcollab-agent-service")) {
+        return $null
+    }
+    $python = "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8092/diagnostics/readiness', timeout=3).read().decode())"
+    $previousErrorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "SilentlyContinue"
+        $output = @(& docker exec devcollab-agent-service python -c $python 2>$null)
+        if ($LASTEXITCODE -ne 0 -or -not $output) {
+            return $null
+        }
+        return ($output -join [Environment]::NewLine) | ConvertFrom-Json
+    }
+    catch {
+        return $null
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorPreference
+    }
+}
+
+function Wait-AgentReadiness {
+    $deadline = (Get-Date).AddSeconds($StartupTimeoutSeconds)
+    $last = $null
+    while ((Get-Date) -lt $deadline) {
+        $readiness = Get-AgentReadiness
+        if ($readiness -and $readiness.status -eq "UP") {
+            Write-Step "Agent dependency readiness is UP"
+            return
+        }
+        if ($readiness) {
+            $last = $readiness | ConvertTo-Json -Depth 8
+        }
+        Start-Sleep -Milliseconds 1000
+    }
+    if ($last) {
+        throw "Agent dependencies did not become ready within $StartupTimeoutSeconds seconds. Last readiness: $last"
+    }
+    throw "Agent readiness endpoint did not become reachable within $StartupTimeoutSeconds seconds"
+}
+
 function Resolve-RedisHostPort {
     # The local demo owns a stable non-default host port so it does not collide
     # with a developer's standalone Redis on 6379. Containers still use
@@ -631,6 +673,7 @@ function Start-LocalDemo {
         try {
             Wait-ContainerHealthy -Name "Agent Service" -ContainerName "devcollab-agent-service"
             Wait-ContainerHealthy -Name "Agent Worker" -ContainerName "devcollab-agent-worker"
+            Wait-AgentReadiness
         }
         catch {
             Write-Step "Agent runtime failed; recent logs follow"
@@ -725,6 +768,14 @@ function Show-LocalDemoStatus {
     }
     $agentState = if ($agentContainerState -eq "RUNNING" -and $agentHealth -eq "HEALTHY") { "UP" } else { "DOWN" }
     Write-Step "Agent Service container state=$agentState dockerState=$agentContainerState health=$agentHealth"
+    $readiness = Get-AgentReadiness
+    if ($readiness) {
+        Write-Step "Agent readiness status=$($readiness.status)"
+        foreach ($name in @("database", "redis", "knowledgeCore", "mcp")) {
+            $check = $readiness.checks.$name
+            Write-Step "Agent dependency $name state=$($check.status)"
+        }
+    }
     $agentWorkerContainerState = Get-ContainerState -ContainerName "devcollab-agent-worker"
     $agentWorkerHealth = if ($agentWorkerContainerState -eq "RUNNING") {
         Get-ContainerHealth -ContainerName "devcollab-agent-worker"

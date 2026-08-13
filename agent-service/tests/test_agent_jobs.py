@@ -40,8 +40,14 @@ def test_create_current_file_job_returns_202_without_running_model(settings: Set
     repository = MemoryAgentJobRepository()
     with _client(settings, repository, model=model) as client:
         response = client.post("/api/v1/agent-jobs", json=_payload(), headers=AUTH)
+        summary = client.get(
+            f"/api/v1/agent-jobs/{response.json()['jobId']}", headers=AUTH
+        )
     assert response.status_code == 202
+    assert summary.status_code == 200
     assert response.json()["status"] == "QUEUED"
+    assert summary.json()["plannedUnitCount"] == 1
+    assert summary.json()["pendingUnitCount"] == 1
     assert response.json()["createdAt"]
     assert model.calls == []
     assert len(repository.jobs) == len(repository.units) == 1

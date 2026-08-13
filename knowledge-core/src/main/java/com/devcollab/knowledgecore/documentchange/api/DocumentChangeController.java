@@ -144,13 +144,29 @@ public class DocumentChangeController {
     }
 
     @GetMapping("/{requestId}")
-    @DelegatedRestAccess(tools = "devcollab.review.submit_document_change")
     public DetailView detail(
             @PathVariable UUID workspaceId,
             @PathVariable UUID requestId,
             @AuthenticationPrincipal CurrentUser currentUser
     ) {
         return service.detail(workspaceId, requestId, currentUser.userId());
+    }
+
+    @GetMapping("/{requestId}/status")
+    @DelegatedRestAccess(tools = "devcollab.review.submit_document_change")
+    public DocumentChangeStatusResponse status(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID requestId,
+            @AuthenticationPrincipal CurrentUser currentUser
+    ) {
+        return new DocumentChangeStatusResponse(
+                requestId,
+                service.statusForSubmitter(
+                        workspaceId,
+                        requestId,
+                        currentUser.userId()
+                )
+        );
     }
 
     @PostMapping("/{requestId}/apply")
@@ -332,6 +348,12 @@ public class DocumentChangeController {
             Status status,
             java.time.Instant createdAt,
             boolean idempotentReplay
+    ) {
+    }
+
+    public record DocumentChangeStatusResponse(
+            UUID requestId,
+            Status status
     ) {
     }
 

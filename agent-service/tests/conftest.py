@@ -32,6 +32,9 @@ class MemoryRunStore:
     async def get_job(self, job_id: str) -> dict[str, object] | None:
         return self.values.get(f"job:{job_id}")
 
+    async def ping(self) -> bool:
+        return True
+
 
 class MemoryAgentJobRepository:
     def __init__(self) -> None:
@@ -93,38 +96,41 @@ class MemoryAgentJobRepository:
         if job is None:
             return None
         unit = next(value for value in self.units.values() if value["job_id"] == job_id)
-        semantic = [
+        analysis = [
             value
             for value in self.units.values()
             if value["job_id"] == job_id
-            and value["unit_kind"] == "SEMANTIC_ANALYSIS"
+            and value["unit_kind"] != "PROJECT_DISCOVERY"
         ]
         return {
             **job,
             "current_phase": job.get("phase") or unit["phase"],
-            "planned_unit_count": len(semantic),
+            "planned_unit_count": len(analysis),
             "pending_unit_count": sum(
-                item["status"] in {"PENDING", "RETRY_WAITING"} for item in semantic
+                item["status"] in {"PENDING", "RETRY_WAITING"} for item in analysis
             ),
             "running_unit_count": sum(
-                item["status"] in {"CLAIMED", "RUNNING"} for item in semantic
+                item["status"] in {"CLAIMED", "RUNNING"} for item in analysis
             ),
             "completed_unit_count": sum(
-                item["status"] == "COMPLETED" for item in semantic
+                item["status"] == "COMPLETED" for item in analysis
             ),
-            "failed_unit_count": sum(item["status"] == "FAILED" for item in semantic),
+            "failed_unit_count": sum(item["status"] == "FAILED" for item in analysis),
             "no_change_unit_count": sum(
-                item.get("result") == "NO_CHANGE" for item in semantic
+                item.get("result") == "NO_CHANGE" for item in analysis
             ),
             "review_submitted_unit_count": sum(
-                item.get("result") == "REVIEW_SUBMITTED" for item in semantic
+                item.get("result") == "REVIEW_SUBMITTED" for item in analysis
             ),
             "current_unit_names": [
                 str(item.get("display_name"))
-                for item in semantic
+                for item in analysis
                 if item["status"] in {"CLAIMED", "RUNNING"}
             ],
         }
+
+    async def ping(self) -> bool:
+        return True
 
     async def claim_next_unit(
         self, worker_id: str, lease_seconds: int
