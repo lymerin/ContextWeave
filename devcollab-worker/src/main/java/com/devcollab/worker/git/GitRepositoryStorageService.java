@@ -278,6 +278,7 @@ public class GitRepositoryStorageService {
                 Git git = Git.open(directory.toFile());
                 git.fetch()
                         .setRemoveDeletedRefs(true)
+                        .setDepth(historyDepth())
                         .setTimeout(properties.timeoutSeconds())
                         .call();
                 String remoteRef = "refs/remotes/origin/" + defaultBranch;

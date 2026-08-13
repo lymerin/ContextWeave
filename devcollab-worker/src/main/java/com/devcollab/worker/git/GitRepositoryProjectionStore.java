@@ -433,7 +433,7 @@ public class GitRepositoryProjectionStore {
     }
 
     public void markFailed(UUID repositoryId, String error) {
-        String safeError = error == null ? "未知同步错误"
+        String safeError = error == null ? "Unknown synchronization error"
                 : error.substring(0, Math.min(error.length(), 1000));
         jdbcTemplate.update("""
                 UPDATE git_repositories

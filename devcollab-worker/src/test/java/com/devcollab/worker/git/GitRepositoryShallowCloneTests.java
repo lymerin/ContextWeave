@@ -128,6 +128,12 @@ class GitRepositoryShallowCloneTests {
         }
     }
 
+    private int reachableCommitCount(Git git) throws Exception {
+        int[] count = {0};
+        git.log().call().forEach(commit -> count[0]++);
+        return count[0];
+    }
+
     @Test
     void shallowCloneBoundedHistoryAndBoundaryDiffMatchesFullClone()
             throws Exception {
@@ -138,6 +144,8 @@ class GitRepositoryShallowCloneTests {
                 repositoryId, targetDir(), originUri, MAIN
         )) {
             assertThat(targetDir().resolve(".git").resolve("shallow")).exists();
+            assertThat(reachableCommitCount(git))
+                    .isLessThanOrEqualTo(GitRepositoryStorageService.historyDepth(10));
             List<GitCommitProjection> commits =
                     service.scanCommits(git, git.getRepository());
             assertThat(commits).hasSize(10);
@@ -163,6 +171,8 @@ class GitRepositoryShallowCloneTests {
         try (Git git = service.openOrClone(
                 repositoryId, targetDir(), originUri, MAIN
         )) {
+            assertThat(reachableCommitCount(git))
+                    .isLessThanOrEqualTo(GitRepositoryStorageService.historyDepth(10));
             List<GitCommitProjection> commits =
                     service.scanCommits(git, git.getRepository());
             assertThat(commits).hasSize(10);
