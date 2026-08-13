@@ -775,22 +775,7 @@ def _build_inline_sources(
     sources: list[dict[str, Any]] = []
     seen: set[str] = set()
     if include_scope:
-        for block in sorted(
-            snap.structure_blocks,
-            key=lambda b: (b.entry_distance, b.block_id),
-        ):
-            for cid in block.chunks:
-                chunk = snap.chunk_by_id.get(cid)
-                if chunk is None or chunk.chunk_id in seen:
-                    continue
-                seen.add(chunk.chunk_id)
-                sources.append({
-                    "symbol_key": ",".join(chunk.covers),
-                    "file_path": chunk.file_path,
-                    "start_line": chunk.start_line,
-                    "end_line": chunk.end_line,
-                    "source": chunk.source,
-                })
+        sources.append(_build_scope_outline(snap))
     for slot in slots:
         atom_id = snap.atom_by_symbol.get(slot.primary_symbol_key or "")
         atom = snap.atom_by_id.get(atom_id) if atom_id else None
@@ -809,6 +794,46 @@ def _build_inline_sources(
                 "source": chunk.source,
             })
     return sources
+
+
+def _build_scope_outline(snap: ContextSnapshot) -> dict[str, Any]:
+    atom_by_id = snap.atom_by_id
+    return {
+        "kind": "scope_outline",
+        "entry_paths": list(snap.entry_paths),
+        "structure_blocks": [
+            {
+                "block_id": block.block_id,
+                "entry_label": block.entry_label,
+                "entry_distance": block.entry_distance,
+                "description": block.description,
+                "atoms": list(block.atoms[:12]),
+            }
+            for block in sorted(
+                snap.structure_blocks,
+                key=lambda b: (b.entry_distance, b.block_id),
+            )
+        ],
+        "relations": [
+            {
+                "source": (
+                    atom_by_id[rel.source_atom_id].symbol_key
+                    if rel.source_atom_id in atom_by_id
+                    else rel.source_atom_id
+                ),
+                "kind": rel.kind,
+                "target": (
+                    atom_by_id[rel.target_atom_id].symbol_key
+                    if rel.target_atom_id in atom_by_id
+                    else rel.target_external
+                ),
+                "category": rel.category,
+                "file_path": rel.file_path,
+                "line": rel.line,
+            }
+            for rel in snap.relations[:80]
+        ],
+    }
 
 
 # ── 范围构建（按单元类型分支）─────────────────────────────────────────────

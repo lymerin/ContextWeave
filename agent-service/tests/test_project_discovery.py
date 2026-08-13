@@ -18,7 +18,7 @@ from app.config import Settings
 from app.execution.errors import JobExecutionError
 from app.main import create_app
 from app.runtime.file_classification import classify_file
-from app.runtime.project_discovery import ProjectDiscoveryService
+from app.runtime.project_discovery import ProjectDiscoveryService, _project_index_batch
 from app.runtime.semantic_planner import ProjectFile, build_semantic_units
 from app.schemas.unit_plans import UnitPlan
 from app.worker import AgentWorker
@@ -193,6 +193,37 @@ def test_project_file_classification(
         max_size_bytes=100,
     )
     assert classified.classification == expected
+
+
+def test_project_index_batch_keeps_internal_and_boundary_dependencies() -> None:
+    project_index = {
+        "repositoryId": str(REPOSITORY_ID),
+        "revision": "abc",
+        "files": [
+            {"filePath": "src/A.java"},
+            {"filePath": "src/B.java"},
+            {"filePath": "src/C.java"},
+        ],
+        "fileDependencies": [
+            {"from": "src/A.java", "to": "src/B.java", "kind": "IMPORT"},
+            {"from": "src/B.java", "to": "src/C.java", "kind": "IMPORT"},
+        ],
+        "bindings": [],
+        "documents": [],
+    }
+
+    batch = _project_index_batch(
+        project_index,
+        [{"filePath": "src/A.java"}, {"filePath": "src/B.java"}],
+        0,
+    )
+
+    assert batch["fileDependencies"] == [
+        {"from": "src/A.java", "to": "src/B.java", "kind": "IMPORT"}
+    ]
+    assert batch["boundaryFileDependencies"] == [
+        {"from": "src/B.java", "to": "src/C.java", "kind": "IMPORT"}
+    ]
 
 
 class PagingProjectMcp(FakeMcpClient):

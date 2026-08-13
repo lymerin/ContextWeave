@@ -58,23 +58,59 @@ class DeepSeekUnitPlanner:
             try:
                 candidate = await self._provider.plan_project_units(batch)
             except ModelProviderError as exc:
-                # Candidate plans are non-persistent consolidation hints. A malformed
-                # candidate cannot safely contribute to the final plan, but it must
-                # not consume the one repair reserved for the repository-wide plan.
-                if exc.code == "MODEL_INVALID_RESPONSE":
+                if exc.code != "MODEL_INVALID_RESPONSE":
+                    raise
+                candidate = await self._repair_candidate(
+                    batch,
+                    exc.raw_plan or {},
+                    exc.validation_errors
+                    or [{
+                        "path": "$",
+                        "code": "MODEL_INVALID_RESPONSE",
+                        "message": "Return a schema-valid UnitPlan for this batch",
+                    }],
+                )
+                if candidate is None:
                     return None
-                raise
             candidate_issues: list[dict[str, str]] = []
             try:
                 self._validator.validate(candidate, batch)
             except UnitPlanValidationError as exc:
                 candidate_issues = exc.safe_details()
+                repaired = await self._repair_candidate(
+                    batch,
+                    candidate.model_dump(mode="json"),
+                    candidate_issues,
+                )
+                if repaired is not None:
+                    candidate = repaired
+                    candidate_issues = []
             return {
                 "batch": batch.get("batch"),
                 "topLevelModules": batch.get("topLevelModules", []),
                 "unitPlan": candidate.model_dump(mode="json"),
                 "validationIssues": candidate_issues,
             }
+
+    async def _repair_candidate(
+        self,
+        batch: dict[str, Any],
+        previous_plan: dict[str, Any],
+        validation_errors: list[dict[str, str]],
+    ) -> UnitPlan | None:
+        try:
+            repaired = await self._provider.plan_project_units(
+                batch,
+                previous_plan=previous_plan,
+                validation_errors=validation_errors,
+            )
+            return self._validator.validate(repaired, batch)
+        except UnitPlanValidationError:
+            return None
+        except ModelProviderError as exc:
+            if exc.code != "MODEL_INVALID_RESPONSE":
+                raise
+            return None
 
     async def _plan_once(self, project_index: dict[str, Any]) -> UnitPlan:
         try:
@@ -139,6 +175,7 @@ class DeepSeekUnitPlanner:
                 }
                 for item in validation_index["files"]
             ],
+            "fileDependencies": validation_index.get("fileDependencies", []),
             "documents": validation_index.get("documents", []),
             "planningMode": "CONSOLIDATE_BATCH_PLANS",
             "candidateBatchPlans": candidate_plans,

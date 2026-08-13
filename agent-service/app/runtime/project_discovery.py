@@ -444,6 +444,9 @@ def _project_index_batch(
     batch_index: int,
 ) -> dict[str, Any]:
     paths = {str(item["filePath"]) for item in files}
+    file_dependencies, boundary_file_dependencies = _file_dependencies_for_batch(
+        project_index.get("fileDependencies", []), paths
+    )
     bindings = [
         item for item in project_index["bindings"]
         if str(item.get("filePath")) in paths
@@ -465,6 +468,8 @@ def _project_index_batch(
             }
         ),
         "files": files,
+        "fileDependencies": file_dependencies,
+        "boundaryFileDependencies": boundary_file_dependencies,
         "bindings": bindings,
         "documents": [
             item for item in project_index["documents"]
@@ -476,3 +481,21 @@ def _project_index_batch(
             "batchIndex": batch_index,
         },
     }
+
+
+def _file_dependencies_for_batch(
+    dependencies: list[dict[str, Any]],
+    paths: set[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    internal: list[dict[str, Any]] = []
+    boundary: list[dict[str, Any]] = []
+    for edge in dependencies:
+        source = str(edge.get("from") or "")
+        target = str(edge.get("to") or "")
+        source_in = source in paths
+        target_in = target in paths
+        if source_in and target_in:
+            internal.append(edge)
+        elif source_in or target_in:
+            boundary.append(edge)
+    return internal, boundary

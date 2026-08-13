@@ -318,3 +318,24 @@ async def test_batch_analysis_repair_keeps_stable_context_unchanged() -> None:
     assert len(set(stable_messages)) == 1
     assert task_messages[0] != task_messages[1]
     assert task_messages[1] != task_messages[2]
+
+
+@pytest.mark.asyncio
+async def test_deepseek_project_planner_accepts_fenced_json() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{
+                    "message": {
+                        "content": "plan:\n```json\n"
+                        + json.dumps(unit_plan(), ensure_ascii=False)
+                        + "\n```"
+                    }
+                }],
+            },
+        )
+
+    result = await provider(handler).plan_project_units(PROJECT_INDEX)
+
+    assert result.units[0].primaryFiles == ["src/AuthService.java"]

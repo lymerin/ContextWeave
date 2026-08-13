@@ -269,10 +269,7 @@ class DeepSeekProvider:
             response_json = response.json()
             _record_usage(response_json)
             content = response_json["choices"][0]["message"]["content"]
-            decoded = json.loads(content)
-            if not isinstance(decoded, dict):
-                raise TypeError("UnitPlan must be an object")
-            raw_plan = decoded
+            raw_plan = _extract_json_object(content)
             return UnitPlan.model_validate(raw_plan)
         except ValidationError as exc:
             validation_errors = [

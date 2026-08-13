@@ -76,6 +76,7 @@ class _ProbeProvider(ModelProvider):
         self._peak = 0
         self._lock = asyncio.Lock()
         self.batch_calls: list[int] = []
+        self.repair_calls: list[int] = []
         self.consolidation_calls: list[dict[str, Any]] = []
 
     async def plan_project_units(
@@ -93,6 +94,12 @@ class _ProbeProvider(ModelProvider):
             batch = project_index.get("batch")
             if batch is not None:
                 index = int(batch.get("index", 0))
+                if validation_errors is not None:
+                    self.repair_calls.append(index)
+                    return _plan_for_files([
+                        str(item["filePath"])
+                        for item in project_index.get("files", [])
+                    ])
                 self.batch_calls.append(index)
                 if index in self._fail_batches:
                     raise ModelProviderError(
@@ -143,7 +150,7 @@ async def test_batches_are_collected_in_original_order() -> None:
 
 
 @pytest.mark.asyncio
-async def test_invalid_batch_is_dropped_without_dropping_others() -> None:
+async def test_invalid_batch_is_repaired_without_dropping_others() -> None:
     provider = _ProbeProvider(fail_batches={1})
     planner = DeepSeekUnitPlanner(
         provider, max_files_per_unit=10, max_units=50, batch_concurrency=3
@@ -154,8 +161,27 @@ async def test_invalid_batch_is_dropped_without_dropping_others() -> None:
 
     assert len(provider.consolidation_calls) == 1
     candidates = provider.consolidation_calls[0]["candidateBatchPlans"]
-    assert [c["batch"]["index"] for c in candidates] == [0, 2]
+    assert [c["batch"]["index"] for c in candidates] == [0, 1, 2]
+    assert provider.repair_calls == [1, 2]
     assert len(plan.units) == 1
+
+
+@pytest.mark.asyncio
+async def test_consolidation_keeps_file_dependencies() -> None:
+    provider = _ProbeProvider()
+    planner = DeepSeekUnitPlanner(
+        provider, max_files_per_unit=10, max_units=50, batch_concurrency=2
+    )
+    validation_index = _validation_index(2)
+    validation_index["fileDependencies"] = [
+        {"from": "src/f0.py", "to": "src/f1.py", "kind": "IMPORT"}
+    ]
+
+    await planner.plan([_batch(0), _batch(1)], validation_index=validation_index)
+
+    assert provider.consolidation_calls[0]["fileDependencies"] == [
+        {"from": "src/f0.py", "to": "src/f1.py", "kind": "IMPORT"}
+    ]
 
 
 @pytest.mark.asyncio
