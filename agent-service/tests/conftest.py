@@ -358,6 +358,7 @@ class MemoryAgentJobRepository:
         error_code: str,
         error_message: str,
         retry_at: datetime | None,
+        review_request_id: UUID | None = None,
     ) -> None:
         unit = self.units[unit_id]
         if unit["worker_id"] != worker_id:
@@ -369,9 +370,10 @@ class MemoryAgentJobRepository:
             status="RETRY_WAITING" if retry_at else "FAILED",
             next_attempt_at=retry_at,
             error_code=error_code,
+            review_request_id=review_request_id or unit.get("review_request_id"),
         )
         job = self.jobs[unit["job_id"]]
-        if unit["unit_kind"] == "SEMANTIC_ANALYSIS":
+        if unit["unit_kind"] in {"SEMANTIC_ANALYSIS", "SKELETON_PLAN"}:
             self._refresh_project_job(job)
         else:
             job.update(
@@ -386,7 +388,7 @@ class MemoryAgentJobRepository:
             item
             for item in self.units.values()
             if item["job_id"] == job["id"]
-            and item["unit_kind"] == "SEMANTIC_ANALYSIS"
+            and item["unit_kind"] in {"SEMANTIC_ANALYSIS", "SKELETON_PLAN"}
         ]
         active = [
             item
@@ -400,7 +402,7 @@ class MemoryAgentJobRepository:
         ]
         review_ids = [
             str(item["review_request_id"])
-            for item in completed
+            for item in semantic
             if item.get("review_request_id")
         ]
         job.update(

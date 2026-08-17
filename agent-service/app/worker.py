@@ -60,6 +60,10 @@ class SkeletonReviewPendingError(RuntimeError):
 
     code = "SKELETON_REVIEW_PENDING"
 
+    def __init__(self, message: str, review_request_id: UUID | str | None = None) -> None:
+        super().__init__(message)
+        self.review_request_id = UUID(str(review_request_id)) if review_request_id else None
+
 
 RETRYABLE_ERRORS = {
     "MODEL_TIMEOUT",
@@ -400,7 +404,8 @@ class AgentWorker:
                         return {"status": "NO_CHANGE", "change_request_id": None}
                     else:
                         raise SkeletonReviewPendingError(
-                            f"skeleton review {skeleton_review_id} is {review_status or 'MISSING'}"
+                            f"skeleton review {skeleton_review_id} is {review_status or 'MISSING'}",
+                            skeleton_review_id,
                         )
             else:
                 selected_paths = [str(scope["filePath"])]
@@ -495,7 +500,8 @@ class AgentWorker:
                         ]
                         if not binding_candidates:
                             raise SkeletonReviewPendingError(
-                                "skeleton document bindings are not visible yet"
+                                "skeleton document bindings are not visible yet",
+                                pending_review_id,
                             )
                         document = max(
                             binding_candidates,
@@ -519,7 +525,8 @@ class AgentWorker:
                     return {"status": "NO_CHANGE", "change_request_id": None}
                 else:
                     raise SkeletonReviewPendingError(
-                        f"skeleton review {pending_review_id} is {review_status or 'MISSING'}"
+                        f"skeleton review {pending_review_id} is {review_status or 'MISSING'}",
+                        pending_review_id,
                     )
 
             total_slots = int(relay.get("totalSlots") or 0)
@@ -750,7 +757,14 @@ class AgentWorker:
                 perf_metrics.increment("retry_count")
                 perf_metrics.add_backoff(delay)
                 retry_at = datetime.now(UTC) + timedelta(seconds=delay)
-            await self._repository.fail_unit(unit_id, self._worker_id, code, message, retry_at)
+            await self._repository.fail_unit(
+                unit_id,
+                self._worker_id,
+                code,
+                message,
+                retry_at,
+                review_request_id=getattr(exc, "review_request_id", None),
+            )
         finally:
             if discovery_task is not None and not discovery_task.done():
                 discovery_task.cancel()

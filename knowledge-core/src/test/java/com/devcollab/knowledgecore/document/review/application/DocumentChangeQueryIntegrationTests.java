@@ -16,7 +16,6 @@ import com.devcollab.knowledgecore.git.domain.GitProvider;
 import com.devcollab.knowledgecore.git.domain.GitRepository;
 import com.devcollab.knowledgecore.git.domain.GitRepositoryStatus;
 import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
-import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceNotFoundException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -126,17 +125,16 @@ class DocumentChangeQueryIntegrationTests {
     }
 
     @Test
-    void memberCannotReviewAndOutsiderSeesNotFound() {
+    void memberCanReviewAndOutsiderSeesNotFound() {
         Fixture member = fixture("MEMBER");
         Fixture admin = fixture("ADMIN");
         UUID outsider = createUser();
 
-        assertThatThrownBy(() -> service.pendingCount(
-                member.workspaceId(), member.userId()
-        )).isInstanceOf(WorkspaceAccessDeniedException.class);
+        assertThat(service.pendingCount(member.workspaceId(), member.userId()))
+                .isZero();
         assertThatThrownBy(() -> service.pendingCount(
                 admin.workspaceId(), outsider
-        )).isInstanceOf(WorkspaceNotFoundException.class);
+        )).isInstanceOf(WorkspaceAccessDeniedException.class);
     }
 
     @Test
@@ -639,9 +637,8 @@ class DocumentChangeQueryIntegrationTests {
     }
 
     @Test
-    void rejectRequiresAdminAndSameReasonReplayIsIdempotent() {
+    void memberRejectAndSameReasonReplayIsIdempotent() {
         Fixture member = fixture("MEMBER");
-        UUID adminId = addMember(member.workspaceId(), "ADMIN");
         Document document = document(member);
         DocumentBlock block = block(document, member.userId(), 0);
         var created = service.create(
@@ -650,23 +647,16 @@ class DocumentChangeQueryIntegrationTests {
                 updateCommand(document, block, "reject-update")
         );
 
-        assertThatThrownBy(() -> service.reject(
-                member.workspaceId(),
-                created.changeRequestId(),
-                member.userId(),
-                "not acceptable"
-        )).isInstanceOf(WorkspaceAccessDeniedException.class);
-
         var rejected = service.reject(
                 member.workspaceId(),
                 created.changeRequestId(),
-                adminId,
+                member.userId(),
                 "  not acceptable  "
         );
         var replay = service.reject(
                 member.workspaceId(),
                 created.changeRequestId(),
-                adminId,
+                member.userId(),
                 "not acceptable"
         );
 
@@ -680,7 +670,7 @@ class DocumentChangeQueryIntegrationTests {
         var replayAgain = service.reject(
                 member.workspaceId(),
                 created.changeRequestId(),
-                adminId,
+                member.userId(),
                 "different reason"
         );
         assertThat(replayAgain.replayed()).isTrue();

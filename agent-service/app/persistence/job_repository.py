@@ -69,6 +69,7 @@ class AgentJobRepository(Protocol):
         error_code: str,
         error_message: str,
         retry_at: datetime | None,
+        review_request_id: UUID | None = None,
     ) -> None: ...
 
     async def record_worker_heartbeat(self, worker_id: str) -> None: ...
@@ -803,6 +804,7 @@ class PostgresAgentJobRepository:
         error_code: str,
         error_message: str,
         retry_at: datetime | None,
+        review_request_id: UUID | None = None,
     ) -> None:
         pool = await self._database()
         async with pool.acquire() as connection, connection.transaction():
@@ -811,7 +813,9 @@ class PostgresAgentJobRepository:
                 """
                 UPDATE agent_service.agent_units
                 SET status = $3::varchar, next_attempt_at = $4, lease_expires_at = NULL,
-                    error_code = $5::varchar, error_message = $6, updated_at = now(),
+                    error_code = $5::varchar, error_message = $6,
+                    review_request_id = COALESCE($7, review_request_id),
+                    updated_at = now(),
                     -- 骨架 review 未审批不算执行失败：claim 时 +1 在这里减回，
                     -- 等待不消耗重试预算（审批无论多晚，单元都有完整 attempt）。
                     attempt = CASE
@@ -831,6 +835,7 @@ class PostgresAgentJobRepository:
                 retry_at,
                 error_code,
                 error_message[:500],
+                review_request_id,
             )
             if row is None:
                 return

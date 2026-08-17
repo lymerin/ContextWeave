@@ -32,9 +32,6 @@ import com.devcollab.knowledgecore.git.application.CodeBindingAnchorValidator;
 import com.devcollab.knowledgecore.git.application.GitKnowledgeApplicationService;
 import com.devcollab.knowledgecore.git.application.exception.DuplicateCodeBindingException;
 import com.devcollab.knowledgecore.workspace.application.WorkspaceApplicationService;
-import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceAccessDeniedException;
-import com.devcollab.knowledgecore.workspace.application.exception.WorkspaceNotFoundException;
-import com.devcollab.knowledgecore.workspace.domain.WorkspaceRole;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -369,7 +366,7 @@ public class DocumentChangeApplicationService {
             UUID requestId,
             UUID currentUserId
     ) {
-        requireAdmin(workspaceId, currentUserId);
+        requireMember(workspaceId, currentUserId);
         ChangeRequest request = lockedRequest(workspaceId, requestId);
         if (request.status() == Status.APPLIED) {
             return new DecisionResult(replayedDetail(request));
@@ -516,7 +513,7 @@ public class DocumentChangeApplicationService {
             UUID currentUserId,
             String reason
     ) {
-        requireAdmin(workspaceId, currentUserId);
+        requireMember(workspaceId, currentUserId);
         String normalizedReason = reason == null ? "" : reason.trim();
         if (normalizedReason.isEmpty() || normalizedReason.length() > 2_000) {
             throw invalid("拒绝理由必须为 1 到 2000 个字符");
@@ -552,7 +549,7 @@ public class DocumentChangeApplicationService {
     }
 
     public long pendingCount(UUID workspaceId, UUID currentUserId) {
-        requireAdmin(workspaceId, currentUserId);
+        requireMember(workspaceId, currentUserId);
         return repository.count(workspaceId, Status.PENDING);
     }
 
@@ -564,7 +561,7 @@ public class DocumentChangeApplicationService {
             int size,
             String sort
     ) {
-        requireAdmin(workspaceId, currentUserId);
+        requireMember(workspaceId, currentUserId);
         if (page < 0 || size < 1 || size > 100) {
             throw invalid("分页参数不合法");
         }
@@ -604,7 +601,7 @@ public class DocumentChangeApplicationService {
             UUID requestId,
             UUID currentUserId
     ) {
-        requireAdmin(workspaceId, currentUserId);
+        requireMember(workspaceId, currentUserId);
         ChangeRequest request = repository.findRequest(workspaceId, requestId)
                 .orElseThrow(() -> notFound("文档变更请求不存在"));
         return detail(request);
@@ -1424,18 +1421,6 @@ public class DocumentChangeApplicationService {
                 true,
                 detail.applyResult()
         );
-    }
-
-    private void requireAdmin(UUID workspaceId, UUID currentUserId) {
-        com.devcollab.knowledgecore.workspace.application.WorkspaceView workspace;
-        try {
-            workspace = workspaceService.get(workspaceId, currentUserId);
-        } catch (WorkspaceAccessDeniedException exception) {
-            throw new WorkspaceNotFoundException();
-        }
-        if (workspace.currentUserRole() != WorkspaceRole.ADMIN) {
-            throw new WorkspaceAccessDeniedException();
-        }
     }
 
     protected void requireMember(UUID workspaceId, UUID currentUserId) {

@@ -195,11 +195,9 @@ function Wait-AgentReadiness {
 }
 
 function Resolve-RedisHostPort {
-    # The local demo owns a stable non-default host port so it does not collide
-    # with a developer's standalone Redis on 6379. Containers still use
-    # redis:6379 on the Compose network.
-    $configuredPort = 16379
-    [Environment]::SetEnvironmentVariable("REDIS_HOST_PORT", "$configuredPort", "Process")
+    # One source of truth: .env / process REDIS_HOST_PORT. Compose and the
+    # host-side Java services must use the same value.
+    $configuredPort = [int](Get-EnvOrDefault "REDIS_HOST_PORT" "6379")
     if (Test-ContainerRunning -ContainerName "devcollab-redis") {
         $previousErrorPreference = $ErrorActionPreference
         try {
@@ -468,6 +466,9 @@ function Ensure-NginxAgentDns {
     if (-not (Test-ContainerRunning -ContainerName $agentContainer)) {
         return
     }
+    if (-not (Test-ContainerRunning -ContainerName "devcollab-nginx")) {
+        return
+    }
     $resolved = (& docker exec $agentContainer sh -c "getent hosts $(hostname) 2>/dev/null; exit 0" 2>$null)
     $nginxResolved = (& docker exec devcollab-nginx sh -c "getent hosts agent-service 2>/dev/null; exit 0" 2>$null)
     # nginx 端解析
@@ -537,7 +538,7 @@ function Set-SharedServiceEnvironment {
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_DB_USERNAME", (Get-EnvOrDefault "DEVCOLLAB_DB_USERNAME" "devcollab"), "Process")
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_DB_PASSWORD", (Get-EnvOrDefault "DEVCOLLAB_DB_PASSWORD" "devcollab"), "Process")
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_REDIS_HOST", "localhost", "Process")
-    [Environment]::SetEnvironmentVariable("DEVCOLLAB_REDIS_PORT", (Get-EnvOrDefault "REDIS_HOST_PORT" "16379"), "Process")
+    [Environment]::SetEnvironmentVariable("DEVCOLLAB_REDIS_PORT", (Get-EnvOrDefault "REDIS_HOST_PORT" "6379"), "Process")
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_KAFKA_BOOTSTRAP_SERVERS", "localhost:9092", "Process")
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_ELASTICSEARCH_URL", "http://localhost:9200", "Process")
     [Environment]::SetEnvironmentVariable("DEVCOLLAB_ELASTICSEARCH_ENABLED", "true", "Process")
@@ -663,7 +664,7 @@ function Start-LocalDemo {
         Push-Location $RepoRoot
         try {
             Invoke-Checked -FilePath "docker" -Arguments @(
-                "compose", "up", "-d", "--build",
+                "compose", "up", "-d", "--no-build",
                 "agent-migrate", "agent-service", "agent-worker"
             )
         }
@@ -737,14 +738,13 @@ function Stop-LocalDemo {
 
 function Show-LocalDemoStatus {
     Import-DotEnv
-    [Environment]::SetEnvironmentVariable("REDIS_HOST_PORT", "16379", "Process")
     $checks = @(
         @{ name = "Knowledge Core"; port = 8080 },
         @{ name = "Worker"; port = 8082 },
         @{ name = "Gateway"; port = 8090 },
         @{ name = "MCP Server"; port = 8091 },
         @{ name = "Nginx"; port = [int](Get-EnvOrDefault "NGINX_HOST_PORT" "8088") },
-        @{ name = "Redis"; port = [int](Get-EnvOrDefault "REDIS_HOST_PORT" "16379") },
+        @{ name = "Redis"; port = [int](Get-EnvOrDefault "REDIS_HOST_PORT" "6379") },
         @{ name = "PostgreSQL"; port = [int](Get-EnvOrDefault "POSTGRES_HOST_PORT" "5432") },
         @{ name = "Kafka"; port = 9092 },
         @{ name = "Elasticsearch"; port = [int](Get-EnvOrDefault "ELASTICSEARCH_HOST_PORT" "9200") },

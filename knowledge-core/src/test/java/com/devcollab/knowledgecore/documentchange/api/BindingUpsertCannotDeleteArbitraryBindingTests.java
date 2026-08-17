@@ -105,7 +105,7 @@ class BindingUpsertCannotDeleteArbitraryBindingTests {
                 .isLessThan(HttpStatus.INTERNAL_SERVER_ERROR.value());
 
         // 若创建成功（201），CR 必须停在 PENDING——不得自动 APPLIED
-        // （detail 端点 requireAdmin，MEMBER 无查看权限，用 admin token 查询）
+        // detail 端点按 workspace member 放行；用 admin token 查询只为复用现有夹具。
         if (created.getResponse().getStatus() == HttpStatus.CREATED.value()) {
             String requestId = objectMapper
                     .readTree(created.getResponse().getContentAsString())

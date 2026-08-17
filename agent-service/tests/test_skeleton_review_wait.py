@@ -165,6 +165,10 @@ async def test_worker_pending_collision_requeues_with_long_backoff(
     unit = repository.units[UNIT_ID]
     assert unit["status"] == "RETRY_WAITING"
     assert unit["error_code"] == "SKELETON_REVIEW_PENDING"
+    assert unit["review_request_id"] == UUID("99999999-9999-9999-9999-999999999999")
+    assert repository.jobs[JOB_ID]["review_request_ids"] == [
+        "99999999-9999-9999-9999-999999999999"
+    ]
     assert unit["attempt"] == 0
     # 固定 300s 长退避，而非 60s 阶梯（风暴的根源）
     assert unit["next_attempt_at"] is not None

@@ -34,6 +34,10 @@ export function readableError(error: unknown, fallback: string): string {
       return MESSAGE_BY_CODE.AUTH_ACCESS_INVALID;
     }
 
+    if (error.response?.status === 403) {
+      return response?.message || '没有审批权限';
+    }
+
     if (error.response?.status === 409) {
       return MESSAGE_BY_CODE.DOCUMENT_BLOCK_VERSION_CONFLICT;
     }
