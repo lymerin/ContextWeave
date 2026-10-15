@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="600" viewBox="0 0 1280 600" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">ContextWeave: engineering knowledge, connected</title>
+  <desc id="desc">Product concept illustration. Code anchors connect to structured document blocks, which flow into evidence-backed human review. This is not an application screenshot.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="600" gradientUnits="userSpaceOnUse"><stop stop-color="#101b30"/><stop offset="1" stop-color="#101120"/></linearGradient>
+    <linearGradient id="link" x1="360" y1="270" x2="920" y2="390" gradientUnits="userSpaceOnUse"><stop stop-color="#5dd9c5"/><stop offset="1" stop-color="#a391fa"/></linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" stroke="#64748b" stroke-opacity=".08"/></pattern>
+  </defs>
+  <rect width="1280" height="600" rx="24" fill="url(#bg)"/>
+  <rect width="1280" height="600" rx="24" fill="url(#grid)"/>
+  <path d="M1040 0L1280 240M960 0L1280 320M1120 0L1280 160" stroke="#a391fa" stroke-opacity=".08"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <!-- Frontend brand mark: DocumentWorkbenchView.vue .document-brand-logo, scaled from 38 to 48 px. -->
+    <g transform="translate(64 50) scale(1.2631578947)">
+      <rect width="38" height="38" rx="10" fill="#0b1015"/>
+      <g fill="#18d1ff">
+        <rect x="9" y="11" width="20" height="2" transform="translate(19 12) skewX(-28) translate(-19 -12)"/>
+        <rect x="9" y="18" width="13" height="2" transform="translate(15.5 19) skewX(-28) translate(-15.5 -19)"/>
+        <rect x="9" y="25" width="20" height="2" transform="translate(19 26) skewX(-28) translate(-19 -26)"/>
+      </g>
+    </g>
+    <text x="128" y="81" fill="#edf2ff" font-size="28" font-weight="700" letter-spacing="-.5">ContextWeave</text>
+    <text x="1216" y="77" text-anchor="end" fill="#94a3b8" font-size="12" letter-spacing="2.5">CODE / DOCS / AGENTS</text>
+    <text x="64" y="158" fill="#edf2ff" font-size="42" font-weight="700" letter-spacing="-1.2">Engineering knowledge, connected.</text>
+    <text x="66" y="190" fill="#a5b4ce" font-size="17">Grounded in code. Maintained with agents. Reviewed by people.</text>
+    <rect x="64" y="232" width="340" height="258" rx="16" fill="#152238" stroke="#2b3c56"/>
+    <rect x="470" y="232" width="340" height="258" rx="16" fill="#192139" stroke="#35405b"/>
+    <rect x="876" y="232" width="340" height="258" rx="16" fill="#1c2039" stroke="#3d3d60"/>
+    <text x="88" y="264" fill="#6ce2cc" font-size="11" font-weight="600" letter-spacing="2">01 / SOURCE CONTEXT</text>
+    <text x="494" y="264" fill="#b6a4ff" font-size="11" font-weight="600" letter-spacing="2">02 / LIVING DOCUMENTS</text>
+    <text x="900" y="264" fill="#9bb9ff" font-size="11" font-weight="600" letter-spacing="2">03 / HUMAN REVIEW</text>
+    <path d="M64 282H404M470 282H810M876 282H1216" stroke="#35405b"/>
+    <text x="88" y="313" fill="#d8e2f5" font-size="15" font-weight="600">OrderService.java</text>
+    <text x="88" y="337" fill="#8b9dbb" font-size="11">main / commit / symbol</text>
+    <rect x="80" y="354" width="308" height="66" rx="8" fill="#233f4c" stroke="#417d79"/>
+    <g font-family="Consolas, 'Courier New', monospace" font-size="12">
+      <text x="92" y="379" fill="#7e98ad">24</text>
+      <text x="120" y="379" fill="#c1a6ff">public Order</text>
+      <text x="222" y="379" fill="#8de8d6">create(...)</text>
+      <text x="92" y="403" fill="#7e98ad">25</text>
+      <text x="134" y="403" fill="#a9bcd3">return repository.save(...);</text>
+    </g>
+    <rect x="88" y="439" width="134" height="25" rx="12" fill="#203b42"/>
+    <text x="155" y="456" text-anchor="middle" fill="#81dfca" font-size="10" font-weight="600" letter-spacing=".5">SYMBOL ANCHOR</text>
+    <text x="494" y="313" fill="#d8e2f5" font-size="15" font-weight="600">Order creation</text>
+    <text x="494" y="337" fill="#8b9dbb" font-size="11">Structured blocks / versioned knowledge</text>
+    <rect x="486" y="354" width="308" height="66" rx="8" fill="#2c2b49" stroke="#74649b"/>
+    <text x="502" y="378" fill="#ded6ff" font-size="12" font-weight="600">How an order is created</text>
+    <text x="502" y="402" fill="#a9b3cd" font-size="11">Validate input, persist, return the order.</text>
+    <rect x="494" y="439" width="154" height="25" rx="12" fill="#312d4a"/>
+    <text x="571" y="456" text-anchor="middle" fill="#c0b0fa" font-size="10" font-weight="600" letter-spacing=".5">LINKED DOCUMENT BLOCK</text>
+    <text x="900" y="313" fill="#d8e2f5" font-size="15" font-weight="600">A reviewable change</text>
+    <text x="900" y="337" fill="#8b9dbb" font-size="11">Agent proposal / code evidence / approval</text>
+    <rect x="892" y="354" width="308" height="66" rx="8" fill="#272d49" stroke="#586c9d"/>
+    <path d="M908 373L912 377L920 369M908 399L912 403L920 395" stroke="#8faeff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="931" y="378" fill="#d4def4" font-size="12">Inspect the document diff</text>
+    <text x="931" y="404" fill="#a9b3cd" font-size="11">Trace the supporting code evidence</text>
+    <rect x="900" y="439" width="145" height="25" rx="12" fill="#2b324e"/>
+    <text x="972" y="456" text-anchor="middle" fill="#a9c1ff" font-size="10" font-weight="600" letter-spacing=".5">AWAITING APPROVAL</text>
+    <path d="M388 387H486M794 387H892" stroke="url(#link)" stroke-width="2"/>
+    <circle cx="437" cy="387" r="16" fill="#172b36" stroke="#63d3c1" stroke-width="1.5"/>
+    <path d="M430 387H444M430 387L434 383M430 387L434 391M444 387L440 383M444 387L440 391" stroke="#83e3d2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="843" cy="387" r="16" fill="#27263f" stroke="#a08cdb" stroke-width="1.5"/>
+    <path d="M837 387H849M849 387L844 382M849 387L844 392" stroke="#c0adf7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M64 525H1216" stroke="#2c3851"/>
+    <circle cx="72" cy="554" r="4" fill="#6ce2cc"/>
+    <text x="88" y="559" fill="#a8b6ce" font-size="12">Symbol-level bindings</text>
+    <circle cx="346" cy="554" r="4" fill="#b6a4ff"/>
+    <text x="362" y="559" fill="#a8b6ce" font-size="12">Drift detection</text>
+    <circle cx="574" cy="554" r="4" fill="#9bb9ff"/>
+    <text x="590" y="559" fill="#a8b6ce" font-size="12">Evidence-backed updates</text>
+    <text x="1216" y="559" text-anchor="end" fill="#7688a7" font-size="11" letter-spacing="1.5">PRODUCT CONCEPT</text>
+  </g>
+</svg>
